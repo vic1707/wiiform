@@ -22,10 +22,12 @@ end
 
 target("wiiform-core-write")
     add_rules("qt.shared")
-    add_frameworks("QtGui", "QtWidgets")
-    add_packages("wiiqt-writable")
+    add_frameworks("QtGui", "QtWidgets", "QtNetwork")
+    add_packages("wiiqt-writable", "yaml-cpp", "xz")
     add_includedirs("include", {public = true})
-    add_files("src/smoke/writable_core.cpp")
+    add_includedirs("inc")
+    add_files("src/smoke/writable_core.cpp", "src/common/*.cpp",
+              "src/seed/Seed.cpp", "src/nand/Stock.cpp", "src/nand/Create.cpp", "src/nand/Nus.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
     if is_plat("macosx") then
