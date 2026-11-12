@@ -29,6 +29,7 @@ fn main() {
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,{loader}/../lib");
     if extension == "dylib" {
         println!("cargo:rustc-link-arg-bins=-Wl,-headerpad_max_install_names");
+        println!("cargo:rustc-link-arg-bin=wii-seed=-Wl,-dead_strip_dylibs");
     }
     println!("cargo:rerun-if-env-changed=WIIFORM_NATIVE_LIB_DIR");
     for path in [

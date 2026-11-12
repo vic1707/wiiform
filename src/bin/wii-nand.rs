@@ -8,7 +8,11 @@ use wiiform::native::{self, BootPolicy, DisplaySource, SettingOverride};
 use wiiform::worker::Worker;
 
 #[derive(Debug, Parser)]
-#[command(name = "wii-nand", about = "Inspect and prepare Wii NAND images")]
+#[command(
+    name = "wii-nand",
+    version,
+    about = "Inspect and prepare Wii NAND images"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -87,8 +91,6 @@ enum Command {
         hack_definitions: Option<PathBuf>,
         #[arg(long = "hack-override", value_parser = parse_override, action = ArgAction::Append)]
         hacks: Vec<SettingOverride>,
-        #[arg(long, value_enum)]
-        fix_480p: Option<OnOff>,
         nand: PathBuf,
         new_nand: PathBuf,
     },
@@ -360,17 +362,10 @@ fn execute(cli: Cli) -> Result<i32> {
         Command::SetPriiloader {
             settings,
             hack_definitions,
-            mut hacks,
-            fix_480p,
+            hacks,
             nand,
             new_nand,
         } => {
-            if let Some(state) = fix_480p {
-                hacks.push(SettingOverride {
-                    name: "480p graphics fix in system menu".into(),
-                    value: state.as_str().into(),
-                });
-            }
             let settings = require_native_settings(settings)?;
             let hacks = unique_overrides(hacks, "hack")?;
             report(native::set_priiloader_settings(
@@ -390,7 +385,6 @@ fn execute(cli: Cli) -> Result<i32> {
             pal60,
             work_nand,
         } => {
-            let worker = Worker::bundled()?;
             let source = match from {
                 Some(path) => Worker::bundled()?.display_source(&path)?,
                 None => DisplaySource::default(),

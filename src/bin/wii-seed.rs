@@ -7,6 +7,7 @@ use wiiform::worker::Worker;
 #[derive(Debug, Parser)]
 #[command(
     name = "wii-seed",
+    version,
     about = "Export and unpack decrypted Wii console seeds"
 )]
 struct Cli {

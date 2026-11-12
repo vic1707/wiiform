@@ -258,7 +258,7 @@ int main(int argc, char** argv) {
     const auto reference = root.filePath("reference.bin");
     const auto seed_path = root.filePath("console.seed.UNENCRYPTED.yaml");
     const auto report_path = root.filePath("preflight.json");
-    const auto worker = QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../libexec/wii-nand-preflight");
+    const auto worker = QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../libexec/wiiform-readonly");
     int report_index = 0;
     auto inspect = [&](const QString& seed, const QString& reference_path, const QString& candidate_path) {
       const auto output = root.filePath("report-" + QString::number(report_index++) + ".json");
