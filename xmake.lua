@@ -29,7 +29,7 @@ target("wiiform-core-write")
     add_files("src/smoke/writable_core.cpp", "src/common/*.cpp",
               "src/seed/Seed.cpp", "src/nand/Stock.cpp", "src/nand/Create.cpp", "src/nand/Nus.cpp",
               "src/nand/Install.cpp", "src/nand/Remove.cpp", "src/nand/WadPackage.cpp",
-              "src/nand/WorkingImage.cpp")
+              "src/nand/WorkingImage.cpp", "src/nand/Display.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
     if is_plat("macosx") then
