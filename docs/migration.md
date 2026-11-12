@@ -2,8 +2,7 @@
 
 Wiiform is the successor project to the host-side tools in `wiicli-tools`.
 The behavioral reference for the port is commit `ab202ef`. The old checkout
-continues to hold the historical GUI comparison harness and console
-validation records; those are not part of the installed Wiiform command set.
+holds the historical GUI comparison harness and console validation records.
 
 ## Components
 
@@ -23,6 +22,17 @@ native target and include `wiiform/write.hpp` or `wiiform/read.hpp`.
 An application already using Qt can keep its own application instance.
 Initialize the native API from the application's main thread.
 
+To build a C++ consumer against an extracted archive, set `WIIFORM_HOME` to
+its root and link the writable shared library:
+
+```sh
+c++ -std=c++20 -I"$WIIFORM_HOME/include" example.cpp \
+  -L"$WIIFORM_HOME/lib" -lwiiform-core-write \
+  -Wl,-rpath,"$WIIFORM_HOME/lib" -o example
+```
+
+Build `wiiform-core-readonly` from source to link a read-only C++ consumer.
+
 The Rust binaries own argument parsing, recipe validation, build sequencing,
 and bundle publication. Their native bindings call named functions with
 strings, byte vectors, flat enums and simple name/value overrides. NAND images
@@ -33,8 +43,7 @@ Rust.
 
 The read-only worker is intentionally a separate process built against the
 read-only WiiQt target. It handles source NAND authentication, inventories,
-preflight checks and package inspection. The Rust workflow invokes the worker
-at its bundled relative path; it is not searched for by name in `PATH`. NAND
+preflight checks and package inspection. The Rust workflow resolves the worker relative to the installed executable. NAND
 mutations use the writable C++ library. This preserves the split between
 inspection and write authority while sharing the same high-level build flow.
 
@@ -126,7 +135,7 @@ configuration can select the main command from the archive:
 
 ```toml
 [tools]
-"github:OWNER/wiiform" = { version = "0.1.0", bin = "wiiform", bin_path = "bin" }
+"github:OWNER/wiiform" = { version = "0.1.0", strip_components = 1, bin_path = "bin" }
 ```
 
 Replace `OWNER` with the release repository owner. The archived `wiiform`

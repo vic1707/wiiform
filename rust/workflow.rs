@@ -1422,3 +1422,42 @@ fn rename_noreplace(_source: &Path, _target: &Path) -> std::io::Result<()> {
         "atomic no-replace directory rename is unsupported on this platform",
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publishes_both_files_and_preserves_existing_bundles() {
+        let scratch = tempfile::tempdir().unwrap();
+        let nand = scratch.path().join("source.nand");
+        let keys = scratch.path().join("source.keys");
+        let output = scratch.path().join("restore");
+        fs::write(&nand, b"synthetic NAND").unwrap();
+        fs::write(&keys, b"synthetic keys").unwrap();
+
+        let missing_keys = scratch.path().join("missing");
+        assert!(publish_bundle(&nand, &missing_keys, &output).is_err());
+        assert!(!output.exists());
+
+        publish_bundle(&nand, &keys, &output).unwrap();
+        assert_eq!(
+            fs::read(output.join("nand.bin")).unwrap(),
+            b"synthetic NAND"
+        );
+        assert_eq!(
+            fs::read(output.join("keys.bin")).unwrap(),
+            b"synthetic keys"
+        );
+
+        let replacement = scratch.path().join("replacement.nand");
+        fs::write(&replacement, b"other data").unwrap();
+        assert!(publish_bundle(&replacement, &keys, &output).is_err());
+        assert_eq!(
+            fs::read(output.join("nand.bin")).unwrap(),
+            b"synthetic NAND"
+        );
+        assert_eq!(fs::read(&replacement).unwrap(), b"other data");
+        assert_eq!(fs::read(&keys).unwrap(), b"synthetic keys");
+    }
+}

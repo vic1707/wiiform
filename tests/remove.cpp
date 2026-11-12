@@ -8,6 +8,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QTreeWidgetItem>
 #include <functional>
@@ -130,7 +131,19 @@ namespace {
       shared_before = nand.GetData("/shared1/00000000.app");
       save_before = nand.GetData(title_path(forecast_id) + "/data/save.bin");
     }
-    title_remove::remove_channel(image, forecast_id);
+    const auto frontend = QDir(QCoreApplication::applicationDirPath()).filePath("wii-nand");
+    QProcess remove;
+    remove.start(frontend, {"remove-title", "--in-place", image, "0001000248414645"});
+    check(remove.waitForFinished(120'000), "Rust removal command did not finish");
+    if (remove.exitStatus() != QProcess::NormalExit || remove.exitCode() != 0)
+      throw std::runtime_error("Rust removal command failed: " + remove.readAllStandardError().toStdString());
+
+    QProcess inventory;
+    inventory.start(frontend, {"inventory", image, image + ".json"});
+    check(inventory.waitForFinished(120'000), "Read-only inventory command did not finish");
+    if (inventory.exitStatus() != QProcess::NormalExit || inventory.exitCode() != 0)
+      throw std::runtime_error("Read-only inventory command failed: " +
+                               inventory.readAllStandardError().toStdString());
     {
       NandBin nand;
       check(nand.SetPath(image) && nand.InitNand(), "Cannot reopen removed-channel NAND");

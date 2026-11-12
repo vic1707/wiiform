@@ -1,0 +1,94 @@
+name: Wiiform checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x86_64
+          - runner: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.11.4
+
+      - name: Install Linux build and archive dependencies
+        if: runner.os == 'Linux'
+        run: |
+          test "$(uname -m)" = x86_64
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential qtbase5-dev qt5-qmake patchelf pax-utils
+          echo "QT_ROOT_DIR=/usr" >> "$GITHUB_ENV"
+
+      - name: Install macOS Qt SDK
+        if: runner.os == 'macOS'
+        run: |
+          test "$(uname -m)" = arm64
+          brew install qt@5
+          echo "QT_ROOT_DIR=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
+
+      - name: Configure and build
+        run: |
+          mise exec -- xmake f -y -m release --qt="$QT_ROOT_DIR"
+          mise run build
+
+      - name: Run synthetic regressions and Clippy
+        run: mise run test
+
+      - name: Package archive
+        run: |
+          mkdir -p dist
+          scripts/package.sh "$PLATFORM" . dist
+          (cd dist && shasum -a 256 -c ./*.sha256)
+
+      - name: Test relocated Linux bundle in a clean container
+        if: runner.os == 'Linux'
+        run: |
+          unpacked="$RUNNER_TEMP/relocated Wiiform"
+          mkdir "$unpacked"
+          tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
+          docker run --rm --network none -v "$unpacked:/opt/wiiform:ro" ubuntu:24.04 \
+            sh -ec '/opt/wiiform/bin/wiiform --version
+              /opt/wiiform/bin/wii-seed --version
+              /opt/wiiform/bin/wii-nand stock-titles EUR >/dev/null
+              mkdir /tmp/cache
+              if /opt/wiiform/bin/wii-nand install-title --in-place --offline \
+                /tmp/absent.nand /tmp/cache 0000000100000002 514 >/tmp/error 2>&1; then exit 1; fi
+              grep -F "Offline mode" /tmp/error'
+
+      - name: Test relocated macOS bundle
+        if: runner.os == 'macOS'
+        run: |
+          unpacked="$RUNNER_TEMP/relocated Wiiform"
+          mkdir "$unpacked"
+          tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
+          env -i PATH=/usr/bin:/bin "$unpacked/bin/wiiform" --version
+          env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-seed" --version
+          env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-nand" stock-titles EUR >/dev/null
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wiiform-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error

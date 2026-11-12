@@ -14,3 +14,7 @@ run = "xmake build"
 [tasks.build]
 description = "Build the Wiiform commands"
 run = "./scripts/build.sh"
+
+[tasks.test]
+description = "Run Rust and native regressions after building Wiiform"
+run = "./scripts/test.sh"
