@@ -159,7 +159,7 @@ fn expand_installer(packed: &[u8]) -> Result<Vec<u8>> {
 
 fn verify(data: &[u8], expected: &str, limit: usize, label: &str) -> Result<()> {
     ensure!(
-        data.len() <= limit && format!("{:x}", Sha256::digest(data)) == expected,
+        data.len() <= limit && crate::sha256_hex(Sha256::digest(data)) == expected,
         "{label} does not match its pinned SHA-256"
     );
     Ok(())

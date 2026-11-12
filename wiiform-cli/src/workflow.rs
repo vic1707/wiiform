@@ -1161,7 +1161,7 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 fn sha256_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256Hasher::digest(bytes))
+    crate::sha256_hex(Sha256Hasher::digest(bytes))
 }
 fn sha256_file(path: &Path) -> Result<String> {
     let metadata =
@@ -1181,7 +1181,7 @@ fn sha256_file(path: &Path) -> Result<String> {
         }
         digest.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(crate::sha256_hex(digest.finalize()))
 }
 fn sync_file(path: &Path) -> Result<()> {
     File::open(path)
