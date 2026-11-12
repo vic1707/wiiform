@@ -34,7 +34,7 @@ esac
 cp LICENSE THIRD_PARTY.md README.md "$stage/"
 cp -R docs "$stage/"
 mkdir "$stage/include"
-cp -R src-wiiformlib/include/wiiform "$stage/include/"
+cp -R wiiformlib/include/wiiform "$stage/include/"
 tar -C "$scratch" -czf "$scratch/$archive" "$bundle"
 (cd "$scratch" && shasum -a 256 "$archive" > "$archive.sha256")
 mv "$scratch/$archive" "$scratch/$archive.sha256" "$output/"

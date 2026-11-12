@@ -14,8 +14,8 @@ wiiform-core  →  WiiQt and Qt
 ```
 
 Xmake builds `wiiform-core` independently of Cargo. The C++ public headers
-are under `src-wiiformlib/include/wiiform` and the implementation is under
-`src-wiiformlib/src`. Cargo builds the commands under `wiiform-cli`. The
+are under `wiiformlib/include/wiiform` and the implementation is under
+`wiiformlib/src`. Cargo builds the commands under `wiiform-cli`. The
 CXX adapter lives in `wiiform-cli/src/interop`.
 
 Rust owns CLI arguments, recipe orchestration, and bundle publication.
