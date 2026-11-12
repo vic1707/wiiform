@@ -7,6 +7,7 @@
 
 int main() {
   try {
+    if (wiiform::read::stock_titles("EUR").empty()) return 1;
     wiiform::core::install_wad("unused.nand", "unused.wad", "",
                                wiiform::WadPolicy::standard);
   } catch (const std::runtime_error& error) {

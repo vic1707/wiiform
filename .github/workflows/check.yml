@@ -8,6 +8,25 @@ permissions:
   contents: read
 
 jobs:
+  recipe-schema:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.11.4
+      - name: Generate and verify recipe schema
+        run: |
+          mise run schema
+          git diff --exit-code -- docs/wiiform.recipe.schema.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wiiform-recipe-schema
+          path: docs/wiiform.recipe.schema.json
+          if-no-files-found: error
+
   build-test-package:
     strategy:
       fail-fast: false
@@ -19,8 +38,6 @@ jobs:
             platform: macos-arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    env:
-      PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,17 +64,14 @@ jobs:
           echo "QT_ROOT_DIR=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
 
       - name: Configure and build
-        run: |
-          mise exec -- xmake f -y -m release --qt="$QT_ROOT_DIR"
-          mise run build
+        run: mise run build
 
       - name: Run synthetic regressions and Clippy
         run: mise run test
 
       - name: Package archive
         run: |
-          mkdir -p dist
-          scripts/package.sh "$PLATFORM" . dist
+          mise run package
           (cd dist && shasum -a 256 -c ./*.sha256)
 
       - name: Test relocated Linux bundle in a clean container

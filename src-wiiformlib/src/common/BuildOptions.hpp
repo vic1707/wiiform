@@ -11,19 +11,12 @@ namespace nand_build {
     QMap<QString, QString> setting_overrides;
   };
 
-  struct Arguments {
-    Options options;
-    QStringList positionals;
-    bool candidate_only = false;
-  };
-
   struct Profile {
     QString area;
     QByteArray settings;
     QList<quint16> bad_blocks;
   };
 
-  auto parse_arguments(QStringList args, bool allow_candidate_only = false) -> Arguments;
   auto boot_policy_name(inspect::BootPolicy policy) -> QString;
   auto resolve_profile(const seed::Components& seed, const Options& options) -> Profile;
   void create(const QString& seed_path, const QString& output, const Options& options);

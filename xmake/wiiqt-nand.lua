@@ -3,10 +3,9 @@ package("wiiqt-nand")
   set_homepage("https://github.com/vic1707/wiiqt-tools")
   set_license("GPL-2.0-only")
   add_urls("https://github.com/vic1707/wiiqt-tools.git")
-  add_versions("0.1.2", "42536a2c3becf384687a64a3d9ddadad435dc22b")
-  add_patches("0.1.2", path.join(os.scriptdir(), "patches", "wiiqt-read-only.patch"),
+  add_versions("0.1.3", "42536a2c3becf384687a64a3d9ddadad435dc22b")
+  add_patches("0.1.3", path.join(os.scriptdir(), "patches", "wiiqt-read-only.patch"),
               "7c0eb3912a3628535d763e03528c0456467f4fac577c7639aeae67ef3396d3f6")
-  add_configs("writable", {description = "Enable NAND writes for the builder and synthetic fixtures", default = false, type = "boolean"})
   add_configs("qt_sdk", {description = "Detected Qt SDK and version", type = "string", readonly = true})
   add_links("wiiqt-nand")
 
@@ -30,7 +29,7 @@ package("wiiqt-nand")
       "CONFIG-=" .. (package:is_debug() and "release" or "debug"),
       "CONFIG+=" .. (package:is_debug() and "debug" or "release")
     }
-    if package:config("writable") then table.insert(args, "DEFINES+=NAND_BIN_CAN_WRITE") end
+    table.insert(args, "DEFINES+=NAND_BIN_CAN_WRITE")
     os.vrunv(qmake.program, args, {curdir = builddir})
     import("package.tools.make").build(package, {}, {curdir = builddir})
     os.cp(path.join(builddir, "libwiiqt-nand.a"), package:installdir("lib"))

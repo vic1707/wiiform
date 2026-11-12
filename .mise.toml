@@ -3,18 +3,5 @@
 cmake = "3.31.8"
 rust = "1.99.0"
 
-[tasks.configure]
-description = "Configure the native Wiiform build"
-run = "xmake f -m release"
-
-[tasks.build-native]
-description = "Build the native Wiiform targets"
-run = "xmake build"
-
-[tasks.build]
-description = "Build the Wiiform commands"
-run = "./scripts/build.sh"
-
-[tasks.test]
-description = "Run Rust and native regressions after building Wiiform"
-run = "./scripts/test.sh"
+[env]
+CARGO_TARGET_DIR = "{{ config_root }}/build/cargo"

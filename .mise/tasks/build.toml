@@ -1,0 +1,47 @@
+["native:configure"]
+alias = "configure"
+description = "Configure Xmake using QT_ROOT_DIR or the host Qt installation"
+env = { TMPDIR = "{{ config_root }}/build/tmp" }
+run = '''
+mkdir -p "$TMPDIR"
+qt="${QT_ROOT_DIR:-}"
+if [ -z "$qt" ] && [ -x /opt/homebrew/opt/qt@5/bin/qmake ]; then
+    qt=/opt/homebrew/opt/qt@5
+fi
+if [ -n "$qt" ]; then
+    xmake f -y -m release --qt="$qt"
+else
+    xmake f -y -m release
+fi
+'''
+
+["native:build"]
+alias = "build-native"
+description = "Build the Wiiform C++ library"
+depends = ["native:configure"]
+env = { TMPDIR = "{{ config_root }}/build/tmp" }
+run = "xmake build -y -j2 wiiform-core"
+
+[build]
+description = "Build the C++ library and stage the Rust commands in build/bin"
+depends = ["native:build"]
+run = [
+  "cargo build --locked --release -p wiiform --bins",
+  "mkdir -p build/bin",
+  'install -m 755 "$CARGO_TARGET_DIR/release/wiiform" "$CARGO_TARGET_DIR/release/wii-seed" "$CARGO_TARGET_DIR/release/wii-nand" build/bin/',
+]
+
+["run:wiiform"]
+description = "Run the Wiiform recipe CLI"
+depends = ["build"]
+run = "build/bin/wiiform"
+
+["run:wii-seed"]
+description = "Run the seed CLI"
+depends = ["build"]
+run = "build/bin/wii-seed"
+
+["run:wii-nand"]
+description = "Run the NAND CLI"
+depends = ["build"]
+run = "build/bin/wii-nand"

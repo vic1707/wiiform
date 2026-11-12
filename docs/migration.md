@@ -7,45 +7,33 @@ holds the historical GUI comparison harness and console validation records.
 ## Components
 
 ```text
-wiiform recipe CLI / wii-nand ── CXX adapter ── C++ writable core
-                  │                                   │
-wii-seed ── shared Rust worker client                 WiiQt
-                  │                                   │
-                  └── private worker ── C++ read-only core
+wiiform / wii-nand / wii-seed
+        │  named CXX calls
+        ▼
+wiiform-core  →  WiiQt and Qt
 ```
 
-The public C++ headers are under `src-wiiformlib/include/wiiform`. Xmake builds
-`wiiform-core-write` and `wiiform-core-readonly` independently of Cargo.
-The CXX adapter and its `rust/cxx.h` dependency live under `rust/interop`;
-they are compiled by Cargo for the Rust callers. C++ consumers select the
-native target and include `wiiform/write.hpp` or `wiiform/read.hpp`.
-An application already using Qt can keep its own application instance.
-Initialize the native API from the application's main thread.
+Xmake builds `wiiform-core` independently of Cargo. The C++ public headers
+are under `src-wiiformlib/include/wiiform` and the implementation is under
+`src-wiiformlib/src`. Cargo builds the commands under `wiiform-cli`. The
+CXX adapter lives in `wiiform-cli/src/interop`.
 
-To build a C++ consumer against an extracted archive, set `WIIFORM_HOME` to
-its root and link the writable shared library:
+Rust owns CLI arguments, recipe orchestration, and bundle publication.
+Native calls handle NAND paths, title IDs, and settings values directly.
+C++ returns JSON for rich reports and typed values for stock titles and
+authenticated SYSCONF data. Seed export, inventory, preflight, and source
+settings import open input NANDs with WiiQt's explicit read-only mode.
+
+To use the public C++ API, include `wiiform/read.hpp` or `wiiform/write.hpp`.
+Initialize the native API from the application's main thread. An application
+that already uses Qt can keep its own application instance. To link against
+the extracted archive, set `WIIFORM_HOME` to its root.
 
 ```sh
 c++ -std=c++20 -I"$WIIFORM_HOME/include" example.cpp \
-  -L"$WIIFORM_HOME/lib" -lwiiform-core-write \
+  -L"$WIIFORM_HOME/lib" -lwiiform-core \
   -Wl,-rpath,"$WIIFORM_HOME/lib" -o example
 ```
-
-Build `wiiform-core-readonly` from source to link a read-only C++ consumer.
-
-The Rust binaries own argument parsing, recipe validation, build sequencing,
-and bundle publication. Their native bindings call named functions with
-strings, byte vectors, flat enums and simple name/value overrides. NAND images
-are passed by path so native file locking and staged-write behavior can remain
-in the C++ layer. Qt classes and WiiQt ownership types stay private to C++.
-Rich diagnostic reports cross the boundary as JSON strings and are decoded by
-Rust.
-
-The read-only worker is intentionally a separate process built against the
-read-only WiiQt target. It handles source NAND authentication, inventories,
-preflight checks and package inspection. The Rust workflow resolves the worker relative to the installed executable. NAND
-mutations use the writable C++ library. This preserves the split between
-inspection and write authority while sharing the same high-level build flow.
 
 ## Native implementation and provenance
 
@@ -53,7 +41,7 @@ The project-owned C++ library wraps the following areas:
 
 - **WiiQt** provides the NAND filesystem, title access and related console
   formats. The xmake package pins the `vic1707/wiiqt-tools` fork at commit
-  `42536a2c3becf384687a64a3d9ddadad435dc22b` (package version `0.1.1`).
+  `42536a2c3becf384687a64a3d9ddadad435dc22b` with a local patch for per-image read-only access.
 - **Wiiform C++ code** owns the narrow library API, boot validation, seed
   reconstruction, title creation/install/removal, WAD validation and install,
   SYSCONF writes, Priiloader files/settings, and BackupMii footer/key-sidecar
@@ -73,12 +61,10 @@ The project-owned C++ library wraps the following areas:
   (`cxx`), and supporting crates. Exact versions are recorded in Cargo files.
 
 The external native build dependencies declared to Xmake include pinned
-`yaml-cpp` and `xz`; Xmake also builds the pinned WiiQt package. Qt is found
-from an installed SDK and is not currently managed by mise. The build host
-also supplies its C++ compiler, linker, `qmake`, and `make`. See the project
-README for platform setup details. A release archive is intended to bundle
-non-system Qt/runtime libraries, so end users should not need the development
-SDK after release packaging is complete.
+`yaml-cpp` and `xz`. Xmake also builds the pinned WiiQt package. The host
+supplies its C++ toolchain, `make`, and Qt SDK with `qmake`. Release archives
+carry the Qt runtime. The [README](../README.md#host-dependencies) lists the
+prerequisites.
 
 ## Commands and supported operations
 
@@ -102,18 +88,13 @@ recipe. Future recipe fields should remain declarative: the recipe specifies
 the desired operation, while native library functions perform format-aware
 validation and mutation.
 
-## Build and host prerequisites
+## Developer tasks
 
-`mise install` installs the pinned project tools, including xmake, CMake and
-Rust. `mise run build` runs the native xmake build followed by the locked
-Cargo build. Xmake resolves the pinned native source packages, but Qt and the
-platform's basic C++ toolchain are currently provisioned outside mise.
-
-For macOS, install Xcode Command Line Tools and a Qt SDK with `qmake` and the
-Qt Gui, Widgets, and Network components. For Linux x86_64, install a C++
-compiler/linker, make, and a compatible Qt development SDK exposing the same
-components. Then configure/build with mise. This is the current dependency
-boundary; completely automated Qt provisioning may be considered separately.
+`mise run build` configures and builds Xmake before running Cargo.
+`mise run test` runs the C++, Rust, Clippy, and schema checks. Use
+`mise run schema` to regenerate the JSON Schema without a native build.
+CI generates the schema and checks it against the committed copy under
+`docs/`.
 
 ## Update an existing recipe
 
@@ -127,17 +108,11 @@ the final NAND and matching keys together.
 
 ## Release archive and mise
 
-Run `scripts/package.sh PLATFORM REPO OUTPUT_DIR` after building on
-`macos-arm64` or `linux-x86_64`. The archive includes the private worker
-under `libexec` and the non-system library dependencies under `lib`.
-Once the matching archives and checksums are published on GitHub, a mise
-configuration can select the main command from the archive:
+Run `mise run package` on macOS arm64 or Linux x86_64 to build the archive.
+Once the archives and checksums are published on GitHub, this mise
+configuration installs the commands with their shared native runtime.
 
 ```toml
 [tools]
-"github:OWNER/wiiform" = { version = "0.1.0", strip_components = 1, bin_path = "bin" }
+"github:vic1707/wiiform" = { version = "0.1.0", strip_components = 1, bin_path = "bin" }
 ```
-
-Replace `OWNER` with the release repository owner. The archived `wiiform`
-command invokes its private worker directly; the two public utility commands
-are available for standalone operations.

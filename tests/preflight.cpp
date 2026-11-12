@@ -117,18 +117,19 @@ namespace {
     QJsonObject report;
   };
 
-  auto invoke_worker(const QString& worker, const QString& seed, const QString& reference,
+  auto invoke_preflight(const QString& frontend, const QString& seed, const QString& reference,
                      const QString& candidate, const QString& output, QStringList options = {}) -> Invocation {
     const QFileInfo prior_output(output);
     const bool destination_occupied = prior_output.exists() || prior_output.isSymLink();
     QProcess process;
     process.setProcessChannelMode(QProcess::MergedChannels);
+    options.prepend("preflight");
     options.append(seed);
     if (!reference.isEmpty()) options.append(reference);
     options.append({candidate, output});
-    process.start(worker, options);
-    check(process.waitForFinished(120000), "Preflight worker timed out");
-    check(process.exitStatus() == QProcess::NormalExit, "Preflight worker crashed");
+    process.start(frontend, options);
+    check(process.waitForFinished(120000), "Preflight CLI timed out");
+    check(process.exitStatus() == QProcess::NormalExit, "Preflight CLI crashed");
     Invocation invocation;
     invocation.exit_code = process.exitCode();
     invocation.output = process.readAll();
@@ -136,13 +137,13 @@ namespace {
       QJsonParseError parse_error;
       const auto document = QJsonDocument::fromJson(read(output), &parse_error);
       check(parse_error.error == QJsonParseError::NoError && document.isObject(),
-            "Preflight worker wrote invalid JSON");
+            "Preflight CLI wrote invalid JSON");
       invocation.report = document.object();
       const auto status = invocation.report.value("host_status").toString();
       check((status == "pass" && invocation.exit_code == 0) ||
                 (status == "fail" && invocation.exit_code == 1) ||
                 (status == "blocked" && invocation.exit_code == 3),
-            "Preflight worker exit code differs from its report");
+            "Preflight CLI exit code differs from its report");
     }
     return invocation;
   }
@@ -258,12 +259,12 @@ int main(int argc, char** argv) {
     const auto reference = root.filePath("reference.bin");
     const auto seed_path = root.filePath("console.seed.UNENCRYPTED.yaml");
     const auto report_path = root.filePath("preflight.json");
-    const auto worker = QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../libexec/wiiform-readonly");
+    const auto frontend = QDir(QCoreApplication::applicationDirPath()).filePath("wii-nand");
     int report_index = 0;
     auto inspect = [&](const QString& seed, const QString& reference_path, const QString& candidate_path) {
       const auto output = root.filePath("report-" + QString::number(report_index++) + ".json");
-      const auto invocation = invoke_worker(worker, seed, reference_path, candidate_path, output);
-      check(!invocation.report.isEmpty(), "Preflight worker produced no report");
+      const auto invocation = invoke_preflight(frontend, seed, reference_path, candidate_path, output);
+      check(!invocation.report.isEmpty(), "Preflight CLI produced no report");
       return invocation.report;
     };
     QByteArray keys(0x400, '\0');
@@ -325,13 +326,13 @@ int main(int argc, char** argv) {
     check(digest(reference) == reference_hash && digest(seed_path) == seed_hash,
           "Preflight changed its NAND or seed input");
 
-    const auto override_report = invoke_worker(worker, seed_path, reference, reference,
+    const auto override_report = invoke_preflight(frontend, seed_path, reference, reference,
         root.filePath("override.json"), {"--setting-override", "AREA=USA", "--setting-override", "GAME=US",
                                          "--setting-override", "VIDEO=NTSC"}).report;
     expect_status(override_report, "reference.settings", "pass");
     expect_status(override_report, "candidate.settings", "fail");
     check(override_report.value("region").toString() == "USA", "Settings override did not select the USA profile");
-    const auto candidate_only = invoke_worker(worker, seed_path, {}, reference,
+    const auto candidate_only = invoke_preflight(frontend, seed_path, {}, reference,
         root.filePath("candidate-only.json"), {"--candidate-only"}).report;
     expect_status(candidate_only, "candidate.settings", "pass");
     check(!candidate_only.value("reference_requested").toBool(true) &&
@@ -374,17 +375,17 @@ int main(int argc, char** argv) {
     check(!private_json.contains("SECRET1234") && !private_json.contains(keys.toHex()),
           "Preflight report disclosed settings or key bytes");
 
-    const auto write_invocation = invoke_worker(worker, seed_path, reference, reference, report_path);
+    const auto write_invocation = invoke_preflight(frontend, seed_path, reference, reference, report_path);
     check((write_invocation.exit_code == 0 || write_invocation.exit_code == 1 || write_invocation.exit_code == 3) &&
               !write_invocation.report.isEmpty(),
-          "Preflight worker failed while writing a new report");
+          "Preflight CLI failed while writing a new report");
     check(QFileInfo(report_path).exists(), "Preflight did not create its report");
     namespace fs = std::filesystem;
     check((fs::status(report_path.toStdString()).permissions() & fs::perms::mask) ==
               (fs::perms::owner_read | fs::perms::owner_write),
           "Preflight report is not owner-only");
     const auto report_bytes = read(report_path);
-    const auto collision = invoke_worker(worker, seed_path, reference, reference, report_path);
+    const auto collision = invoke_preflight(frontend, seed_path, reference, reference, report_path);
     check(collision.exit_code != 0 && collision.report.isEmpty(), "Preflight replaced an existing report");
     check(read(report_path) == report_bytes, "Existing report changed after collision");
 
@@ -544,34 +545,21 @@ int main(int argc, char** argv) {
           "Missing input changed restore status");
 
     const auto missing_report = root.filePath("missing-output-parent/report.json");
-    const auto parent_rejection = invoke_worker(worker, seed_path, reference, reference, missing_report);
+    const auto parent_rejection = invoke_preflight(frontend, seed_path, reference, reference, missing_report);
     check(parent_rejection.exit_code != 0 && parent_rejection.report.isEmpty(),
           "Preflight created a missing output parent implicitly");
 
     const auto dangling_report_link = root.filePath("dangling-report.json");
     check(QFile::link(root.filePath("absent-report.json"), dangling_report_link),
           "Cannot create dangling report symlink");
-    const auto link_rejection = invoke_worker(worker, seed_path, reference, reference, dangling_report_link);
+    const auto link_rejection = invoke_preflight(frontend, seed_path, reference, reference, dangling_report_link);
     check(link_rejection.exit_code != 0 && !QFileInfo(dangling_report_link).exists(),
           "Preflight followed a dangling report symlink");
 
-    const auto frontend_root = root.filePath("frontend");
-    const auto frontend_bin = QDir(frontend_root).filePath("bin");
-    check(QDir().mkpath(frontend_bin), "Cannot create isolated frontend folder");
-    const auto frontend = QDir(frontend_bin).filePath("wii-nand");
-    const auto built_frontend = QDir(QCoreApplication::applicationDirPath()).filePath("wii-nand");
-    check(QFile::copy(built_frontend, frontend), "Cannot copy the built frontend into synthetic scratch");
-    check(QFile::setPermissions(frontend, QFileInfo(built_frontend).permissions()),
-          "Cannot preserve the frontend's executable permissions");
-    QProcess missing_worker;
-    missing_worker.setProcessChannelMode(QProcess::MergedChannels);
-    missing_worker.start(frontend, {"preflight", seed_path, reference, reference,
-                                    root.filePath("missing-worker-report.json")});
-    check(missing_worker.waitForFinished(120000) && missing_worker.exitStatus() == QProcess::NormalExit &&
-              missing_worker.exitCode() != 0 &&
-              missing_worker.readAll().contains("worker is missing") &&
-              !QFileInfo::exists(root.filePath("missing-worker-report.json")),
-          "Public frontend did not handle a missing readonly worker safely");
+    const auto absent_candidate = root.filePath("missing-candidate.bin");
+    const auto same_path = invoke_preflight(frontend, seed_path, reference, absent_candidate, absent_candidate);
+    check(same_path.exit_code != 0 && !QFileInfo::exists(absent_candidate),
+          "Preflight wrote a report to a missing input path");
 
     std::cout << "Preflight synthetic identity, boot rejection, redaction and output checks passed.\n";
   } catch (const std::exception& error) {

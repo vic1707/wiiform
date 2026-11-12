@@ -1,52 +1,6 @@
 [workspace]
-members = ["rust/worker"]
+members = ["wiiform-cli", "wiiform-cli/recipe"]
 resolver = "3"
-
-[package]
-name = "wiiform"
-version = "0.1.0"
-edition = "2024"
-license = "GPL-2.0-only"
-publish = false
-autobins = false
-
-[lib]
-path = "rust/lib.rs"
-
-[[bin]]
-name = "wii-seed"
-path = "rust/bin/wii-seed.rs"
-
-[[bin]]
-name = "wii-nand"
-path = "rust/bin/wii-nand.rs"
-
-[[bin]]
-name = "wiiform"
-path = "rust/bin/wiiform.rs"
-
-[dependencies]
-anyhow = "1"
-clap = { version = "4.6", features = ["derive"] }
-cxx = "=1.0.194"
-libc = "0.2"
-nnn = { version = "=1.2.6", features = ["regex_validation"] }
-regex = "1"
-schemars = "=1.2.2"
-serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.150"
-sha2 = "0.10"
-tempfile = "3"
-ureq = { version = "3.4", default-features = false, features = ["rustls"] }
-yaml-rust2 = "=0.13.0"
-wiiform-worker = { path = "rust/worker" }
-zip = { version = "4.6", default-features = false, features = ["deflate"] }
-
-[build-dependencies]
-cxx-build = "=1.0.194"
-
-[lints]
-workspace = true
 
 [workspace.lints.clippy]
 all = "deny"

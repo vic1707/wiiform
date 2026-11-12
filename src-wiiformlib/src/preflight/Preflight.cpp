@@ -12,8 +12,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
-#include <QJsonDocument>
-#include <QTemporaryFile>
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -321,15 +319,4 @@ namespace preflight {
     return report;
   }
 
-  void write_report(const QJsonObject& report, const QString& output) {
-    const QFileInfo destination(QDir::cleanPath(QFileInfo(output).absoluteFilePath()));
-    require(!destination.exists() && !destination.isSymLink(), "Report destination already exists");
-    require(destination.absoluteDir().exists(), "Report parent directory must exist");
-    QTemporaryFile staging(destination.absoluteDir().filePath(".wii-preflight-XXXXXX"));
-    const auto data = QJsonDocument(report).toJson(QJsonDocument::Indented);
-    require(staging.open() && staging.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) &&
-                staging.write(data) == data.size() && staging.flush(), "Cannot write private preflight report");
-    require(staging.rename(destination.absoluteFilePath()), "Cannot publish report; destination must be new");
-    staging.setAutoRemove(false);
-  }
 }

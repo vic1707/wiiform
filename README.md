@@ -1,25 +1,33 @@
 # Wiiform
 
 Wiiform builds a new Wii NAND from a decrypted console seed and a declarative
-recipe. The C++ core owns NAND and WiiQt operations; the Rust commands expose
-that core through small direct bindings. Qt types stay inside the native
+recipe. The C++ core owns NAND and WiiQt operations. All three Rust commands
+call that core in-process through direct CXX bindings. Qt types stay inside the native
 implementation. The public C++ headers use standard-library types and
 project-owned value types.
 
 The command suite contains `wiiform` for recipe builds, `wii-nand` for focused
 NAND operations and inspection, and `wii-seed` for seed export and unpacking.
-The private companion under `libexec/` handles source image authentication,
-inventory, preflight, and WAD inspection.
+The library opens source backups and inspected NANDs read-only.
 
 ## Build from a checkout
 
-Install the versions declared in `.mise.toml`, then build:
+Install the pinned tools and build from the repository root.
 
 ```sh
 mise install
-mise exec -- xmake f -m release --qt=/path/to/qt
 mise run build
 mise run test
+```
+
+The build task configures Xmake, builds the C++ library, then builds and stages
+the Rust commands in `build/bin/`. Mise gives Xmake a checkout-local temp
+directory for its bundled Lua files. Use `mise tasks` to list individual tasks.
+
+```sh
+mise run run:wiiform -- --help
+mise run run:wii-nand -- stock-titles EUR
+mise run run:wii-seed -- --help
 ```
 
 ### Host dependencies
@@ -32,17 +40,19 @@ mise run test
 | Archive creation | Python 3 and Xcode linker tools on macOS. patchelf and pax-utils on Linux |
 | Optional Priiloader source build | devkitPPC, libogc, and the pinned Priiloader submodule |
 
-On macOS, the compiler and make come from Xcode Command Line Tools. With
-Homebrew Qt 5, pass `--qt="$(brew --prefix qt@5)"`. On Ubuntu 24.04, install
-`build-essential`, `git`, `qtbase5-dev`, and `qt5-qmake`, then pass
-`--qt=/usr`. A first build retrieves dependencies if the caches are empty.
-The prebuilt archive carries its Qt runtime.
+On macOS, install Xcode Command Line Tools and a Qt SDK. The build task
+detects Homebrew Qt 5 under `/opt/homebrew/opt/qt@5`. Set `QT_ROOT_DIR` for a
+different SDK. On Ubuntu 24.04, install `build-essential`, `git`,
+`qtbase5-dev`, and `qt5-qmake`, then run `QT_ROOT_DIR=/usr mise run build`.
+A first build retrieves dependencies if the caches are empty. The prebuilt
+archive carries its Qt runtime.
 
 ## Recipe build
 
-The recipe shape and generated JSON Schema are in `examples/recipe.yaml` and
-`schema/wiiform.recipe.schema.json`. Local file paths resolve relative to the
-recipe. Every WAD entry has a required SHA-256. The recipe supports a 4.3E,
+See the [example recipe](docs/recipe.example.yaml) and its
+[editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
+regenerate the schema from the Rust recipe model. Local file paths resolve
+relative to the recipe. Every WAD entry has a required SHA-256. The recipe supports a 4.3E,
 4.3U, or 4.3J System Menu; allowlisted channel removal; initial setup and
 display settings; WAD installs; and Priiloader settings and named hacks.
 
@@ -86,18 +96,14 @@ and inventory reports are JSON.
 
 ## Release packaging
 
-After building, assemble the archive on the target platform.
+Run `mise run package` on macOS arm64 or Linux x86_64. The task builds the
+commands and writes an archive and its SHA-256 file to `dist/`. Set
+`WIIFORM_DIST_DIR` to choose a different output directory.
 
-```sh
-mkdir -p dist
-./scripts/package.sh macos-arm64 . dist
-```
-
-Use `linux-x86_64` on Ubuntu 24.04 x86_64. The archive contains the user
-commands, their private worker and runtime libraries, and a checksum file
-beside the archive. Public C++ headers are under `include/`. Extract the
-archive and keep `bin/`, `lib/`, and `libexec/` together. See the [migration guide](docs/migration.md) for the
-old recipe mapping and the mise configuration for future GitHub releases.
+The archive includes the three commands under `bin/`, runtime libraries under
+`lib/`, and public C++ headers under `include/`. Keep the extracted directory
+layout together. See the [migration guide](docs/migration.md) for the old recipe
+mapping and the mise configuration for GitHub releases.
 
 ## License and attribution
 

@@ -8,5 +8,4 @@
 namespace preflight {
   auto inspect(const QString& seed, const QString& reference, const QString& candidate,
                const nand_build::Options& options = {}) -> QJsonObject;
-  void write_report(const QJsonObject& report, const QString& destination);
 }
