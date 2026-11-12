@@ -148,16 +148,18 @@ int main(int argc, char** argv) {
           "Cannot send a WAD through stdin");
     inspect_stream.closeWriteChannel();
     check(inspect_stream.waitForFinished() && inspect_stream.exitStatus() == QProcess::NormalExit &&
-              inspect_stream.exitCode() == 0 && inspect_stream.readAllStandardOutput() == QJsonDocument(report).toJson(),
+              inspect_stream.exitCode() == 0 && QJsonDocument::fromJson(inspect_stream.readAllStandardOutput()).object() == report,
           "Inspection of the pinned WAD from stdin did not match the file report");
 
     const auto target = directory.filePath("unused.nand");
     QProcess install;
     install.start(frontend, {"install-wad", "--in-place", "--sha256", QString::fromLatin1(actual_hash),
                              target, valid_path});
-    check(install.waitForFinished() && install.exitStatus() == QProcess::NormalExit && install.exitCode() != 0 &&
-              install.readAllStandardError().contains("genuinely Nintendo-signed"),
+    check(install.waitForFinished() && install.exitStatus() == QProcess::NormalExit && install.exitCode() != 0,
           "Unsigned WAD passed the CLI signature gate");
+    const auto install_error = install.readAllStandardError();
+    if (!install_error.contains("genuinely Nintendo-signed"))
+      throw std::runtime_error("Unexpected WAD signature rejection: " + install_error.toStdString());
     check(!QFileInfo::exists(target), "Rejected package created a NAND image");
 
     rejects([&] { wad_package::read(valid_path, QByteArray(64, '0')); }, "wrong package digest");

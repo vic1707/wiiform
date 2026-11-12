@@ -88,3 +88,11 @@ for _, name in ipairs({"install", "inventory", "preflight", "remove", "roundtrip
         set_rundir("$(projectdir)")
     target_end()
 end
+
+target("public-api-tests")
+    set_kind("binary")
+    set_default(false)
+    add_deps("wiiform-core-write")
+    add_files("tests/public_api.cpp")
+    set_targetdir("build/bin")
+target_end()
