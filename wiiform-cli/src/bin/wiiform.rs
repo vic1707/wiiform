@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
@@ -49,19 +49,9 @@ struct Cli {
     #[arg(long, value_enum, default_value = "stock")]
     boot_policy: BootPolicyArg,
 
-    /// Override the menu selected in the recipe.
-    #[arg(long, value_parser = ["4.3E", "4.3U", "4.3J"])]
-    menu: Option<String>,
-}
-
-fn menu(value: Option<&str>) -> Result<Option<Menu>> {
-    match value {
-        None => Ok(None),
-        Some("4.3E") => Ok(Some(Menu::E43)),
-        Some("4.3U") => Ok(Some(Menu::U43)),
-        Some("4.3J") => Ok(Some(Menu::J43)),
-        Some(_) => bail!("menu must be 4.3E, 4.3U, or 4.3J"),
-    }
+    /// Override the recipe menu with 4.3E, 4.3U, or 4.3J.
+    #[arg(long)]
+    menu: Option<Menu>,
 }
 
 fn run(cli: Cli) -> Result<()> {
@@ -77,7 +67,7 @@ fn run(cli: Cli) -> Result<()> {
         reference: cli.reference,
         offline: cli.offline,
         boot_policy,
-        menu: menu(cli.menu.as_deref())?,
+        menu: cli.menu,
     };
     let built = workflow::build(&options).context("Wiiform build failed")?;
     println!(

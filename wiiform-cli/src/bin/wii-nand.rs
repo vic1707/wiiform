@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result, bail};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
-use std::str::FromStr;
 use std::{
     io::Write,
     path::{Path, PathBuf},
 };
-use wiiform::native::{self, BootPolicy, DisplaySource, Inspection, SettingOverride};
+use wiiform::{
+    native::{self, BootPolicy, DisplaySource, Inspection, SettingOverride},
+    recipe::{Aspect, Language, Nickname, Sha256, TitleId},
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -39,6 +41,7 @@ enum Command {
         work_nand: PathBuf,
         cache: PathBuf,
         title_id: TitleId,
+        #[arg(value_parser = clap::value_parser!(u16).range(..65535))]
         version: u16,
     },
     /// Validate a WAD and report its content hashes and signature state.
@@ -46,7 +49,7 @@ enum Command {
         #[arg(long)]
         allow_unverified_signatures: bool,
         #[arg(long)]
-        sha256: Option<String>,
+        sha256: Option<Sha256>,
         /// Use `-` to read the WAD bytes from standard input.
         wad: PathBuf,
     },
@@ -57,7 +60,7 @@ enum Command {
         #[arg(long)]
         allow_unverified_signatures: bool,
         #[arg(long, required = true)]
-        sha256: String,
+        sha256: Sha256,
         work_nand: PathBuf,
         wad: PathBuf,
     },
@@ -101,8 +104,9 @@ enum Command {
         in_place: bool,
         #[arg(long)]
         from: Option<PathBuf>,
-        #[arg(long, value_parser = ["4:3", "16:9"])]
-        aspect: Option<String>,
+        /// Screen aspect ratio, 4:3 or 16:9.
+        #[arg(long)]
+        aspect: Option<Aspect>,
         #[arg(long, value_enum)]
         progressive: Option<OnOff>,
         #[arg(long, value_enum)]
@@ -117,12 +121,15 @@ enum Command {
         from: Option<PathBuf>,
         #[arg(long)]
         require_setup: bool,
+        /// Console nickname with 1–10 printable BMP characters.
         #[arg(long)]
-        nickname: Option<String>,
-        #[arg(long, value_parser = ["ja", "en", "de", "fr", "es", "it", "nl"])]
-        language: Option<String>,
-        #[arg(long, value_parser = ["4:3", "16:9"])]
-        aspect: Option<String>,
+        nickname: Option<Nickname>,
+        /// Language code, one of ja, en, de, fr, es, it, or nl.
+        #[arg(long)]
+        language: Option<Language>,
+        /// Screen aspect ratio, 4:3 or 16:9.
+        #[arg(long)]
+        aspect: Option<Aspect>,
         #[arg(long, value_enum)]
         progressive: Option<OnOff>,
         #[arg(long, value_enum)]
@@ -183,24 +190,6 @@ impl OnOff {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct TitleId(u64);
-
-impl FromStr for TitleId {
-    type Err = String;
-
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        if value.len() != 16 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err("title ID must contain exactly 16 hexadecimal digits".into());
-        }
-        let id = u64::from_str_radix(value, 16).map_err(|_| "invalid title ID")?;
-        if id == 0 {
-            return Err("title ID cannot be zero".into());
-        }
-        Ok(Self(id))
-    }
-}
-
 fn parse_override(value: &str) -> std::result::Result<SettingOverride, String> {
     let (name, value) = value
         .split_once('=')
@@ -235,7 +224,7 @@ fn require_native_settings(settings: Vec<SettingOverride>) -> Result<Vec<Setting
 }
 
 fn display_overrides(
-    aspect: Option<String>,
+    aspect: Option<Aspect>,
     progressive: Option<OnOff>,
     pal60: Option<OnOff>,
 ) -> Vec<SettingOverride> {
@@ -243,7 +232,7 @@ fn display_overrides(
     if let Some(aspect) = aspect {
         values.push(SettingOverride {
             name: "aspect".into(),
-            value: aspect,
+            value: aspect.as_str().to_owned(),
         });
     }
     if let Some(progressive) = progressive {
@@ -329,10 +318,7 @@ fn execute(cli: Cli) -> Result<i32> {
             title_id,
             version,
         } => {
-            if version == u16::MAX {
-                bail!("Install requires a concrete decimal version below 65535.");
-            }
-            native::install_nus_title(&work_nand, &cache, title_id.0, version, offline)?;
+            native::install_nus_title(&work_nand, &cache, title_id.as_u64(), version, offline)?;
             Ok(0)
         }
         Command::InspectWad {
@@ -342,7 +328,7 @@ fn execute(cli: Cli) -> Result<i32> {
         } => {
             report(native::inspect_wad(
                 &wad,
-                sha256.as_deref(),
+                sha256.as_ref().map(Sha256::as_str),
                 allow_unverified_signatures,
             )?)?;
             Ok(0)
@@ -354,7 +340,12 @@ fn execute(cli: Cli) -> Result<i32> {
             work_nand,
             wad,
         } => {
-            native::install_wad(&work_nand, &wad, &sha256, allow_unverified_signatures)?;
+            native::install_wad(
+                &work_nand,
+                &wad,
+                sha256.as_str(),
+                allow_unverified_signatures,
+            )?;
             Ok(0)
         }
         Command::RemoveTitle {
@@ -362,7 +353,7 @@ fn execute(cli: Cli) -> Result<i32> {
             work_nand,
             title_id,
         } => {
-            native::remove_title(&work_nand, title_id.0)?;
+            native::remove_title(&work_nand, title_id.as_u64())?;
             Ok(0)
         }
         Command::InspectDisplay { nand } => {
@@ -460,13 +451,13 @@ fn execute(cli: Cli) -> Result<i32> {
             if let Some(nickname) = nickname {
                 overrides.push(SettingOverride {
                     name: "nickname".into(),
-                    value: nickname,
+                    value: nickname.as_str().to_owned(),
                 });
             }
             if let Some(language) = language {
                 overrides.push(SettingOverride {
                     name: "language".into(),
-                    value: language,
+                    value: language.as_str().to_owned(),
                 });
             }
             report(native::set_sysconf(&work_nand, source, &overrides)?)?;

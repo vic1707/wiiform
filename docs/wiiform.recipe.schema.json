@@ -294,6 +294,9 @@
           "type": "string",
           "maxLength": 16,
           "minLength": 16,
+          "not": {
+            "const": "0000000000000000"
+          },
           "pattern": "^[0-9a-fA-F]{16}$"
         }
       ]
@@ -364,7 +367,7 @@
       ]
     },
     "SignaturePolicy": {
-      "description": "Allowed channels and local unsigned WAD policy.",
+      "description": "WAD signature requirements.",
       "oneOf": [
         {
           "description": "Require Nintendo signatures.",

@@ -12,10 +12,7 @@ use yaml_rust2::{
     scanner::TScalarStyle,
 };
 
-use crate::{
-    Menu,
-    types::{Display, Priiloader, Recipe, RecipeFile, Title, allowlisted_title_ids},
-};
+use crate::{Display, Menu, Priiloader, Recipe, RecipeFile, Title, titles::allowlisted_title_ids};
 
 pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_EVENTS: usize = 20_000;
@@ -70,25 +67,12 @@ pub fn parse_recipe(
         serde_json::from_value(value).map_err(|e| error(format!("invalid recipe: {e}")))?;
 
     let menu = menu_override.unwrap_or(file.menu);
-    if let Some(setup) = &file.setup {
-        if let Some(language) = setup.language
-            && !menu.allows_language(language)
-        {
-            return Err(error(format!(
-                "setup language is not supported by menu {menu:?}"
-            )));
-        }
-        if let Some(name) = &setup.nickname {
-            let chars = name.chars().count();
-            if !(1..=10).contains(&chars)
-                || name.trim().is_empty()
-                || name.chars().any(|c| c as u32 > 0xffff || c.is_control())
-            {
-                return Err(error(
-                    "setup.nickname must have 1–10 printable BMP characters",
-                ));
-            }
-        }
+    if let Some(language) = file.setup.as_ref().and_then(|setup| setup.language)
+        && !menu.allows_language(language)
+    {
+        return Err(error(format!(
+            "setup language is not supported by menu {menu:?}"
+        )));
     }
     if let Some(display) = &file.display {
         validate_display(display)?;
@@ -107,7 +91,7 @@ pub fn parse_recipe(
             if !allowed.contains(id.as_str()) {
                 return Err(error("remove expansion produced an unsupported title ID"));
             }
-            if !seen.insert(id.as_str().to_owned()) {
+            if !seen.insert(id.clone()) {
                 return Err(error("duplicate removal after channel alias expansion"));
             }
             remove.push(id);

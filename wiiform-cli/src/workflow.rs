@@ -4,8 +4,8 @@
 use crate::{native, prepared_verify, priiloader_payload, recipe, stock_verify};
 use anyhow::{Context, Result, bail, ensure};
 use recipe::{
-    Aspect, Autoboot, Display, HackSettings, Language, Menu, MountPoint, PriiloaderSettings,
-    Recipe, ReturnTo, ShutdownTo, SignaturePolicy,
+    Autoboot, Display, HackSettings, Menu, MountPoint, PriiloaderSettings, Recipe, ReturnTo,
+    ShutdownTo, SignaturePolicy,
 };
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256 as Sha256Hasher};
@@ -150,7 +150,7 @@ fn build_in(
         let key = format!("wad-{index}");
         let actual = sha256_file(&title.path)?;
         ensure!(
-            actual == title.sha256.as_ref().as_str(),
+            actual == title.sha256.as_str(),
             "WAD {index} SHA-256 differs from the recipe"
         );
         input_hashes.insert(key, actual);
@@ -197,9 +197,7 @@ fn build_in(
             .map(|id| id.as_str().to_owned())
             .collect();
         for title in &context.recipe.remove {
-            let id = u64::from_str_radix(title.as_str(), 16).with_context(|| {
-                format!("invalid normalized removal title ID {}", title.as_str())
-            })?;
+            let id = title.as_u64();
             native::remove_title(&image, id)
                 .with_context(|| format!("cannot remove title {}", title.as_str()))?;
             context
@@ -239,10 +237,10 @@ fn build_in(
         if let Some(setup) = &context.recipe.setup {
             settings.push(setting("require-setup", "true"));
             if let Some(nickname) = &setup.nickname {
-                settings.push(setting("nickname", nickname));
+                settings.push(setting("nickname", nickname.as_str()));
             }
             if let Some(language) = setup.language {
-                settings.push(setting("language", language_code(language)));
+                settings.push(setting("language", language.as_str()));
             }
         }
         if let Some(display) = &context.recipe.display {
@@ -277,7 +275,7 @@ fn build_in(
         let image = context.copy_current("03-wads.bin")?;
         let before = context.before()?.clone();
         for (title, report) in context.recipe.titles.iter().zip(&context.package_reports) {
-            let digest = title.sha256.as_ref().as_str();
+            let digest = title.sha256.as_str();
             let allow_unsigned = title.signature_policy == SignaturePolicy::AllowUnsigned;
             native::install_wad(&image, &title.path, digest, allow_unsigned)
                 .with_context(|| format!("cannot install WAD {}", title.path.display()))?;
@@ -370,7 +368,7 @@ fn build_in(
                 &report,
                 &settings_json,
                 &hacks_json,
-                menu_name(context.recipe.menu),
+                context.recipe.menu.as_str(),
             )?;
             write_json(&context.work.join("priiloader-settings.json"), &report)?;
             context.operations.push(
@@ -434,7 +432,7 @@ fn build_in(
         "schema_version":1,
         "kind":"prepared-nand-build",
         "created_utc":utc_timestamp(),
-        "menu":menu_name(context.recipe.menu),
+        "menu":context.recipe.menu.as_str(),
         "boot_policy":context.options.boot_policy.name(),
         "recipe":{"path":context.options.recipe,"sha256":recipe_hash},
         "recipe_sha256":recipe_hash,
@@ -443,7 +441,7 @@ fn build_in(
         "removals":context.recipe.remove.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
         "packages":context.package_reports.iter().enumerate().map(|(index, report)| json!({
             "path":context.recipe.titles[index].path,
-            "sha256":context.recipe.titles[index].sha256.as_ref().as_str(),
+            "sha256":context.recipe.titles[index].sha256.as_str(),
             "signature_policy":if context.recipe.titles[index].signature_policy == SignaturePolicy::AllowUnsigned {"allow-unsigned"} else {"nintendo"},
             "inspection":report,
         })).collect::<Vec<_>>(),
@@ -474,7 +472,7 @@ fn build_in(
     let _ = fs::remove_file(&keys_path);
 
     Ok(BuildOutcome {
-        menu: menu_name(context.recipe.menu),
+        menu: context.recipe.menu.as_str(),
         nand: output_nand,
         keys: output_keys,
         nand_sha256: nand_sha,
@@ -492,7 +490,7 @@ impl BuildContext<'_> {
     fn inspect_packages(&mut self) -> Result<()> {
         let mut title_ids = BTreeSet::new();
         for (index, title) in self.recipe.titles.iter().enumerate() {
-            let expected = title.sha256.as_ref().as_str();
+            let expected = title.sha256.as_str();
             let observed = sha256_file(&title.path)?;
             ensure!(
                 observed == expected,
@@ -565,11 +563,11 @@ impl BuildContext<'_> {
             let warning = match name {
                 Some(name) => format!(
                     "WAD {id} declares {name} and will be installed on {}. Launching may require a region-free System Menu.",
-                    menu_name(self.recipe.menu)
+                    self.recipe.menu.as_str()
                 ),
                 None => format!(
                     "WAD {id} declares unknown region code {region}. Launch compatibility with {} is unknown.",
-                    menu_name(self.recipe.menu)
+                    self.recipe.menu.as_str()
                 ),
             };
             eprintln!("wiiform: warning: {warning}");
@@ -616,7 +614,7 @@ impl BuildContext<'_> {
             .with_context(|| format!("cannot install stock title {id:016x} version {version}"))?;
             installed.push(json!({"title_id":format!("{id:016x}"),"version":version}));
         }
-        self.operations.push(json!({"operation":"create-stock","menu":menu_name(self.recipe.menu),"titles":installed.len()}));
+        self.operations.push(json!({"operation":"create-stock","menu":self.recipe.menu.as_str(),"titles":installed.len()}));
         let overrides_json = settings_value(&setting_values);
         let reference_hash = self.input_hashes.get("reference").map(String::as_str);
         let candidate_hash = sha256_file(&image)?;
@@ -689,7 +687,7 @@ impl BuildContext<'_> {
         let final_inventory_size = fs::metadata(&image)?.len();
         let authenticity = report["boot_authenticity"].clone();
         let stock = json!({
-            "menu":menu_name(self.recipe.menu),
+            "menu":self.recipe.menu.as_str(),
             "boot_policy":self.options.boot_policy.name(),
             "boot_authenticity":authenticity,
             "settings":{"AREA":area,"GAME":menu_game(self.recipe.menu),"VIDEO":menu_video(self.recipe.menu),"sha256":report["settings_sha256"]},
@@ -820,13 +818,6 @@ impl BuildContext<'_> {
     }
 }
 
-fn menu_name(menu: Menu) -> &'static str {
-    match menu {
-        Menu::E43 => "4.3E",
-        Menu::U43 => "4.3U",
-        Menu::J43 => "4.3J",
-    }
-}
 fn menu_game(menu: Menu) -> &'static str {
     match menu {
         Menu::E43 => "EU",
@@ -871,13 +862,7 @@ fn settings_value(settings: &[native::SettingOverride]) -> Value {
 fn display_json(display: &Display) -> Value {
     let mut value = Map::new();
     if let Some(aspect) = display.aspect {
-        value.insert(
-            "aspect".into(),
-            json!(match aspect {
-                Aspect::FourThree => "4:3",
-                Aspect::SixteenNine => "16:9",
-            }),
-        );
+        value.insert("aspect".into(), json!(aspect));
     }
     if let Some(progressive) = display.progressive {
         value.insert("progressive".into(), json!(progressive));
@@ -893,30 +878,13 @@ fn setup_json(setup: &recipe::Setup) -> Value {
         value.insert("nickname".into(), json!(name));
     }
     if let Some(language) = setup.language {
-        value.insert("language".into(), json!(language_code(language)));
+        value.insert("language".into(), json!(language.as_str()));
     }
     Value::Object(value)
 }
-fn language_code(language: Language) -> &'static str {
-    match language {
-        Language::Ja => "ja",
-        Language::En => "en",
-        Language::De => "de",
-        Language::Fr => "fr",
-        Language::Es => "es",
-        Language::It => "it",
-        Language::Nl => "nl",
-    }
-}
 fn append_display_settings(values: &mut Vec<native::SettingOverride>, display: &Display) {
     if let Some(aspect) = display.aspect {
-        values.push(setting(
-            "aspect",
-            match aspect {
-                Aspect::FourThree => "4:3",
-                Aspect::SixteenNine => "16:9",
-            },
-        ));
+        values.push(setting("aspect", aspect.as_str()));
     }
     if let Some(progressive) = display.progressive {
         values.push(setting(
