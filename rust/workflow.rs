@@ -162,10 +162,10 @@ fn build_in(
         );
         input_hashes.insert(key, actual);
     }
-    if let Some(priiloader) = &recipe.priiloader {
-        if let Some(app) = &priiloader.app {
-            input_hashes.insert("priiloader-app".into(), sha256_file(app)?);
-        }
+    if let Some(priiloader) = &recipe.priiloader
+        && let Some(app) = &priiloader.app
+    {
+        input_hashes.insert("priiloader-app".into(), sha256_file(app)?);
     }
     let mut tool_hashes = BTreeMap::new();
     tool_hashes.insert("wiiform".into(), sha256_file(&std::env::current_exe()?)?);
@@ -486,10 +486,10 @@ fn build_in(
     });
     write_json(&context.work.join("bundle-manifest.json"), &manifest)?;
     publish_bundle(&nand_path, &keys_path, &context.options.output)?;
-    if let Some(stock_image) = &context.stock_image {
-        if stock_image != &nand_path {
-            let _ = fs::remove_file(stock_image);
-        }
+    if let Some(stock_image) = &context.stock_image
+        && stock_image != &nand_path
+    {
+        let _ = fs::remove_file(stock_image);
     }
     let _ = fs::remove_file(&nand_path);
     let _ = fs::remove_file(&keys_path);
@@ -799,10 +799,11 @@ impl BuildContext<'_> {
         );
         let previous = self.current.replace(image.clone());
         self.before = Some(inventory);
-        if let Some(previous) = previous {
-            if Some(&previous) != self.stock_image.as_ref() && previous != image {
-                fs::remove_file(previous).context("cannot remove superseded private stage")?;
-            }
+        if let Some(previous) = previous
+            && Some(&previous) != self.stock_image.as_ref()
+            && previous != image
+        {
+            fs::remove_file(previous).context("cannot remove superseded private stage")?;
         }
         Ok(())
     }
@@ -829,14 +830,14 @@ impl BuildContext<'_> {
                 &sha256_file(&title.path)?,
             )?;
         }
-        if let Some(priiloader) = &self.recipe.priiloader {
-            if let Some(app) = &priiloader.app {
-                stock_verify::verify_unchanged_digest(
-                    "Priiloader app",
-                    &self.input_hashes["priiloader-app"],
-                    &sha256_file(app)?,
-                )?;
-            }
+        if let Some(priiloader) = &self.recipe.priiloader
+            && let Some(app) = &priiloader.app
+        {
+            stock_verify::verify_unchanged_digest(
+                "Priiloader app",
+                &self.input_hashes["priiloader-app"],
+                &sha256_file(app)?,
+            )?;
         }
         let current_exe = std::env::current_exe()?;
         ensure!(
@@ -1247,7 +1248,7 @@ fn validate_inputs(options: &BuildOptions) -> Result<()> {
         options
             .reference
             .as_ref()
-            .map_or(true, |p| p.to_str().is_some()),
+            .is_none_or(|p| p.to_str().is_some()),
         "reference path must be UTF-8"
     );
     Ok(())

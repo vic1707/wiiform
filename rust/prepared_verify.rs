@@ -737,7 +737,7 @@ pub fn verify_priiloader_config(
     verify_retained(&old, &new, &[], &added)
 }
 
-fn hack_title<'a>(alias: &str, menu: &str) -> VerifyResult<String> {
+fn hack_title(alias: &str, menu: &str) -> VerifyResult<String> {
     const HACKS: &[(&str, &str)] = &[
         ("fix_480p", "480p graphics fix in system menu"),
         ("block_online_updates", "Block Online Updates"),

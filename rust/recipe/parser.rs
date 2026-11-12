@@ -63,12 +63,12 @@ pub fn parse_recipe(
 
     let menu = menu_override.unwrap_or(file.menu);
     if let Some(setup) = &file.setup {
-        if let Some(language) = setup.language {
-            if !menu.allows_language(language) {
-                return Err(error(format!(
-                    "setup language is not supported by menu {menu:?}"
-                )));
-            }
+        if let Some(language) = setup.language
+            && !menu.allows_language(language)
+        {
+            return Err(error(format!(
+                "setup language is not supported by menu {menu:?}"
+            )));
         }
         if let Some(name) = &setup.nickname {
             let chars = name.chars().count();
@@ -427,10 +427,11 @@ fn is_yaml_number(value: &str) -> bool {
         .or_else(|| cleaned.strip_prefix('-'))
         .unwrap_or(&cleaned);
     for prefix in ["0x", "0X", "0o", "0O", "0b", "0B"] {
-        if let Some(digits) = unsigned.strip_prefix(prefix) {
-            if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_hexdigit()) {
-                return true;
-            }
+        if let Some(digits) = unsigned.strip_prefix(prefix)
+            && !digits.is_empty()
+            && digits.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return true;
         }
     }
     if cleaned.parse::<i64>().is_ok()
