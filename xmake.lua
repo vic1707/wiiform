@@ -5,6 +5,7 @@ set_languages("cxx20")
 add_rules("mode.release", "mode.debug")
 
 includes("xmake/wiiqt-nand.lua")
+includes("xmake/priiloader.lua")
 add_requires("yaml-cpp 0.8.0", "xz 5.8.4")
 add_requires("wiiqt-nand 0.1.1")
 add_requires("wiiqt-nand~writable 0.1.1", {alias = "wiiqt-writable", configs = {writable = true}})
@@ -29,7 +30,8 @@ target("wiiform-core-write")
     add_files("src/smoke/writable_core.cpp", "src/common/*.cpp",
               "src/seed/Seed.cpp", "src/nand/Stock.cpp", "src/nand/Create.cpp", "src/nand/Nus.cpp",
               "src/nand/Install.cpp", "src/nand/Remove.cpp", "src/nand/WadPackage.cpp",
-              "src/nand/WorkingImage.cpp", "src/nand/Display.cpp")
+              "src/nand/WorkingImage.cpp", "src/nand/Display.cpp",
+              "src/nand/Priiloader.cpp", "src/core/write.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
     if is_plat("macosx") then
