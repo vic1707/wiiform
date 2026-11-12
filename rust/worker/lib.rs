@@ -18,6 +18,13 @@ pub struct Worker {
     executable: PathBuf,
 }
 
+#[derive(Default)]
+pub struct DisplaySource {
+    pub sysconf: Vec<u8>,
+    pub keys_data_sha256: String,
+    pub settings_sha256: String,
+}
+
 #[derive(Deserialize)]
 struct DisplaySourceReport {
     sysconf: String,
@@ -223,7 +230,7 @@ impl Worker {
         ])
     }
 
-    pub fn display_source(&self, nand: &Path) -> Result<crate::native::DisplaySource> {
+    pub fn display_source(&self, nand: &Path) -> Result<DisplaySource> {
         let output = self.checked([
             OsString::from("--read-display-source"),
             nand.as_os_str().to_owned(),
@@ -239,7 +246,7 @@ impl Worker {
         {
             bail!("worker returned invalid authenticated display source");
         }
-        Ok(crate::native::DisplaySource {
+        Ok(DisplaySource {
             sysconf,
             keys_data_sha256: report.keys_data_sha256,
             settings_sha256: report.settings_sha256,

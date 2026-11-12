@@ -4,7 +4,18 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::path::Path;
 
-pub use ffi::{BootPolicy, DisplaySource, SettingOverride};
+pub use ffi::{BootPolicy, SettingOverride};
+pub use wiiform_worker::DisplaySource;
+
+impl From<DisplaySource> for ffi::DisplaySource {
+    fn from(source: DisplaySource) -> Self {
+        Self {
+            sysconf: source.sysconf,
+            keys_data_sha256: source.keys_data_sha256,
+            settings_sha256: source.settings_sha256,
+        }
+    }
+}
 
 pub fn path_text(path: &Path) -> Result<&str> {
     path.to_str()
@@ -60,18 +71,26 @@ pub fn remove_title(image: &Path, title: u64) -> Result<()> {
 
 pub fn set_display(
     image: &Path,
-    source: &DisplaySource,
+    source: DisplaySource,
     settings: &[SettingOverride],
 ) -> Result<Value> {
-    report(ffi::set_display(path_text(image)?, source, settings)?)
+    report(ffi::set_display(
+        path_text(image)?,
+        &source.into(),
+        settings,
+    )?)
 }
 
 pub fn set_sysconf(
     image: &Path,
-    source: &DisplaySource,
+    source: DisplaySource,
     settings: &[SettingOverride],
 ) -> Result<Value> {
-    report(ffi::set_sysconf(path_text(image)?, source, settings)?)
+    report(ffi::set_sysconf(
+        path_text(image)?,
+        &source.into(),
+        settings,
+    )?)
 }
 
 pub fn install_priiloader(

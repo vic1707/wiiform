@@ -391,7 +391,7 @@ fn execute(cli: Cli) -> Result<i32> {
             };
             report(native::set_display(
                 &work_nand,
-                &source,
+                source,
                 &display_overrides(aspect, progressive, pal60),
             )?)?;
             Ok(0)
@@ -430,7 +430,7 @@ fn execute(cli: Cli) -> Result<i32> {
                     value: language,
                 });
             }
-            report(native::set_sysconf(&work_nand, &source, &overrides)?)?;
+            report(native::set_sysconf(&work_nand, source, &overrides)?)?;
             Ok(0)
         }
         Command::StockTitles { area } => {

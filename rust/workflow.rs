@@ -256,9 +256,9 @@ fn build_in(
             append_display_settings(&mut settings, display);
         }
         let report = if context.recipe.setup.is_some() {
-            native::set_sysconf(&image, &source, &settings)
+            native::set_sysconf(&image, source, &settings)
         } else {
-            native::set_display(&image, &source, &settings)
+            native::set_display(&image, source, &settings)
         }
         .context("cannot write requested SYSCONF settings")?;
         let (after, inventory_path) = context.inventory(&image, name.trim_end_matches(".bin"))?;

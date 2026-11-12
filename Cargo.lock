@@ -918,7 +918,6 @@ name = "wiiform"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "clap",
  "cxx",
  "cxx-build",
@@ -931,8 +930,19 @@ dependencies = [
  "sha2",
  "tempfile",
  "ureq",
+ "wiiform-worker",
  "yaml-rust2",
  "zip",
+]
+
+[[package]]
+name = "wiiform-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

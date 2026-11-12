@@ -2,7 +2,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use wiiform::worker::Worker;
+use wiiform_worker::Worker;
 
 #[derive(Debug, Parser)]
 #[command(

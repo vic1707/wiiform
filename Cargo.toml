@@ -1,3 +1,7 @@
+[workspace]
+members = ["rust/worker"]
+resolver = "3"
+
 [package]
 name = "wiiform"
 version = "0.1.0"
@@ -23,7 +27,6 @@ path = "rust/bin/wiiform.rs"
 
 [dependencies]
 anyhow = "1"
-base64 = "0.22"
 clap = { version = "4.6", features = ["derive"] }
 cxx = "=1.0.194"
 libc = "0.2"
@@ -36,10 +39,14 @@ sha2 = "0.10"
 tempfile = "3"
 ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 yaml-rust2 = "=0.13.0"
+wiiform-worker = { path = "rust/worker" }
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 cxx-build = "=1.0.194"
 
-[lints.clippy]
+[lints]
+workspace = true
+
+[workspace.lints.clippy]
 all = "deny"

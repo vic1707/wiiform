@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 mod ffi;
 pub mod native;
-pub mod worker;
+pub use wiiform_worker as worker;
 
 pub mod prepared_verify;
 pub mod priiloader_payload;
