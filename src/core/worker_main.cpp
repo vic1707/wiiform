@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <wiiform/read.hpp>
-#include <wiiform/core.hpp>
 
 #include <BuildOptions.hpp>
 #include <Preflight.hpp>
@@ -65,10 +64,6 @@ namespace {
     QCoreApplication app(argc, argv);
     auto args = app.arguments().mid(1);
     try {
-      if (args.size() == 2 && args[0] == "--smoke-inspect") {
-        std::cout << wiiform::core::inspect_synthetic_nand(as_string(args[1])) << '\n';
-        return 0;
-      }
       if (args.size() == 3 && args[0] == "--seed-export") {
         wiiform::read::export_seed(as_string(args[1]), as_string(args[2]));
         std::cout << "Wrote UNENCRYPTED output.\n";

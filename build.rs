@@ -12,7 +12,11 @@ fn main() {
         _ => panic!("Wiiform supports macOS and Linux"),
     };
     let library = native.join(format!("libwiiform-core-write.{extension}"));
-    assert!(library.is_file(), "missing native core at {}", library.display());
+    assert!(
+        library.is_file(),
+        "missing native core at {}",
+        library.display()
+    );
 
     cxx_build::bridge("src/ffi.rs")
         .file("src/ffi_adapter.cpp")
@@ -30,7 +34,8 @@ fn main() {
     for path in [
         "src/ffi.rs",
         "src/ffi_adapter.cpp",
-        "include/wiiform/core.hpp",
+        "include/wiiform/write.hpp",
+        "include/wiiform/types.hpp",
         "include/wiiform/ffi.hpp",
     ] {
         println!("cargo:rerun-if-changed={path}");

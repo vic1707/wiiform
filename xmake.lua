@@ -27,7 +27,7 @@ target("wiiform-core-write")
     add_packages("wiiqt-writable", "yaml-cpp", "xz")
     add_includedirs("include", {public = true})
     add_includedirs("inc")
-    add_files("src/smoke/writable_core.cpp", "src/common/*.cpp",
+    add_files("src/common/*.cpp",
               "src/seed/Seed.cpp", "src/nand/Stock.cpp", "src/nand/Create.cpp", "src/nand/Nus.cpp",
               "src/nand/Install.cpp", "src/nand/Remove.cpp", "src/nand/WadPackage.cpp",
               "src/nand/WorkingImage.cpp", "src/nand/Display.cpp",
@@ -46,7 +46,7 @@ target("wiiform-core-readonly")
     add_includedirs("include", {public = true})
     add_includedirs("inc")
     add_packages("yaml-cpp", "xz")
-    add_files("src/smoke/readonly_core.cpp", "src/core/ReadApi.cpp",
+    add_files("src/core/ReadApi.cpp",
               "src/common/BootDiagnostics.cpp", "src/common/BuildOptions.cpp",
               "src/common/Inspection.cpp", "src/common/Layout.cpp",
               "src/common/PriiloaderHacks.cpp", "src/common/PriiloaderSettings.cpp",

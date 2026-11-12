@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 mod ffi;
-
-pub use ffi::write_synthetic_nand;
+pub mod native;
+pub mod worker;

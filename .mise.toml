@@ -10,3 +10,7 @@ run = "xmake f -m release"
 [tasks.build-native]
 description = "Build the native Wiiform targets"
 run = "xmake build"
+
+[tasks.build]
+description = "Build the Wiiform commands"
+run = "./scripts/build.sh"
