@@ -1,0 +1,5 @@
+set_project("wiiform")
+set_version("0.1.0")
+set_license("GPL-2.0-only")
+set_languages("cxx20")
+add_rules("mode.release", "mode.debug")

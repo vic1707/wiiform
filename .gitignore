@@ -1,0 +1,10 @@
+/.xmake/
+/build/
+/target/
+/private/
+/dist/
+*.nand.bin
+*.seed.yaml
+nand.bin
+keys.bin
+.DS_Store
