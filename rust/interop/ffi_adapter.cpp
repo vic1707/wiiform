@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#include "wiiform/src/ffi.rs.h"
+#include "wiiform/rust/ffi.rs.h"
 #include <wiiform/write.hpp>
 
 namespace wiiform::ffi {

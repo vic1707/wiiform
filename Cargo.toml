@@ -4,6 +4,22 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-2.0-only"
 publish = false
+autobins = false
+
+[lib]
+path = "rust/lib.rs"
+
+[[bin]]
+name = "wii-seed"
+path = "rust/bin/wii-seed.rs"
+
+[[bin]]
+name = "wii-nand"
+path = "rust/bin/wii-nand.rs"
+
+[[bin]]
+name = "wiiform"
+path = "rust/bin/wiiform.rs"
 
 [dependencies]
 anyhow = "1"

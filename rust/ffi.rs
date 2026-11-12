@@ -22,7 +22,7 @@ pub mod bridge {
     }
 
     unsafe extern "C++" {
-        include!("wiiform/ffi.hpp");
+        include!("ffi.hpp");
 
         fn create(
             seed: &str,

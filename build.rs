@@ -18,9 +18,10 @@ fn main() {
         library.display()
     );
 
-    cxx_build::bridge("src/ffi.rs")
-        .file("src/ffi_adapter.cpp")
-        .include("include")
+    cxx_build::bridge("rust/ffi.rs")
+        .file("rust/interop/ffi_adapter.cpp")
+        .include("native/include")
+        .include("rust/interop")
         .std("c++20")
         .compile("wiiform-cxx-bridge");
 
@@ -33,11 +34,11 @@ fn main() {
     }
     println!("cargo:rerun-if-env-changed=WIIFORM_NATIVE_LIB_DIR");
     for path in [
-        "src/ffi.rs",
-        "src/ffi_adapter.cpp",
-        "include/wiiform/write.hpp",
-        "include/wiiform/types.hpp",
-        "include/wiiform/ffi.hpp",
+        "rust/ffi.rs",
+        "rust/interop/ffi_adapter.cpp",
+        "native/include/wiiform/write.hpp",
+        "native/include/wiiform/types.hpp",
+        "rust/interop/ffi.hpp",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }

@@ -25,13 +25,14 @@ target("wiiform-core-write")
     add_rules("qt.shared")
     add_frameworks("QtGui", "QtWidgets", "QtNetwork")
     add_packages("wiiqt-writable", "yaml-cpp", "xz")
-    add_includedirs("include", {public = true})
-    add_includedirs("inc")
-    add_files("src/common/*.cpp",
-              "src/seed/Seed.cpp", "src/nand/Stock.cpp", "src/nand/Create.cpp", "src/nand/Nus.cpp",
-              "src/nand/Install.cpp", "src/nand/Remove.cpp", "src/nand/WadPackage.cpp",
-              "src/nand/WorkingImage.cpp", "src/nand/Display.cpp",
-              "src/nand/Priiloader.cpp", "src/core/write.cpp", "src/core/BackupMii.cpp")
+    add_includedirs("native/include", {public = true})
+    add_headerfiles("native/include/(wiiform/*.hpp)")
+    add_includedirs("native/src")
+    add_files("native/src/common/*.cpp",
+              "native/src/seed/Seed.cpp", "native/src/nand/Stock.cpp", "native/src/nand/Create.cpp", "native/src/nand/Nus.cpp",
+              "native/src/nand/Install.cpp", "native/src/nand/Remove.cpp", "native/src/nand/WadPackage.cpp",
+              "native/src/nand/WorkingImage.cpp", "native/src/nand/Display.cpp",
+              "native/src/nand/Priiloader.cpp", "native/src/core/write.cpp", "native/src/core/BackupMii.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
     if is_plat("macosx") then
@@ -43,16 +44,17 @@ target("wiiform-core-readonly")
     add_rules("qt.static")
     add_frameworks("QtGui", "QtWidgets")
     add_packages("wiiqt-nand")
-    add_includedirs("include", {public = true})
-    add_includedirs("inc")
+    add_includedirs("native/include", {public = true})
+    add_headerfiles("native/include/(wiiform/*.hpp)")
+    add_includedirs("native/src")
     add_packages("yaml-cpp", "xz")
-    add_files("src/core/ReadApi.cpp",
-              "src/common/BootDiagnostics.cpp", "src/common/BuildOptions.cpp",
-              "src/common/Inspection.cpp", "src/common/Layout.cpp",
-              "src/common/PriiloaderHacks.cpp", "src/common/PriiloaderSettings.cpp",
-              "src/common/SysConf.cpp", "src/common/TitleValidation.cpp",
-              "src/nand/Stock.cpp", "src/nand/WadPackage.cpp",
-              "src/preflight/Inventory.cpp", "src/preflight/Preflight.cpp", "src/seed/Seed.cpp")
+    add_files("native/src/core/ReadApi.cpp",
+              "native/src/common/BootDiagnostics.cpp", "native/src/common/BuildOptions.cpp",
+              "native/src/common/Inspection.cpp", "native/src/common/Layout.cpp",
+              "native/src/common/PriiloaderHacks.cpp", "native/src/common/PriiloaderSettings.cpp",
+              "native/src/common/SysConf.cpp", "native/src/common/TitleValidation.cpp",
+              "native/src/nand/Stock.cpp", "native/src/nand/WadPackage.cpp",
+              "native/src/preflight/Inventory.cpp", "native/src/preflight/Preflight.cpp", "native/src/seed/Seed.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
 target_end()
@@ -62,10 +64,10 @@ target("wiiform-readonly")
     add_deps("wiiform-core-readonly")
     add_frameworks("QtGui", "QtWidgets")
     add_packages("wiiqt-nand")
-    add_includedirs("include")
-    add_includedirs("inc")
+    add_includedirs("native/include")
+    add_includedirs("native/src")
     add_packages("yaml-cpp", "xz")
-    add_files("src/core/worker_main.cpp")
+    add_files("native/src/core/worker_main.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/libexec")
     if is_plat("macosx") then
@@ -80,7 +82,7 @@ for _, name in ipairs({"install", "inventory", "preflight", "remove", "roundtrip
         add_deps("wiiform-core-write")
         add_frameworks("QtGui", "QtWidgets", "QtNetwork")
         add_packages("wiiqt-writable", "yaml-cpp", "xz")
-        add_includedirs("inc", "include")
+        add_includedirs("native/src", "native/include")
         add_files("tests/" .. name .. ".cpp")
         set_targetdir("build/bin")
         set_rundir("$(projectdir)")
