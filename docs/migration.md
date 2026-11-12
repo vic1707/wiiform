@@ -14,7 +14,7 @@ wii-seed ── shared Rust worker client                 WiiQt
                   └── private worker ── C++ read-only core
 ```
 
-The public C++ headers are under `native/include/wiiform`. Xmake builds
+The public C++ headers are under `src-wiiformlib/include/wiiform`. Xmake builds
 `wiiform-core-write` and `wiiform-core-readonly` independently of Cargo.
 The CXX adapter and its `rust/cxx.h` dependency live under `rust/interop`;
 they are compiled by Cargo for the Rust callers. C++ consumers select the

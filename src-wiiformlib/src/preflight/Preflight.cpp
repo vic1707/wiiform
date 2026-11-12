@@ -198,7 +198,7 @@ namespace preflight {
       } else add(label + ".allocation", "blocked", "Layout validation did not pass");
       image.authenticated = attempt(label + ".authentication", image.layout, [&] {
         image.nand = std::make_unique<NandBin>();
-        require(image.nand->SetPath(path) && image.nand->InitNand(), "Cannot read NAND filesystem");
+        require(image.nand->SetPath(path, NandBin::Access::ReadOnly) && image.nand->InitNand(), "Cannot read NAND filesystem");
         require(image.nand->Keys() == image.keys, "Filesystem decoder selected different keys");
         require(image.nand->CheckHmacMeta(image.active_metadata), "Selected filesystem metadata does not authenticate");
         bool valid = false;

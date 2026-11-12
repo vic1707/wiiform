@@ -324,7 +324,7 @@ namespace seed {
       require(QFileInfo(QFileInfo(source).absoluteDir().filePath("keys.bin")).size() == keys_size,
               "Expected a matching 1024-byte keys.bin beside the dump");
     NandBin nand;
-    require(nand.SetPath(source.fileName()) && nand.InitNand(), "Cannot read NAND filesystem");
+    require(nand.SetPath(source.fileName(), NandBin::Access::ReadOnly) && nand.InitNand(), "Cannot read NAND filesystem");
     const auto boots = source.read(boot_size);
     require(boots.size() == boot_size, "Cannot read boot blocks");
     const auto keys = nand.Keys();

@@ -79,7 +79,7 @@ esac
 cp -- "$repo/LICENSE" "$repo/THIRD_PARTY.md" "$repo/README.md" "$stage/"
 cp -R -- "$repo/schema" "$stage/schema"
 mkdir -p "$stage/include"
-cp -R -- "$repo/native/include/wiiform" "$stage/include/"
+cp -R -- "$repo/src-wiiformlib/include/wiiform" "$stage/include/"
 mkdir -p "$stage/examples"
 cp -- "$repo/examples/recipe.yaml" "$stage/examples/"
 if [[ -d $repo/docs ]]; then cp -R -- "$repo/docs" "$stage/docs"; fi

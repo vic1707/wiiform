@@ -130,7 +130,7 @@ namespace inventory {
     std::unique_ptr<NandBin> nand;
     const auto authenticated = attempt("authentication", bounded, [&] {
       nand = std::make_unique<NandBin>();
-      require(nand->SetPath(path) && nand->InitNand(), "Cannot read NAND filesystem");
+      require(nand->SetPath(path, NandBin::Access::ReadOnly) && nand->InitNand(), "Cannot read NAND filesystem");
       require(nand->Keys() == keys, "Filesystem decoder selected different keys");
       require(nand->CheckHmacMeta(layout.active_metadata), "Selected filesystem metadata does not authenticate");
     });

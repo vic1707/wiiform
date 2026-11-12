@@ -20,7 +20,7 @@ fn main() {
 
     cxx_build::bridge("rust/ffi.rs")
         .file("rust/interop/ffi_adapter.cpp")
-        .include("native/include")
+        .include("src-wiiformlib/include")
         .include("rust/interop")
         .std("c++20")
         .compile("wiiform-cxx-bridge");
@@ -36,8 +36,8 @@ fn main() {
     for path in [
         "rust/ffi.rs",
         "rust/interop/ffi_adapter.cpp",
-        "native/include/wiiform/write.hpp",
-        "native/include/wiiform/types.hpp",
+        "src-wiiformlib/include/wiiform/write.hpp",
+        "src-wiiformlib/include/wiiform/types.hpp",
         "rust/interop/ffi.hpp",
     ] {
         println!("cargo:rerun-if-changed={path}");

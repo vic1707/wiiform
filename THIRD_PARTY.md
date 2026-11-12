@@ -6,7 +6,7 @@ the applicable upstream license notices and corresponding license texts.
 
 | Component | Use | Source / pin | License handling |
 | --- | --- | --- | --- |
-| WiiQt NAND tools | NAND filesystem, title and console-format operations | [vic1707/wiiqt-tools](https://github.com/vic1707/wiiqt-tools), pinned commit `42536a2c3becf384687a64a3d9ddadad435dc22b` via xmake package `wiiqt-nand` 0.1.1 | GPL-2.0-only; preserve its `COPYING` and notices in source/release bundles |
+| WiiQt NAND tools | NAND filesystem, title and console-format operations | [vic1707/wiiqt-tools](https://github.com/vic1707/wiiqt-tools), pinned commit `42536a2c3becf384687a64a3d9ddadad435dc22b` via xmake package `wiiqt-nand` 0.1.2 | GPL-2.0-only; preserve its `COPYING` and notices in source/release bundles |
 | Priiloader | Wii-side installer project, source reference and submodule | [DacoTaco/priiloader](https://github.com/DacoTaco/priiloader), vendored submodule | Preserve the submodule's upstream license files/notices; Wiiform host integration remains separately identified as project code |
 | Qt | Native runtime and GUI/Widgets/Network libraries used by WiiQt | Host Qt SDK during build; exact detected SDK recorded by xmake package configuration | Follow the license notices shipped with the Qt distribution and include applicable notices in binary archives |
 | yaml-cpp | YAML support in the native dependency graph | Xmake package pinned to 0.8.0 | Include upstream license notice in source and binary attribution bundle |
