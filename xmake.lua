@@ -18,3 +18,40 @@ for name, package_name in pairs({["check-wiiqt-read"] = "wiiqt-nand", ["check-wi
         set_targetdir("build/bin")
     target_end()
 end
+
+target("wiiform-core-write")
+    add_rules("qt.shared")
+    add_frameworks("QtGui", "QtWidgets")
+    add_packages("wiiqt-writable")
+    add_includedirs("include", {public = true})
+    add_files("src/smoke/writable_core.cpp")
+    add_cxxflags("-Wall", "-Wextra", "-pedantic")
+    set_targetdir("build/lib")
+    if is_plat("macosx") then
+        add_shflags("-Wl,-headerpad_max_install_names")
+    end
+target_end()
+
+target("wiiform-core-readonly")
+    add_rules("qt.static")
+    add_frameworks("QtGui", "QtWidgets")
+    add_packages("wiiqt-nand")
+    add_includedirs("include", {public = true})
+    add_files("src/smoke/readonly_core.cpp")
+    add_cxxflags("-Wall", "-Wextra", "-pedantic")
+    set_targetdir("build/lib")
+target_end()
+
+target("wiiform-readonly")
+    add_rules("qt.console")
+    add_deps("wiiform-core-readonly")
+    add_frameworks("QtGui", "QtWidgets")
+    add_packages("wiiqt-nand")
+    add_includedirs("include")
+    add_files("src/smoke/readonly_main.cpp")
+    add_cxxflags("-Wall", "-Wextra", "-pedantic")
+    set_targetdir("build/libexec")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-headerpad_max_install_names")
+    end
+target_end()
