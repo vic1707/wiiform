@@ -31,7 +31,7 @@ target("wiiform-core-write")
               "src/seed/Seed.cpp", "src/nand/Stock.cpp", "src/nand/Create.cpp", "src/nand/Nus.cpp",
               "src/nand/Install.cpp", "src/nand/Remove.cpp", "src/nand/WadPackage.cpp",
               "src/nand/WorkingImage.cpp", "src/nand/Display.cpp",
-              "src/nand/Priiloader.cpp", "src/core/write.cpp")
+              "src/nand/Priiloader.cpp", "src/core/write.cpp", "src/core/BackupMii.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
     if is_plat("macosx") then
@@ -72,3 +72,17 @@ target("wiiform-readonly")
         add_ldflags("-Wl,-headerpad_max_install_names")
     end
 target_end()
+
+for _, name in ipairs({"install", "inventory", "preflight", "remove", "roundtrip", "sysconf", "wad", "backupmii_footer"}) do
+    target(name .. "-tests")
+        set_default(false)
+        add_rules("qt.console")
+        add_deps("wiiform-core-write")
+        add_frameworks("QtGui", "QtWidgets", "QtNetwork")
+        add_packages("wiiqt-writable", "yaml-cpp", "xz")
+        add_includedirs("inc", "include")
+        add_files("tests/" .. name .. ".cpp")
+        set_targetdir("build/bin")
+        set_rundir("$(projectdir)")
+    target_end()
+end
