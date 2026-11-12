@@ -5,6 +5,7 @@ set_languages("cxx20")
 add_rules("mode.release", "mode.debug")
 
 includes("xmake/wiiqt-nand.lua")
+add_requires("yaml-cpp 0.8.0", "xz 5.8.4")
 add_requires("wiiqt-nand 0.1.1")
 add_requires("wiiqt-nand~writable 0.1.1", {alias = "wiiqt-writable", configs = {writable = true}})
 
@@ -37,7 +38,15 @@ target("wiiform-core-readonly")
     add_frameworks("QtGui", "QtWidgets")
     add_packages("wiiqt-nand")
     add_includedirs("include", {public = true})
-    add_files("src/smoke/readonly_core.cpp")
+    add_includedirs("inc")
+    add_packages("yaml-cpp", "xz")
+    add_files("src/smoke/readonly_core.cpp", "src/core/ReadApi.cpp",
+              "src/common/BootDiagnostics.cpp", "src/common/BuildOptions.cpp",
+              "src/common/Inspection.cpp", "src/common/Layout.cpp",
+              "src/common/PriiloaderHacks.cpp", "src/common/PriiloaderSettings.cpp",
+              "src/common/SysConf.cpp", "src/common/TitleValidation.cpp",
+              "src/nand/Stock.cpp", "src/nand/WadPackage.cpp",
+              "src/preflight/Inventory.cpp", "src/preflight/Preflight.cpp", "src/seed/Seed.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
 target_end()
@@ -48,7 +57,9 @@ target("wiiform-readonly")
     add_frameworks("QtGui", "QtWidgets")
     add_packages("wiiqt-nand")
     add_includedirs("include")
-    add_files("src/smoke/readonly_main.cpp")
+    add_includedirs("inc")
+    add_packages("yaml-cpp", "xz")
+    add_files("src/core/worker_main.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/libexec")
     if is_plat("macosx") then
