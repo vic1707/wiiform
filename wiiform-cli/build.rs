@@ -4,7 +4,7 @@ use std::{env, path::PathBuf};
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let project = manifest.parent().unwrap();
-    let headers = project.join("wiiformlib/include");
+    let headers = project.join("wiiform-lib/include");
     let native = project.join("build/lib");
     let (extension, loader) = match env::var("CARGO_CFG_TARGET_OS").as_deref() {
         Ok("macos") => ("dylib", "@executable_path"),

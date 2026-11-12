@@ -10,20 +10,20 @@ add_requires("yaml-cpp 0.8.0", "xz 5.8.4")
 add_requires("wiiqt-nand 0.1.3")
 
 local private_headers = {
-    "wiiformlib/src/common",
-    "wiiformlib/src/nand",
-    "wiiformlib/src/preflight",
-    "wiiformlib/src/seed"
+    "wiiform-lib/src/common",
+    "wiiform-lib/src/nand",
+    "wiiform-lib/src/preflight",
+    "wiiform-lib/src/seed"
 }
 
 target("wiiform-core")
     add_rules("qt.shared")
     add_frameworks("QtGui", "QtWidgets", "QtNetwork")
     add_packages("wiiqt-nand", "yaml-cpp", "xz")
-    add_includedirs("wiiformlib/include", {public = true})
-    add_headerfiles("wiiformlib/include/(wiiform/*.hpp)")
+    add_includedirs("wiiform-lib/include", {public = true})
+    add_headerfiles("wiiform-lib/include/(wiiform/*.hpp)")
     add_includedirs(private_headers)
-    add_files("wiiformlib/src/**/*.cpp")
+    add_files("wiiform-lib/src/**/*.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
     if is_plat("macosx") then
