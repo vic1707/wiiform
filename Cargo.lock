@@ -924,6 +924,7 @@ dependencies = [
  "cxx-build",
  "libc",
  "nnn",
+ "regex",
  "schemars",
  "serde",
  "serde_json",

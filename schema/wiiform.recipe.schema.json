@@ -1,0 +1,409 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RecipeFile",
+  "description": "Recipe file shape, before resolving local paths and channel aliases.",
+  "type": "object",
+  "properties": {
+    "display": {
+      "description": "Optional display settings; at least one field is required when present.",
+      "$ref": "#/$defs/Display"
+    },
+    "menu": {
+      "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
+      "$ref": "#/$defs/Menu"
+    },
+    "priiloader": {
+      "description": "Optional Priiloader install/settings/hacks.",
+      "$ref": "#/$defs/PriiloaderFile"
+    },
+    "remove": {
+      "description": "Channels to remove; names expand using the effective menu's region.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RemovalInput"
+      }
+    },
+    "setup": {
+      "description": "Optional first-run setup values.",
+      "$ref": "#/$defs/Setup"
+    },
+    "titles": {
+      "description": "Optional WAD titles. Every title requires a path and SHA-256.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/TitleFile"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "menu",
+    "setup",
+    "display",
+    "priiloader"
+  ],
+  "$defs": {
+    "Aspect": {
+      "description": "Screen aspect ratio.",
+      "type": "string",
+      "enum": [
+        "4:3",
+        "16:9"
+      ]
+    },
+    "Autoboot": {
+      "description": "Priiloader autoboot selection.",
+      "type": "string",
+      "enum": [
+        "disabled",
+        "homebrew_channel",
+        "bootmii_ios",
+        "system_menu",
+        "file"
+      ]
+    },
+    "Display": {
+      "description": "Display configuration written to SYSCONF.",
+      "type": "object",
+      "properties": {
+        "aspect": {
+          "description": "Set 4:3 or widescreen output.",
+          "$ref": "#/$defs/Aspect"
+        },
+        "pal60": {
+          "description": "Enable PAL 60 Hz mode.",
+          "type": "boolean"
+        },
+        "progressive": {
+          "description": "Enable progressive 480p output when supported by the display chain.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "aspect",
+        "progressive",
+        "pal60"
+      ]
+    },
+    "HackSettings": {
+      "description": "Priiloader hacks supported by the pinned definitions.",
+      "type": "object",
+      "properties": {
+        "auto_press_a": {
+          "description": "Auto-press A at the health screen.",
+          "type": "boolean"
+        },
+        "block_disc_autoboot": {
+          "description": "Block disc autoboot.",
+          "type": "boolean"
+        },
+        "block_disc_updates": {
+          "description": "Block disc updates.",
+          "type": "boolean"
+        },
+        "block_online_updates": {
+          "description": "Block online updates.",
+          "type": "boolean"
+        },
+        "fix_480p": {
+          "description": "Fix 480p graphics in the System Menu.",
+          "type": "boolean"
+        },
+        "move_disc_channel": {
+          "description": "Move the Disc Channel.",
+          "type": "boolean"
+        },
+        "no_background_music": {
+          "description": "Disable System Menu background music.",
+          "type": "boolean"
+        },
+        "region_free_everything": {
+          "description": "Enable Region Free EVERYTHING (Japanese menu uses the JP hack name).",
+          "type": "boolean"
+        },
+        "remove_deflicker": {
+          "description": "Remove deflicker.",
+          "type": "boolean"
+        },
+        "remove_nocopy_save_protection": {
+          "description": "Remove NoCopy save protection.",
+          "type": "boolean"
+        },
+        "replace_health_screen": {
+          "description": "Replace the health screen with Backmenu.",
+          "type": "boolean"
+        },
+        "wiimmfi": {
+          "description": "Apply the Wiimmfi patch.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fix_480p",
+        "block_online_updates",
+        "block_disc_updates",
+        "block_disc_autoboot",
+        "auto_press_a",
+        "remove_deflicker",
+        "move_disc_channel",
+        "remove_nocopy_save_protection",
+        "replace_health_screen",
+        "no_background_music",
+        "wiimmfi",
+        "region_free_everything"
+      ]
+    },
+    "Language": {
+      "description": "Wii language selected in the first-run settings.",
+      "type": "string",
+      "enum": [
+        "ja",
+        "en",
+        "de",
+        "fr",
+        "es",
+        "it",
+        "nl"
+      ]
+    },
+    "Menu": {
+      "description": "Stock System Menu version used by the generated image.",
+      "oneOf": [
+        {
+          "description": "European 4.3 menu.",
+          "type": "string",
+          "const": "4.3E"
+        },
+        {
+          "description": "North American 4.3 menu.",
+          "type": "string",
+          "const": "4.3U"
+        },
+        {
+          "description": "Japanese 4.3 menu.",
+          "type": "string",
+          "const": "4.3J"
+        }
+      ]
+    },
+    "MountPoint": {
+      "description": "Preferred storage device for Priiloader file operations.",
+      "type": "string",
+      "enum": [
+        "auto",
+        "sd",
+        "usb"
+      ]
+    },
+    "PriiloaderFile": {
+      "description": "Priiloader installation and configuration.",
+      "type": "object",
+      "properties": {
+        "app": {
+          "description": "Optional prebuilt Priiloader installer app, relative to the recipe file.",
+          "type": "string"
+        },
+        "hacks": {
+          "description": "Optional exact-name hack toggles.",
+          "$ref": "#/$defs/HackSettings"
+        },
+        "settings": {
+          "description": "Optional settings overrides.",
+          "$ref": "#/$defs/PriiloaderSettings",
+          "default": {
+            "autoboot": null,
+            "black_background": null,
+            "dump_gecko_text": null,
+            "ignore_shutdown_mode": null,
+            "lid_slot_on_error": null,
+            "preferred_mount_point": null,
+            "return_to": null,
+            "show_rc_updates": null,
+            "shutdown_to": null,
+            "stop_disc": null
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "app",
+        "hacks"
+      ]
+    },
+    "PriiloaderSettings": {
+      "description": "Priiloader settings written to its settings file.",
+      "type": "object",
+      "properties": {
+        "autoboot": {
+          "$ref": "#/$defs/Autoboot"
+        },
+        "black_background": {
+          "type": "boolean"
+        },
+        "dump_gecko_text": {
+          "type": "boolean"
+        },
+        "ignore_shutdown_mode": {
+          "type": "boolean"
+        },
+        "lid_slot_on_error": {
+          "type": "boolean"
+        },
+        "preferred_mount_point": {
+          "$ref": "#/$defs/MountPoint"
+        },
+        "return_to": {
+          "$ref": "#/$defs/ReturnTo"
+        },
+        "show_rc_updates": {
+          "type": "boolean"
+        },
+        "shutdown_to": {
+          "$ref": "#/$defs/ShutdownTo"
+        },
+        "stop_disc": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "autoboot",
+        "return_to",
+        "shutdown_to",
+        "preferred_mount_point",
+        "stop_disc",
+        "lid_slot_on_error",
+        "ignore_shutdown_mode",
+        "black_background",
+        "dump_gecko_text",
+        "show_rc_updates"
+      ]
+    },
+    "RemovalInput": {
+      "description": "One removal entry as written in a recipe: a known name or quoted title ID.",
+      "anyOf": [
+        {
+          "description": "Supported channel name.",
+          "$ref": "#/$defs/RemovalName"
+        },
+        {
+          "description": "A quoted title ID from the removal allowlist.",
+          "type": "string",
+          "maxLength": 16,
+          "minLength": 16,
+          "pattern": "^[0-9a-fA-F]{16}$"
+        }
+      ]
+    },
+    "RemovalName": {
+      "description": "Channel shortcuts supported by `remove`.",
+      "oneOf": [
+        {
+          "description": "Expand to the forecast channel title for the selected menu and its common stub.",
+          "type": "string",
+          "const": "forecast-channel"
+        },
+        {
+          "description": "Expand to the news channel title for the selected menu and its common stub.",
+          "type": "string",
+          "const": "news-channel"
+        },
+        {
+          "description": "Wii Shop Channel (HABA).",
+          "type": "string",
+          "const": "wii-shop-channel"
+        },
+        {
+          "description": "Photo Channel versions HAAA and HAYA.",
+          "type": "string",
+          "const": "photo-channel"
+        }
+      ]
+    },
+    "ReturnTo": {
+      "description": "Priiloader return destination.",
+      "type": "string",
+      "enum": [
+        "system_menu",
+        "priiloader",
+        "autoboot",
+        "file"
+      ]
+    },
+    "Setup": {
+      "description": "First-run setup fields written to SYSCONF.",
+      "type": "object",
+      "properties": {
+        "language": {
+          "description": "Optional setup language, constrained by the effective menu region.",
+          "$ref": "#/$defs/Language"
+        },
+        "nickname": {
+          "description": "Optional console nickname (1–10 printable BMP characters).",
+          "type": "string",
+          "maxLength": 10,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "nickname",
+        "language"
+      ]
+    },
+    "ShutdownTo": {
+      "description": "Priiloader shutdown destination.",
+      "type": "string",
+      "enum": [
+        "none",
+        "priiloader",
+        "autoboot"
+      ]
+    },
+    "SignaturePolicy": {
+      "description": "Allowed channels and local unsigned WAD policy.",
+      "oneOf": [
+        {
+          "description": "Require Nintendo signatures.",
+          "type": "string",
+          "const": "nintendo"
+        },
+        {
+          "description": "Permit an unsigned community channel WAD after content validation.",
+          "type": "string",
+          "const": "allow-unsigned"
+        }
+      ]
+    },
+    "TitleFile": {
+      "description": "A WAD installation selected by a recipe.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Local path, resolved relative to the recipe file.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Required SHA-256 of the exact WAD file.",
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "signature_policy": {
+          "description": "Signature policy; defaults to `nintendo`.",
+          "$ref": "#/$defs/SignaturePolicy",
+          "default": "nintendo"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ]
+    }
+  }
+}

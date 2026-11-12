@@ -2,3 +2,5 @@
 mod ffi;
 pub mod native;
 pub mod worker;
+
+pub mod recipe;
