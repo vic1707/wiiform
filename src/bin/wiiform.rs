@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: GPL-2.0-only
+use anyhow::{Context, Result, bail};
+use clap::{Parser, ValueEnum};
+use std::{path::PathBuf, process::ExitCode};
+use wiiform::{
+    recipe::Menu,
+    workflow::{self, BootPolicy, BuildOptions},
+};
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum BootPolicyArg {
+    Stock,
+    #[value(name = "preserve-source")]
+    PreserveSource,
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "wiiform",
+    version,
+    about = "Build and verify a Wii NAND restore bundle from a seed and recipe"
+)]
+struct Cli {
+    /// Decrypted console seed YAML.
+    #[arg(long)]
+    seed: PathBuf,
+
+    /// Declarative Wiiform recipe YAML.
+    #[arg(long)]
+    recipe: PathBuf,
+
+    /// New output directory for nand.bin and its matching keys.bin.
+    #[arg(long, value_name = "DIR")]
+    output: PathBuf,
+
+    /// NUS and Priiloader cache directory.
+    #[arg(long, default_value = "build/nus-cache")]
+    cache: PathBuf,
+
+    /// Use only local cache entries.
+    #[arg(long)]
+    offline: bool,
+
+    /// Optional same-console NAND for authenticated settings import and preflight.
+    #[arg(long, value_name = "NAND")]
+    reference: Option<PathBuf>,
+
+    /// Boot-area validation policy.
+    #[arg(long, value_enum, default_value = "stock")]
+    boot_policy: BootPolicyArg,
+
+    /// Override the menu selected in the recipe.
+    #[arg(long, value_parser = ["4.3E", "4.3U", "4.3J"])]
+    menu: Option<String>,
+}
+
+fn menu(value: Option<&str>) -> Result<Option<Menu>> {
+    match value {
+        None => Ok(None),
+        Some("4.3E") => Ok(Some(Menu::E43)),
+        Some("4.3U") => Ok(Some(Menu::U43)),
+        Some("4.3J") => Ok(Some(Menu::J43)),
+        Some(_) => bail!("menu must be 4.3E, 4.3U, or 4.3J"),
+    }
+}
+
+fn run(cli: Cli) -> Result<()> {
+    let boot_policy = match cli.boot_policy {
+        BootPolicyArg::Stock => BootPolicy::Stock,
+        BootPolicyArg::PreserveSource => BootPolicy::PreserveSource,
+    };
+    let options = BuildOptions {
+        seed: cli.seed,
+        recipe: cli.recipe,
+        output: cli.output,
+        cache: cli.cache,
+        reference: cli.reference,
+        offline: cli.offline,
+        boot_policy,
+        menu: menu(cli.menu.as_deref())?,
+    };
+    let built = workflow::build(&options).context("Wiiform build failed")?;
+    println!(
+        "Built {} NAND bundle at {} (sha256 {}). Evidence: {}",
+        built.menu,
+        built.nand.parent().unwrap_or(&built.nand).display(),
+        built.nand_sha256,
+        built.evidence_dir.display(),
+    );
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    #[cfg(unix)]
+    unsafe {
+        libc::umask(0o077);
+    }
+    match run(Cli::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("wiiform: {error:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
