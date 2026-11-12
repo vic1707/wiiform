@@ -1,0 +1,16 @@
+[package]
+name = "wiiform-interop-smoke"
+version = "0.0.1"
+edition = "2024"
+publish = false
+build = "build.rs"
+
+[dependencies]
+cxx = "=1.0.194"
+
+[build-dependencies]
+cxx-build = "=1.0.194"
+
+[[bin]]
+name = "wiiform-interop-smoke"
+path = "src/main.rs"
