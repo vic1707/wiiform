@@ -37,6 +37,13 @@ fn error(message: impl Into<String>) -> RecipeError {
 }
 
 pub fn load_recipe(path: &Path, menu_override: Option<Menu>) -> Result<Recipe, RecipeError> {
+    load_recipe_bytes(path, menu_override).map(|(recipe, _)| recipe)
+}
+
+pub(crate) fn load_recipe_bytes(
+    path: &Path,
+    menu_override: Option<Menu>,
+) -> Result<(Recipe, Vec<u8>), RecipeError> {
     let recipe_path = fs::canonicalize(path).map_err(|e| {
         error(format!(
             "cannot resolve recipe path {}: {e}",
@@ -44,7 +51,8 @@ pub fn load_recipe(path: &Path, menu_override: Option<Menu>) -> Result<Recipe, R
         ))
     })?;
     let bytes = read_bounded(&recipe_path)?;
-    parse_recipe(&bytes, &recipe_path, menu_override)
+    let recipe = parse_recipe(&bytes, &recipe_path, menu_override)?;
+    Ok((recipe, bytes))
 }
 
 pub fn parse_recipe(

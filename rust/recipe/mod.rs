@@ -9,6 +9,7 @@ mod parser;
 mod schema;
 mod types;
 
+pub(crate) use parser::load_recipe_bytes;
 pub use parser::{MAX_BYTES, MAX_DEPTH, MAX_EVENTS, RecipeError, load_recipe, parse_recipe};
 pub use schema::json_schema;
 pub use types::{

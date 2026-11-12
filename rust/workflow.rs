@@ -100,13 +100,9 @@ pub fn build(options: &BuildOptions) -> Result<BuildOutcome> {
         "cache cannot be inside the new output bundle"
     );
 
-    let recipe_hash = sha256_file(&options.recipe)?;
-    let recipe = recipe::load_recipe(&options.recipe, options.menu)
+    let (recipe, bytes) = recipe::load_recipe_bytes(&options.recipe, options.menu)
         .context("cannot parse the Wiiform recipe")?;
-    ensure!(
-        sha256_file(&options.recipe)? == recipe_hash,
-        "recipe changed while parsing"
-    );
+    let recipe_hash = sha256_bytes(&bytes);
     if (recipe.display.is_some() || recipe.setup.is_some()) && options.reference.is_none() {
         bail!("a same-console --reference is required for recipe display or setup settings");
     }
@@ -123,7 +119,7 @@ pub fn build(options: &BuildOptions) -> Result<BuildOutcome> {
         .tempdir_in(parent)
         .context("cannot create private build evidence directory")?;
     match build_in(&options, recipe, recipe_hash, worker, work_dir.path()) {
-        Ok((outcome, _manifest)) => {
+        Ok(outcome) => {
             let evidence_dir = work_dir.keep();
             Ok(BuildOutcome {
                 evidence_dir,
@@ -146,7 +142,7 @@ fn build_in(
     recipe_hash: String,
     worker: Worker,
     work: &Path,
-) -> Result<(BuildOutcome, Value)> {
+) -> Result<BuildOutcome> {
     let mut input_hashes = BTreeMap::new();
     input_hashes.insert("recipe".to_owned(), recipe_hash.clone());
     input_hashes.insert("seed".to_owned(), sha256_file(&options.seed)?);
@@ -194,10 +190,7 @@ fn build_in(
     let stock = context.build_stock()?;
     context.report_package_regions();
     let mut inventory_refs = Map::new();
-    inventory_refs.insert(
-        "stock".into(),
-        context.stages.last().unwrap()["inventory"].clone(),
-    );
+    inventory_refs.insert("stock".into(), context.latest_inventory_ref()?);
 
     if !context.recipe.remove.is_empty() {
         let image = context.copy_current("01-channels-removed.bin")?;
@@ -238,7 +231,11 @@ fn build_in(
         };
         let image = context.copy_current(name)?;
         let before = context.before()?.clone();
-        let source_path = context.options.reference.as_deref().unwrap();
+        let source_path = context
+            .options
+            .reference
+            .as_deref()
+            .context("SYSCONF settings require a same-console reference")?;
         let source = context
             .worker
             .display_source(source_path)
@@ -264,10 +261,7 @@ fn build_in(
             native::set_display(&image, &source, &settings)
         }
         .context("cannot write requested SYSCONF settings")?;
-        let (after, inventory_path) = context.inventory(
-            &image,
-            Path::new(name).file_stem().unwrap().to_str().unwrap(),
-        )?;
+        let (after, inventory_path) = context.inventory(&image, name.trim_end_matches(".bin"))?;
         prepared_verify::verify_inventory_delta(
             &before,
             &after,
@@ -309,10 +303,7 @@ fn build_in(
         )?;
         context.record(image, "03-wads.bin", after, inventory_path)?;
     }
-    inventory_refs.insert(
-        "prepared".into(),
-        context.stages.last().unwrap()["inventory"].clone(),
-    );
+    inventory_refs.insert("prepared".into(), context.latest_inventory_ref()?);
 
     if let Some(priiloader_recipe) = context.recipe.priiloader.clone() {
         let wants_hacks = has_hacks(priiloader_recipe.hacks.as_ref());
@@ -399,10 +390,7 @@ fn build_in(
             }
             context.record(image, "05-priiloader-settings.bin", after, inventory_path)?;
         }
-        inventory_refs.insert(
-            "priiloader".into(),
-            context.stages.last().unwrap()["inventory"].clone(),
-        );
+        inventory_refs.insert("priiloader".into(), context.latest_inventory_ref()?);
     }
 
     context.check_inputs_unchanged(&recipe_hash)?;
@@ -494,20 +482,22 @@ fn build_in(
     let _ = fs::remove_file(&nand_path);
     let _ = fs::remove_file(&keys_path);
 
-    Ok((
-        BuildOutcome {
-            menu: menu_name(context.recipe.menu),
-            nand: output_nand,
-            keys: output_keys,
-            nand_sha256: nand_sha,
-            keys_sha256: keys_sha,
-            evidence_dir: context.work.clone(),
-        },
-        manifest,
-    ))
+    Ok(BuildOutcome {
+        menu: menu_name(context.recipe.menu),
+        nand: output_nand,
+        keys: output_keys,
+        nand_sha256: nand_sha,
+        keys_sha256: keys_sha,
+        evidence_dir: context.work.clone(),
+    })
 }
 
 impl BuildContext<'_> {
+    fn latest_inventory_ref(&self) -> Result<Value> {
+        let stage = self.stages.last().context("no verified build stage")?;
+        Ok(stage["inventory"].clone())
+    }
+
     fn inspect_packages(&mut self) -> Result<()> {
         let mut title_ids = BTreeSet::new();
         for (index, title) in self.recipe.titles.iter().enumerate() {
