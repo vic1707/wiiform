@@ -8,10 +8,8 @@ project-owned value types.
 
 The command suite contains `wiiform` for recipe builds, `wii-nand` for focused
 NAND operations and inspection, and `wii-seed` for seed export and unpacking.
-The read-only worker is a private companion executable shipped beside the
-commands under `libexec/`; it authenticates source images, inventories,
-preflight reports and WADs. It is an implementation detail, not a separately
-installed user command.
+The private companion under `libexec/` handles source image authentication,
+inventory, preflight, and WAD inspection.
 
 ## Build from a checkout
 
@@ -97,8 +95,8 @@ mkdir -p dist
 
 Use `linux-x86_64` on Ubuntu 24.04 x86_64. The archive contains the user
 commands, their private worker and runtime libraries, and a checksum file
-beside the archive. Extract the archive and keep `bin/`, `lib/`, and
-`libexec/` together. See the [migration guide](docs/migration.md) for the
+beside the archive. Public C++ headers are under `include/`. Extract the
+archive and keep `bin/`, `lib/`, and `libexec/` together. See the [migration guide](docs/migration.md) for the
 old recipe mapping and the mise configuration for future GitHub releases.
 
 ## License and attribution
