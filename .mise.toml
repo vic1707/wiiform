@@ -1,0 +1,12 @@
+[tools]
+'github:xmake-io/xmake' = { version = "3.1.2", bin = "xmake" }
+cmake = "3.31.8"
+rust = "1.99.0"
+
+[tasks.configure]
+description = "Configure the native Wiiform build"
+run = "xmake f -m release"
+
+[tasks.build-native]
+description = "Build the native Wiiform targets"
+run = "xmake build"
