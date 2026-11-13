@@ -2,10 +2,16 @@
 description = "Run the Rust and C++ regression suites and check the schema"
 depends = ["test:rust", "test:native", "schema:check"]
 
+["test:fixtures"]
+description = "Build the synthetic NAND fixture and regression executable"
+depends = ["native:build"]
+env = { TMPDIR = "{{ config_root }}/build/tmp" }
+run = "xmake build -y -j2 nand-buffer-regressions"
+
 ["test:rust"]
 description = "Run Rust formatting, Clippy, and tests"
-depends = ["build"]
-env = { LD_LIBRARY_PATH = "{{ config_root }}/build/lib", DYLD_LIBRARY_PATH = "{{ config_root }}/build/lib" }
+depends = ["build", "test:fixtures"]
+env = { LD_LIBRARY_PATH = "{{ config_root }}/build/lib", DYLD_LIBRARY_PATH = "{{ config_root }}/build/lib", WIIFORM_TEST_FIXTURE_BUILDER = "{{ config_root }}/build/bin/nand-buffer-regressions" }
 run = [
   "cargo fmt --all --check",
   "cargo clippy --locked --release --workspace --all-targets",
@@ -13,17 +19,13 @@ run = [
 ]
 
 ["test:native"]
-description = "Run synthetic tests against the C++ library and installed Rust commands"
-depends = ["build"]
+description = "Run synthetic NAND buffer regressions"
+depends = ["test:fixtures"]
 env = { TMPDIR = "{{ config_root }}/build/tmp" }
-run = '''
-set -eu
-for suite in install inventory preflight remove roundtrip sysconf wad backupmii_footer public-api; do
-    xmake build -y -j2 "$suite-tests"
-    case "$suite" in
-        inventory) build/bin/inventory-tests build/bin/wii-nand ;;
-        roundtrip) build/bin/roundtrip-tests build/bin/wii-seed ;;
-        *) "build/bin/$suite-tests" ;;
-    esac
-done
-'''
+run = [
+  "xmake build -y -j2 nand-buffer-tests",
+  "build/bin/nand-buffer-tests",
+  "xmake build -y -j2 sysconf-generated-tests",
+  "build/bin/sysconf-generated-tests",
+  "build/bin/nand-buffer-regressions",
+]

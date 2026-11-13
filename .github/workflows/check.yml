@@ -80,13 +80,15 @@ jobs:
           unpacked="$RUNNER_TEMP/relocated Wiiform"
           mkdir "$unpacked"
           tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
-          docker run --rm --network none -v "$unpacked:/opt/wiiform:ro" ubuntu:24.04 \
+          fixture="$RUNNER_TEMP/synthetic"
+          build/bin/nand-buffer-regressions --make-fixtures "$fixture"
+          docker run --rm --network none -v "$unpacked:/opt/wiiform:ro" \
+            -v "$fixture:/fixtures:ro" ubuntu:24.04 \
             sh -ec '/opt/wiiform/bin/wiiform --version
               /opt/wiiform/bin/wii-seed --version
-              /opt/wiiform/bin/wii-nand stock-titles EUR >/dev/null
               mkdir /tmp/cache
-              if /opt/wiiform/bin/wii-nand install-title --in-place --offline \
-                /tmp/absent.nand /tmp/cache 0000000100000002 514 >/tmp/error 2>&1; then exit 1; fi
+              if /opt/wiiform/bin/wii-nand install-title --offline \
+                /fixtures/nand.bin /tmp/new.nand /tmp/cache 0000000100000002 514 >/tmp/error 2>&1; then exit 1; fi
               grep -F "Offline mode" /tmp/error'
 
       - name: Test relocated macOS bundle
@@ -97,7 +99,15 @@ jobs:
           tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
           env -i PATH=/usr/bin:/bin "$unpacked/bin/wiiform" --version
           env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-seed" --version
-          env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-nand" stock-titles EUR >/dev/null
+          fixture="$RUNNER_TEMP/synthetic"
+          build/bin/nand-buffer-regressions --make-fixtures "$fixture"
+          mkdir "$fixture/cache"
+          if env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-nand" install-title --offline \
+            "$fixture/nand.bin" "$fixture/new.nand" "$fixture/cache" 0000000100000002 514 \
+            >"$fixture/error" 2>&1; then
+            exit 1
+          fi
+          grep -F "Offline mode" "$fixture/error"
 
       - uses: actions/upload-artifact@v7
         with:

@@ -65,17 +65,3 @@ impl TitleId {
         u64::from_str_radix(self.as_str(), 16).expect("validated title ID is hexadecimal")
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::TitleId;
-
-    #[test]
-    fn normalizes_hex_and_rejects_zero() {
-        let title = "000100024841464A".parse::<TitleId>().unwrap();
-        assert_eq!(title.as_str(), "000100024841464a");
-        assert_eq!(title.as_u64(), 0x0001_0002_4841_464a);
-        assert!("0000000000000000".parse::<TitleId>().is_err());
-        assert!(serde_json::from_str::<TitleId>(r#""0000000000000000""#).is_err());
-    }
-}

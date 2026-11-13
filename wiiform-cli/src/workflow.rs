@@ -316,3 +316,89 @@ fn rename_noreplace(source: &Path, target: &Path) -> std::io::Result<()> {
         Err(std::io::Error::last_os_error())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use std::{
+        io::{BufRead, BufReader},
+        process::Command,
+    };
+
+    fn hash(path: &Path) -> Result<Vec<u8>> {
+        let mut digest = Sha256::new();
+        let mut reader = BufReader::new(File::open(path)?);
+        loop {
+            let data = reader.fill_buf()?;
+            if data.is_empty() {
+                break;
+            }
+            digest.update(data);
+            let length = data.len();
+            reader.consume(length);
+        }
+        Ok(digest.finalize().to_vec())
+    }
+
+    #[test]
+    fn near_full_recipe_leaves_inputs_and_publishes_nothing() -> Result<()> {
+        let Some(builder) = std::env::var_os("WIIFORM_TEST_FIXTURE_BUILDER") else {
+            eprintln!("run mise run test:rust to exercise the native NAND fixture");
+            return Ok(());
+        };
+        let work = tempfile::tempdir()?;
+        let fixture = work.path().join("fixture");
+        ensure!(
+            Command::new(builder)
+                .arg("--make-fixtures")
+                .arg(&fixture)
+                .status()?
+                .success(),
+            "could not make synthetic NAND fixture"
+        );
+        let image = fixture.join("nand.bin");
+        let wad = fixture.join("fixture.wad");
+        let seed = fixture.join("seed.yaml");
+        let recipe = fixture.join("recipe.yaml");
+        let output = work.path().join("output");
+        fs::write(&seed, "synthetic stock input")?;
+        let expected = fs::read_to_string(fixture.join("fixture.wad.sha256"))?;
+        fs::write(
+            &recipe,
+            format!(
+                "menu: 4.3E\ntitles:\n  - path: fixture.wad\n    sha256: \"{}\"\n    signature_policy: allow-unsigned\n",
+                expected.trim()
+            ),
+        )?;
+        let image_before = hash(&image)?;
+        let wad_before = hash(&wad)?;
+        let options = BuildOptions {
+            seed: seed.clone(),
+            recipe,
+            output: output.clone(),
+            cache: fixture,
+            offline: true,
+            boot_policy: BootPolicy::Stock,
+            menu: None,
+        };
+        let failure = build_with(&options, |_, _, nand| {
+            File::open(&image)?.read_exact(nand)?;
+            Ok(StockIdentity {
+                boot_area: [0; 32],
+                original_footer: [0; 32],
+            })
+        })
+        .expect_err("the WAD cannot fit the synthetic NAND");
+        assert!(
+            format!("{failure:#}").contains("Insufficient NAND space"),
+            "{failure:#}"
+        );
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(work.path())?.count(), 1);
+        assert_eq!(fs::read(&seed)?, b"synthetic stock input");
+        assert_eq!(hash(&image)?, image_before);
+        assert_eq!(hash(&wad)?, wad_before);
+        Ok(())
+    }
+}

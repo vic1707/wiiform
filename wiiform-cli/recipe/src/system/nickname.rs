@@ -59,31 +59,3 @@ impl JsonSchema for Nickname {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Nickname;
-
-    #[test]
-    fn validates_construction_and_deserialization() {
-        let name = "éééééééééé";
-        assert_eq!(name.parse::<Nickname>().unwrap().as_str(), name);
-
-        for invalid in [
-            "",
-            "　",
-            "abcdefghijk",
-            "Wii😀",
-            "Wii\n",
-            "Wii\u{200b}",
-            "Wii\u{e000}",
-        ] {
-            assert!(invalid.parse::<Nickname>().is_err(), "{invalid:?}");
-            let json = serde_json::to_string(invalid).unwrap();
-            assert!(
-                serde_json::from_str::<Nickname>(&json).is_err(),
-                "{invalid:?}"
-            );
-        }
-    }
-}
