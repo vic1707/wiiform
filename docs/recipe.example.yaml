@@ -16,7 +16,7 @@ remove:
 setup:
   nickname: "Speed Wii" # Defaults to "Wii".
   language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.
-  country: "110" # Quoted Wii code. Defaults to 110 (E), 49 (U), or 1 (J).
+  country: GB # Two-letter country code. Defaults to GB (E), US (U), or JP (J). Quote "NO".
   sensor_bar: above # above or below; defaults to above.
 
 display:

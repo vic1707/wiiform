@@ -18,7 +18,7 @@ pub struct Setup {
     )]
     #[schemars(with = "crate::schema::NonNull<Language>")]
     pub language: Option<Language>,
-    /// Country code used for country-dependent console settings.
+    /// Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote "NO" in YAML.
     #[serde(
         default,
         deserialize_with = "crate::schema::non_null_option",

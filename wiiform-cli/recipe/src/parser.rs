@@ -154,7 +154,7 @@ fn validate_setup_for(setup: Option<&Setup>, menu: Menu) -> Result<(), RecipeErr
     if !menu.allows_country(country) {
         return Err(error(format!(
             "setup country {} is not supported by menu {}",
-            country.as_u8(),
+            country.as_alpha2(),
             menu.as_str()
         )));
     }
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn menu_override_revalidates_source_settings_and_retargets_aliases() {
         let recipe = parse(
-            "menu: 4.3E\nremove: [forecast-channel]\nsetup: {country: '110', sensor_bar: below}\n",
+            "menu: 4.3E\nremove: [forecast-channel]\nsetup: {country: GB, sensor_bar: below}\n",
             None,
         )
         .unwrap();
@@ -564,7 +564,12 @@ mod tests {
         );
         assert!(parse("menu: 4.3E\nsetup: {language: ja}\n", Some(Menu::J43)).is_err());
         assert!(parse("menu: 4.3E\nsetup: {language: de}\n", Some(Menu::U43)).is_err());
-        assert!(parse("menu: 4.3E\nsetup: {country: '49'}\n", None).is_err());
+        assert!(parse("menu: 4.3E\nsetup: {country: US}\n", None).is_err());
+        let norway = parse("menu: 4.3E\nsetup: {country: 'NO'}\n", None).unwrap();
+        assert_eq!(
+            norway.setup().unwrap().country,
+            Some(crate::CountryCode::Norway)
+        );
 
         let retargeted =
             parse("menu: 4.3E\nremove: [forecast-channel]\n", Some(Menu::J43)).unwrap();

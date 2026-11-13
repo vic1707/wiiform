@@ -6,8 +6,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 // Keep the Wii byte values, supported countries, and editor schema in one table.
 macro_rules! country_codes {
-    ($($name:ident = $code:literal),+ $(,)?) => {
-        /// Nintendo Wii `IPL.SADR` country code.
+    ($($name:ident = $code:literal => $alpha2:literal),+ $(,)?) => {
+        /// Supported ISO alpha-2 country code and its Wii SYSCONF byte.
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         #[repr(u8)]
         pub enum CountryCode {
@@ -16,6 +16,19 @@ macro_rules! country_codes {
 
         impl CountryCode {
             const ALL: &[Self] = &[$(Self::$name),+];
+
+            pub const fn as_alpha2(self) -> &'static str {
+                match self {
+                    $(Self::$name => $alpha2),+
+                }
+            }
+
+            fn from_alpha2(value: &str) -> Option<Self> {
+                match value {
+                    $($alpha2 => Some(Self::$name),)+
+                    _ => None,
+                }
+            }
         }
 
         impl TryFrom<u8> for CountryCode {
@@ -32,73 +45,74 @@ macro_rules! country_codes {
 }
 
 country_codes! {
-    Japan = 1,
-    Anguilla = 8,
-    AntiguaAndBarbuda = 9,
-    Argentina = 10,
-    Aruba = 11,
-    Bahamas = 12,
-    Barbados = 13,
-    Belize = 14,
-    Bolivia = 15,
-    Brazil = 16,
-    BritishVirginIslands = 17,
-    Canada = 18,
-    CaymanIslands = 19,
-    Chile = 20,
-    Colombia = 21,
-    CostaRica = 22,
-    Dominica = 23,
-    DominicanRepublic = 24,
-    Ecuador = 25,
-    ElSalvador = 26,
-    FrenchGuiana = 27,
-    Grenada = 28,
-    Guadeloupe = 29,
-    Guatemala = 30,
-    Guyana = 31,
-    Haiti = 32,
-    Honduras = 33,
-    Jamaica = 34,
-    Martinique = 35,
-    Mexico = 36,
-    Montserrat = 37,
-    NetherlandsAntilles = 38,
-    Nicaragua = 39,
-    Panama = 40,
-    Paraguay = 41,
-    Peru = 42,
-    SaintKittsAndNevis = 43,
-    SaintLucia = 44,
-    SaintVincentAndTheGrenadines = 45,
-    Suriname = 46,
-    TrinidadAndTobago = 47,
-    TurksAndCaicosIslands = 48,
-    UnitedStates = 49,
-    Uruguay = 50,
-    UsVirginIslands = 51,
-    Venezuela = 52,
-    Australia = 65,
-    Austria = 66,
-    Belgium = 67,
-    Denmark = 74,
-    Finland = 76,
-    France = 77,
-    Germany = 78,
-    Greece = 79,
-    Ireland = 82,
-    Italy = 83,
-    Luxembourg = 88,
-    Netherlands = 94,
-    NewZealand = 95,
-    Norway = 96,
-    Poland = 97,
-    Portugal = 98,
-    Romania = 99,
-    Spain = 105,
-    Sweden = 107,
-    Switzerland = 108,
-    UnitedKingdom = 110,
+    Japan = 1 => "JP",
+    Anguilla = 8 => "AI",
+    AntiguaAndBarbuda = 9 => "AG",
+    Argentina = 10 => "AR",
+    Aruba = 11 => "AW",
+    Bahamas = 12 => "BS",
+    Barbados = 13 => "BB",
+    Belize = 14 => "BZ",
+    Bolivia = 15 => "BO",
+    Brazil = 16 => "BR",
+    BritishVirginIslands = 17 => "VG",
+    Canada = 18 => "CA",
+    CaymanIslands = 19 => "KY",
+    Chile = 20 => "CL",
+    Colombia = 21 => "CO",
+    CostaRica = 22 => "CR",
+    Dominica = 23 => "DM",
+    DominicanRepublic = 24 => "DO",
+    Ecuador = 25 => "EC",
+    ElSalvador = 26 => "SV",
+    FrenchGuiana = 27 => "GF",
+    Grenada = 28 => "GD",
+    Guadeloupe = 29 => "GP",
+    Guatemala = 30 => "GT",
+    Guyana = 31 => "GY",
+    Haiti = 32 => "HT",
+    Honduras = 33 => "HN",
+    Jamaica = 34 => "JM",
+    Martinique = 35 => "MQ",
+    Mexico = 36 => "MX",
+    Montserrat = 37 => "MS",
+    // The Wii retains the historical code for the Netherlands Antilles.
+    NetherlandsAntilles = 38 => "AN",
+    Nicaragua = 39 => "NI",
+    Panama = 40 => "PA",
+    Paraguay = 41 => "PY",
+    Peru = 42 => "PE",
+    SaintKittsAndNevis = 43 => "KN",
+    SaintLucia = 44 => "LC",
+    SaintVincentAndTheGrenadines = 45 => "VC",
+    Suriname = 46 => "SR",
+    TrinidadAndTobago = 47 => "TT",
+    TurksAndCaicosIslands = 48 => "TC",
+    UnitedStates = 49 => "US",
+    Uruguay = 50 => "UY",
+    UsVirginIslands = 51 => "VI",
+    Venezuela = 52 => "VE",
+    Australia = 65 => "AU",
+    Austria = 66 => "AT",
+    Belgium = 67 => "BE",
+    Denmark = 74 => "DK",
+    Finland = 76 => "FI",
+    France = 77 => "FR",
+    Germany = 78 => "DE",
+    Greece = 79 => "GR",
+    Ireland = 82 => "IE",
+    Italy = 83 => "IT",
+    Luxembourg = 88 => "LU",
+    Netherlands = 94 => "NL",
+    NewZealand = 95 => "NZ",
+    Norway = 96 => "NO",
+    Poland = 97 => "PL",
+    Portugal = 98 => "PT",
+    Romania = 99 => "RO",
+    Spain = 105 => "ES",
+    Sweden = 107 => "SE",
+    Switzerland = 108 => "CH",
+    UnitedKingdom = 110 => "GB",
 }
 
 impl CountryCode {
@@ -119,6 +133,10 @@ impl FromStr for CountryCode {
     type Err = InvalidCountryCode;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if let Some(country) = Self::from_alpha2(value) {
+            return Ok(country);
+        }
+        // Older recipes used the Wii's byte as a quoted decimal string.
         let code = value.parse::<u8>().map_err(|_| InvalidCountryCode)?;
         if code.to_string() != value {
             return Err(InvalidCountryCode);
@@ -132,7 +150,9 @@ pub struct InvalidCountryCode;
 
 impl fmt::Display for InvalidCountryCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("unknown Wii country code")
+        f.write_str(
+            "unknown country code, expected an uppercase ISO alpha-2 code supported by the Wii",
+        )
     }
 }
 
@@ -143,7 +163,7 @@ impl Serialize for CountryCode {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&self.as_u8().to_string())
+        serializer.serialize_str(self.as_alpha2())
     }
 }
 
@@ -170,8 +190,38 @@ impl JsonSchema for CountryCode {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "type": "string",
-            "enum": Self::ALL.iter().map(|code| code.as_u8().to_string()).collect::<Vec<_>>(),
-            "description": "Quoted Nintendo Wii IPL.SADR country code. Codes map to named CountryCode variants."
+            "anyOf": [
+                {
+                    "enum": Self::ALL.iter().map(|code| code.as_alpha2()).collect::<Vec<_>>()
+                },
+                {
+                    "description": "Legacy quoted Wii country byte. Prefer the two-letter code.",
+                    "enum": Self::ALL.iter().map(|code| code.as_u8().to_string()).collect::<Vec<_>>(),
+                    "deprecated": true
+                }
+            ]
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_and_legacy_codes_map_to_the_same_wii_byte() {
+        for &country in CountryCode::ALL {
+            let alpha2 = country.as_alpha2();
+            let legacy = country.as_u8().to_string();
+            assert_eq!(alpha2.parse(), Ok(country));
+            assert_eq!(legacy.parse(), Ok(country));
+            assert_eq!(serde_json::to_value(country).unwrap(), alpha2);
+        }
+        assert_eq!(CountryCode::UnitedKingdom.as_alpha2(), "GB");
+        assert_eq!(CountryCode::UnitedKingdom.as_u8(), 110);
+        assert_eq!(CountryCode::UnitedStates.as_u8(), 49);
+        assert_eq!(CountryCode::Japan.as_u8(), 1);
+        assert_eq!(CountryCode::NetherlandsAntilles.as_alpha2(), "AN");
+        assert!("ZZ".parse::<CountryCode>().is_err());
     }
 }
