@@ -7,12 +7,11 @@ add_rules("mode.release", "mode.debug")
 includes("xmake/wiiqt-nand.lua")
 includes("xmake/priiloader.lua")
 add_requires("yaml-cpp 0.8.0", "xz 5.8.4")
-add_requires("wiiqt-nand 0.1.4")
+add_requires("wiiqt-nand 0.1.5")
 
 local private_headers = {
     "wiiform-lib/src/common",
     "wiiform-lib/src/nand",
-    "wiiform-lib/src/preflight",
     "wiiform-lib/src/seed"
 }
 

@@ -19,6 +19,13 @@ namespace {
 int main(int argc, char** argv) {
   QCoreApplication app(argc, argv);
   try {
+    {
+      NandBin unopened;
+      check(!unopened.InitNand(), "Unopened NAND unexpectedly initialized");
+      check(!unopened.GetPage(0).size(), "Unopened NAND unexpectedly returned a page");
+      check(!unopened.Format(), "Unopened NAND unexpectedly formatted");
+    }
+
     constexpr std::size_t image_size = 0x21000400;
     std::vector<std::uint8_t> image(image_size, 0);
     QByteArray keys(0x400, '\0');

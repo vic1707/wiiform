@@ -242,7 +242,7 @@
 -        qWarning() << "NandBin::Format -> error" << Qt::hex << fats.size() << f.isOpen();
 +    if( !f || !f->isOpen() || fats.size() != 0x8000 )
 +    {
-+        qWarning() << "NandBin::Format -> error" << Qt::hex << fats.size() << f->isOpen();
++        qWarning() << "NandBin::Format -> error" << Qt::hex << fats.size() << ( f && f->isOpen() );
          return false;
      }
  
@@ -257,16 +257,21 @@
      }
  
      //reset fsts
-@@ -425,7 +462,7 @@
+@@ -425,7 +462,12 @@
      fstInited = false;
      memset( (void*)&fsts, 0, sizeof( fst_t ) * 0x17ff );
      fats.clear();
 -    type = GetDumpType( f.size() );
++    if( !f || !f->isOpen() )
++    {
++        emit SendError( tr( "Tried to initialize unopened NAND" ) );
++        return false;
++    }
 +    type = GetDumpType( f->size() );
      if( type < 0 || type > 3 )
          return false;
  
-@@ -556,6 +593,13 @@
+@@ -556,6 +598,13 @@
      case 0:
      case 1:
          {
@@ -280,7 +285,7 @@
              QString keyPath = nandPath;
              int sl = keyPath.lastIndexOf( "/" );
              if( sl == -1 )
-@@ -576,16 +620,16 @@
+@@ -576,16 +625,16 @@
          break;
      case 2:
          {
@@ -303,7 +308,7 @@
          }
          break;
      default:
-@@ -606,6 +650,12 @@
+@@ -606,6 +655,12 @@
      case 0:
      case 1:
          {
@@ -316,7 +321,7 @@
              QString keyPath = nandPath;
              int sl = keyPath.lastIndexOf( "/" );
              if( sl == -1 )
-@@ -621,13 +671,13 @@
+@@ -621,13 +676,13 @@
          break;
      case 2:
          {
@@ -333,7 +338,7 @@
          }
          break;
      default:
-@@ -677,7 +727,7 @@
+@@ -677,7 +732,7 @@
          emit SendError( tr( "Tried to get superblock of unknown dump type" ) );
          return -1;
      }
@@ -342,7 +347,7 @@
      {
          emit SendError( tr( "Tried to get superblock of unopened dump" ) );
          return -1;
-@@ -691,9 +741,9 @@
+@@ -691,9 +746,9 @@
      quint8 rewind = 1;
      for( loc = n_start[ type ], currentSuperCluster = 0x7f00; loc < n_end[ type ]; loc += n_len[ type ], currentSuperCluster += 0x10 )
      {
@@ -355,7 +360,7 @@
          if( magic != 0x53464653 )
          {
              qWarning() << "oops, this isnt a supercluster" << Qt::hex << loc << magic << currentSuperCluster;
-@@ -702,7 +752,7 @@
+@@ -702,7 +757,7 @@
              continue;
          }
  
@@ -364,7 +369,7 @@
          current = qFromBigEndian( current );
  
          //qDebug() << "superblock" << hex << current << currentSuperCluster << loc;
-@@ -711,7 +761,7 @@
+@@ -711,7 +766,7 @@
              superClusterVersion = current;
          else
          {
@@ -373,7 +378,16 @@
              //currentSuperCluster -= ( 0x10 * rewind );
              //loc -= ( n_len[ type ] * rewind );
              rewind = 1;
-@@ -750,31 +800,31 @@
+@@ -747,34 +802,40 @@
+         //qDebug() << "reading from cache" << hex << entry;
+         return fsts[ entry ];
+     }
++    if( !f || !f->isOpen() || type < 0 || type > 2 )
++    {
++        emit SendError( tr( "Tried to read FST from unopened NAND" ) );
++        fst.filename[ 0 ] = '\0';
++        return fst;
++    }
      // compensate for 64 bytes of ecc data every 64 fst entries
      quint32 n_fst[] = { 0, 2, 2 };
      int loc_entry = ( ( ( entry / 0x40 ) * n_fst[ type ] ) + entry ) * 0x20;
@@ -422,7 +436,18 @@
  
      fst.sub = qFromBigEndian( fst.sub );
      fst.sib = qFromBigEndian( fst.sib );
-@@ -799,15 +849,15 @@
+@@ -793,21 +854,26 @@
+     if( fstInited )
+         return fats.at( fat_entry );
+ 
++    if( !f || !f->isOpen() || type < 0 || type > 2 )
++    {
++        emit SendError( tr( "Tried to read FAT from unopened NAND" ) );
++        return 0;
++    }
+     fat_entry += 6;
+ 
+     // location in fat of cluster chain
      quint32 n_fat[] = { 0, 0x20, 0x20 };
      int loc = loc_fat + ((((fat_entry / 0x400) * n_fat[type]) + fat_entry) * 2);
  
@@ -441,11 +466,16 @@
      ret = qFromBigEndian( ret );
      return ret;
  }
-@@ -817,14 +867,14 @@
+@@ -817,14 +883,19 @@
      //qDebug() << "NandBin::GetPage( " << hex << pageNo << ", " << withEcc << " )";
      quint32 n_pagelen[] = { 0x800, 0x840, 0x840 };
  
 -    if( f.size() < ( pageNo + 1 ) * n_pagelen[ type ] )
++    if( !f || !f->isOpen() || type < 0 || type > 2 )
++    {
++        emit SendError( tr( "Tried to read page from unopened NAND" ) );
++        return QByteArray();
++    }
 +    if( f->size() < ( pageNo + 1 ) * n_pagelen[ type ] )
      {
          emit SendError( tr( "Tried to read page past size of nand.bin" ) );
@@ -460,16 +490,21 @@
      return page;
  }
  
-@@ -834,7 +884,7 @@
+@@ -834,7 +905,12 @@
      quint32 n_clusterlen[] = { 0x4000, 0x4200, 0x4200 };
      quint32 n_pagelen[] = { 0x800, 0x840, 0x840 };
  
 -    if( f.size() < ( cluster_entry * n_clusterlen[ type ] ) + ( 8 * n_pagelen[ type ] ) )
++    if( !f || !f->isOpen() || type < 0 || type > 2 )
++    {
++        emit SendError( tr( "Tried to read cluster from unopened NAND" ) );
++        return QByteArray();
++    }
 +    if( f->size() < ( cluster_entry * n_clusterlen[ type ] ) + ( 8 * n_pagelen[ type ] ) )
      {
          emit SendError( tr( "Tried to read cluster past size of nand.bin" ) );
          return QByteArray();
-@@ -844,10 +894,10 @@
+@@ -844,10 +920,10 @@
  
      for( int i = 0; i < 8; i++ )
      {
@@ -484,7 +519,18 @@
          //hexdump( page.mid( 0x800, 0x40 ) );//just here for debugging purposes
  
          //cluster += page.left( 0x800 );
-@@ -1200,15 +1250,15 @@
+@@ -1194,21 +1270,26 @@
+ #else
+     //qDebug() << "NandBin::WritePage(" << hex << pageNo << ")";
+     quint32 n_pagelen[] = { 0x800, 0x840, 0x840 };
++    if( !f || !f->isOpen() || type < 0 || type > 2 )
++    {
++        emit SendError( tr( "Tried to write page to unopened NAND" ) );
++        return false;
++    }
+     if( (quint32)data.size() != n_pagelen[ type ] )
+     {
+         qWarning() << "data is wrong size" << Qt::hex << data.size();
          return false;
      }
  
@@ -504,7 +550,7 @@
  #endif
  }
  
-@@ -1685,7 +1735,7 @@
+@@ -1685,7 +1766,7 @@
  
  
      //make sure all the data is really written
