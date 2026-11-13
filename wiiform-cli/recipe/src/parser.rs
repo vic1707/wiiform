@@ -12,7 +12,7 @@ use yaml_rust2::{
     scanner::TScalarStyle,
 };
 
-use crate::{Display, Menu, Priiloader, Recipe, RecipeFile, Title, titles::allowlisted_title_ids};
+use crate::{Menu, Priiloader, Recipe, RecipeFile, Setup, Title, titles::allowlisted_title_ids};
 
 pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_EVENTS: usize = 20_000;
@@ -59,26 +59,7 @@ pub fn parse_recipe(
         serde_json::from_value(value).map_err(|e| error(format!("invalid recipe: {e}")))?;
 
     let declared_menu = file.menu;
-    if let Some(language) = file.setup.as_ref().and_then(|setup| setup.language)
-        && !declared_menu.allows_language(language)
-    {
-        return Err(error(format!(
-            "setup language is not supported by menu {declared_menu:?}"
-        )));
-    }
-    if let Some(country) = file.setup.as_ref().and_then(|setup| setup.country.as_ref())
-        && !declared_menu.allows_country(country)
-    {
-        return Err(error(format!(
-            "setup country {} is not supported by menu {}",
-            country.as_u8(),
-            declared_menu.as_str()
-        )));
-    }
-    if let Some(display) = &file.display {
-        validate_display(display)?;
-    }
-
+    validate_setup_for(file.setup.as_ref(), declared_menu)?;
     let remove_inputs = file.remove.clone();
     let remove = resolve_removals(&remove_inputs, declared_menu)?;
 
@@ -155,26 +136,29 @@ pub fn parse_recipe(
 }
 
 pub(super) fn retarget_recipe(mut recipe: Recipe, menu: Menu) -> Result<Recipe, RecipeError> {
-    if let Some(setup) = &recipe.setup {
-        if let Some(language) = setup.language
-            && !menu.allows_language(language)
-        {
-            return Err(error(format!(
-                "setup language is not supported by menu {menu:?}"
-            )));
-        }
-        let country = setup.country_for(menu);
-        if !menu.allows_country(&country) {
-            return Err(error(format!(
-                "setup country {} is not supported by menu {}",
-                country.as_u8(),
-                menu.as_str()
-            )));
-        }
-    }
+    validate_setup_for(recipe.setup.as_ref(), menu)?;
     recipe.remove = resolve_removals(&recipe.remove_inputs, menu)?;
     recipe.menu = menu;
     Ok(recipe)
+}
+
+fn validate_setup_for(setup: Option<&Setup>, menu: Menu) -> Result<(), RecipeError> {
+    let Some(setup) = setup else { return Ok(()) };
+    if !menu.allows_language(setup.language_for(menu)) {
+        return Err(error(format!(
+            "setup language is not supported by menu {}",
+            menu.as_str()
+        )));
+    }
+    let country = setup.country_for(menu);
+    if !menu.allows_country(country) {
+        return Err(error(format!(
+            "setup country {} is not supported by menu {}",
+            country.as_u8(),
+            menu.as_str()
+        )));
+    }
+    Ok(())
 }
 
 fn resolve_removals(
@@ -213,13 +197,6 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, RecipeError> {
         return Err(error(format!("recipe exceeds {MAX_BYTES} bytes")));
     }
     Ok(bytes)
-}
-
-fn validate_display(display: &Display) -> Result<(), RecipeError> {
-    if display.is_empty() {
-        return Err(error("display must set at least one field"));
-    }
-    Ok(())
 }
 
 fn resolve_path(base: &Path, path: PathBuf, where_: &str) -> Result<PathBuf, RecipeError> {
@@ -507,6 +484,62 @@ mod tests {
     }
 
     #[test]
+    fn omission_defaults_settings_and_null_is_rejected() {
+        let minimal = parse("menu: 4.3E", None).unwrap();
+        assert!(minimal.setup().is_none());
+        assert!(minimal.display().is_none());
+        assert!(minimal.priiloader().is_none());
+
+        let prepared = parse(
+            "menu: 4.3E\nsetup: {}\ndisplay: {}\npriiloader: {}",
+            Some(Menu::J43),
+        )
+        .unwrap();
+        let setup = prepared.setup().unwrap();
+        assert_eq!(setup.nickname.as_str(), "Wii");
+        assert_eq!(setup.country_for(Menu::J43), crate::CountryCode::Japan);
+        assert_eq!(setup.language_for(Menu::J43), crate::Language::Ja);
+        assert_eq!(setup.sensor_bar, crate::SensorBar::Above);
+        assert_eq!(prepared.display(), Some(&crate::Display::default()));
+        assert_eq!(prepared.priiloader().unwrap().settings.stop_disc, None);
+
+        for fields in [
+            "setup: null",
+            "display: null",
+            "priiloader: null",
+            "setup: {nickname: null}",
+            "setup: {nickname: ''}",
+            "setup: {language: null}",
+            "setup: {country: null}",
+            "display: {progressive: null}",
+            "priiloader: {settings: {stop_disc: null}}",
+        ] {
+            assert!(
+                parse(&format!("menu: 4.3E\n{fields}"), None).is_err(),
+                "{fields}"
+            );
+        }
+
+        let schema: serde_json::Value =
+            serde_json::from_str(&crate::json_schema().unwrap()).unwrap();
+        assert_eq!(schema["required"], serde_json::json!(["menu"]));
+        let setup_schema = &schema["$defs"]["Setup"];
+        assert!(setup_schema.get("required").is_none());
+        assert_eq!(setup_schema["properties"]["nickname"]["default"], "Wii");
+        assert_eq!(setup_schema["properties"]["nickname"]["type"], "string");
+        assert!(
+            setup_schema["properties"]["language"]
+                .get("default")
+                .is_none()
+        );
+        assert!(
+            schema["$defs"]["PriiloaderSettings"]
+                .get("required")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn menu_override_revalidates_source_settings_and_retargets_aliases() {
         let recipe = parse(
             "menu: 4.3E\nremove: [forecast-channel]\nsetup: {country: '110', sensor_bar: below}\n",
@@ -515,10 +548,7 @@ mod tests {
         .unwrap();
         assert_eq!(recipe.menu(), Menu::E43);
         assert_eq!(recipe.setup().unwrap().country_for(Menu::E43).as_u8(), 110);
-        assert_eq!(
-            recipe.setup().unwrap().sensor_bar_for(),
-            crate::SensorBar::Below
-        );
+        assert_eq!(recipe.setup().unwrap().sensor_bar, crate::SensorBar::Below);
         assert_eq!(
             recipe
                 .remove()

@@ -22,14 +22,14 @@ namespace {
 }
 
 namespace sysconf {
-  void initialize(std::span<std::uint8_t> image, const SettingsOverrides& overrides) {
+  void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings) {
     working_image::Image working(image);
     const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
     require(!working_image::find_path(tree.get(), path), "NAND already has SYSCONF");
     const auto raw = working_image::read_authenticated_file(working.nand,
         working_image::find_path(tree.get(), "/title/00000001/00000002/data/setting.txt"), 256);
     const auto region = QString::fromStdString(seed::decode_settings(raw)["AREA"].as<std::string>());
-    const auto bytes = create(overrides, region);
+    const auto bytes = create(settings, region);
     const auto* parent = working_image::find_path(tree.get(), "/shared2/sys");
     require(parent && working_image::entry_kind(parent) == NAND_DIR, "Working image needs /shared2/sys");
     working_image::require_capacity(working.nand, tree->child(0), working.layout.orphan_entries, 1, 1);

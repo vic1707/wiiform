@@ -146,14 +146,7 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
 
 void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings) {
   detail::ensure_qcore_application();
-  sysconf::SettingsOverrides overrides;
-  if (!settings.nickname.empty()) overrides.nickname = qstring(settings.nickname, "Nickname must be UTF-8");
-  if (settings.language)
-    overrides.language = option_name(*settings.language, std::array{"ja", "en", "de", "fr", "es", "it", "nl"});
-  overrides.country = settings.country;
-  overrides.sensor_bar_above = settings.sensor_bar_above;
-  overrides.display = {settings.widescreen, settings.progressive, settings.pal60};
-  sysconf::initialize(nand, overrides);
+  sysconf::initialize(nand, settings);
 }
 
 void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,

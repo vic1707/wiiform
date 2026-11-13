@@ -9,14 +9,14 @@
 #include <vector>
 
 namespace wiiform {
-  enum class BootPolicy { stock, preserve_source };
+  enum class BootPolicy : std::uint8_t { stock = 0, preserve_source = 1 };
   enum class WadPolicy { standard, legacy_channel };
 
   inline constexpr std::size_t raw_nand_size = 0x21000000;
   inline constexpr std::size_t nand_size = raw_nand_size + 0x400;
   using Sha256 = std::array<std::uint8_t, 32>;
 
-  enum class Menu { e43, u43, j43 };
+  enum class Menu : std::uint16_t { e43 = 514, u43 = 513, j43 = 512 };
   enum class CacheMode { offline, download_missing };
 
   struct StockSeed {
@@ -36,22 +36,22 @@ namespace wiiform {
     std::uint16_t region;
   };
 
-  enum class Language { ja, en, de, fr, es, it, nl };
+  enum class Language : std::uint8_t { ja = 0, en = 1, de = 2, fr = 3, es = 4, it = 5, nl = 6 };
 
   struct SystemSettings {
     std::string nickname;
-    std::optional<Language> language;
-    std::optional<std::uint8_t> country;
-    std::optional<bool> sensor_bar_above;
-    std::optional<bool> widescreen;
-    std::optional<bool> progressive;
-    std::optional<bool> pal60;
+    Language language;
+    std::uint8_t country;
+    bool sensor_bar_above;
+    bool widescreen;
+    bool progressive;
+    bool pal60;
   };
 
-  enum class Autoboot { disabled, homebrew_channel, bootmii_ios, system_menu, file };
-  enum class ReturnTo { system_menu, priiloader, autoboot, file };
-  enum class ShutdownTo { none, priiloader, autoboot };
-  enum class MountPoint { automatic, sd, usb };
+  enum class Autoboot : std::uint8_t { disabled = 0, homebrew_channel = 1, bootmii_ios = 2, system_menu = 3, file = 4 };
+  enum class ReturnTo : std::uint8_t { system_menu = 0, priiloader = 1, autoboot = 2, file = 3 };
+  enum class ShutdownTo : std::uint8_t { none = 0, priiloader = 1, autoboot = 2 };
+  enum class MountPoint : std::uint8_t { automatic = 0, sd = 1, usb = 2 };
 
   struct PriiloaderSettings {
     std::optional<Autoboot> autoboot;
@@ -66,10 +66,10 @@ namespace wiiform {
     std::optional<bool> show_rc_updates;
   };
 
-  enum class Hack {
-    fix_480p, block_online_updates, block_disc_updates, block_disc_autoboot, auto_press_a,
-    remove_deflicker, move_disc_channel, remove_nocopy_save_protection, replace_health_screen,
-    no_background_music, wiimmfi, region_free_everything
+  enum class Hack : std::uint8_t {
+    fix_480p = 0, block_online_updates = 1, block_disc_updates = 2, block_disc_autoboot = 3,
+    auto_press_a = 4, remove_deflicker = 5, move_disc_channel = 6, remove_nocopy_save_protection = 7,
+    replace_health_screen = 8, no_background_music = 9, wiimmfi = 10, region_free_everything = 11
   };
 
   struct HackOverride {

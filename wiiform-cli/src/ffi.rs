@@ -3,21 +3,6 @@
 pub mod bridge {
     #[repr(u8)]
     #[derive(Clone, Copy, Debug)]
-    enum BootPolicy {
-        Stock,
-        PreserveSource,
-    }
-
-    #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
-    enum Menu {
-        E43,
-        U43,
-        J43,
-    }
-
-    #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
     enum CacheMode {
         Offline,
         DownloadMissing,
@@ -31,106 +16,43 @@ pub mod bridge {
     }
 
     #[repr(u8)]
-    enum Toggle {
-        Unset,
+    enum BoolOverride {
+        Keep,
         Off,
         On,
     }
 
-    #[repr(u8)]
-    enum Language {
-        Ja,
-        En,
-        De,
-        Fr,
-        Es,
-        It,
-        Nl,
-        Unset,
-    }
-
-    struct SystemSettings {
-        nickname: String,
-        language: Language,
+    struct SystemSettings<'a> {
+        nickname: &'a str,
+        language: u8,
         country: u8,
-        sensor_bar_above: Toggle,
-        widescreen: Toggle,
-        progressive: Toggle,
-        pal60: Toggle,
-    }
-
-    #[repr(u8)]
-    enum Autoboot {
-        Disabled,
-        HomebrewChannel,
-        BootmiiIos,
-        SystemMenu,
-        File,
-        Unset,
-    }
-
-    #[repr(u8)]
-    enum ReturnTo {
-        SystemMenu,
-        Priiloader,
-        Autoboot,
-        File,
-        Unset,
-    }
-
-    #[repr(u8)]
-    enum ShutdownTo {
-        None,
-        Priiloader,
-        Autoboot,
-        Unset,
-    }
-
-    #[repr(u8)]
-    enum MountPoint {
-        Auto,
-        Sd,
-        Usb,
-        Unset,
+        sensor_bar_above: bool,
+        widescreen: bool,
+        progressive: bool,
+        pal60: bool,
     }
 
     struct PriiloaderSettings {
-        autoboot: Autoboot,
-        return_to: ReturnTo,
-        shutdown_to: ShutdownTo,
-        preferred_mount_point: MountPoint,
-        stop_disc: Toggle,
-        lid_slot_on_error: Toggle,
-        ignore_shutdown_mode: Toggle,
-        black_background: Toggle,
-        dump_gecko_text: Toggle,
-        show_rc_updates: Toggle,
-    }
-
-    #[repr(u8)]
-    enum Hack {
-        Fix480p,
-        BlockOnlineUpdates,
-        BlockDiscUpdates,
-        BlockDiscAutoboot,
-        AutoPressA,
-        RemoveDeflicker,
-        MoveDiscChannel,
-        RemoveNocopySaveProtection,
-        ReplaceHealthScreen,
-        NoBackgroundMusic,
-        Wiimmfi,
-        RegionFreeEverything,
+        autoboot: u8,
+        return_to: u8,
+        shutdown_to: u8,
+        preferred_mount_point: u8,
+        stop_disc: BoolOverride,
+        lid_slot_on_error: BoolOverride,
+        ignore_shutdown_mode: BoolOverride,
+        black_background: BoolOverride,
+        dump_gecko_text: BoolOverride,
+        show_rc_updates: BoolOverride,
     }
 
     struct HackOverride {
-        hack: Hack,
+        hack: u8,
         enabled: bool,
     }
 
     struct StockOptions {
-        menu: Menu,
-        boot_policy: BootPolicy,
+        menu: u16,
+        boot_policy: u8,
         cache_mode: CacheMode,
     }
 
@@ -157,7 +79,7 @@ pub mod bridge {
             nus_cache_dir: &str,
             options: &StockOptions,
         ) -> Result<StockIdentity>;
-        fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings) -> Result<()>;
+        fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings<'_>) -> Result<()>;
         fn install_nus_title(
             nand: &mut [u8],
             nus_cache_dir: &str,

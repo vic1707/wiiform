@@ -5,12 +5,19 @@ use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    Aspect, Autoboot, Display, HackSettings, Language, Menu, MountPoint, PriiloaderSettings,
-    ReturnTo, SensorBar, Setup, Sha256, ShutdownTo,
+    Aspect, Display, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, Sha256,
 };
 use crate::seed::StockSeed;
 
-pub use ffi::{BootPolicy, CacheMode, InstalledWad, StockIdentity, WadPolicy};
+pub use ffi::{CacheMode, InstalledWad, StockIdentity, WadPolicy};
+
+/// Boot-area validation policy for stock NAND creation.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+#[repr(u8)]
+pub enum BootPolicy {
+    Stock = 0,
+    PreserveSource = 1,
+}
 
 pub const RAW_NAND_BYTES: usize = 0x2100_0000;
 pub const NAND_BYTES: usize = RAW_NAND_BYTES + 0x400;
@@ -33,11 +40,6 @@ pub fn create_stock(
     policy: BootPolicy,
     cache_mode: CacheMode,
 ) -> Result<StockIdentity> {
-    let menu = match menu {
-        Menu::E43 => ffi::Menu::E43,
-        Menu::U43 => ffi::Menu::U43,
-        Menu::J43 => ffi::Menu::J43,
-    };
     Ok(ffi::create_stock(
         seed.keys(),
         seed.boot_blocks(),
@@ -46,18 +48,22 @@ pub fn create_stock(
         nand,
         cache_dir(cache)?,
         &ffi::StockOptions {
-            menu,
-            boot_policy: policy,
+            menu: menu.version(),
+            boot_policy: policy as u8,
             cache_mode,
         },
     )?)
 }
 
-fn toggle(value: Option<bool>) -> ffi::Toggle {
-    match value {
-        None => ffi::Toggle::Unset,
-        Some(false) => ffi::Toggle::Off,
-        Some(true) => ffi::Toggle::On,
+impl From<bool> for ffi::BoolOverride {
+    fn from(value: bool) -> Self {
+        if value { Self::On } else { Self::Off }
+    }
+}
+
+impl From<Option<bool>> for ffi::BoolOverride {
+    fn from(value: Option<bool>) -> Self {
+        value.map_or(Self::Keep, Self::from)
     }
 }
 
@@ -67,33 +73,25 @@ pub fn apply_system_settings(
     setup: Option<&Setup>,
     display: Option<&Display>,
 ) -> Result<()> {
-    let language = match setup.and_then(|setup| setup.language) {
-        None => ffi::Language::Unset,
-        Some(Language::Ja) => ffi::Language::Ja,
-        Some(Language::En) => ffi::Language::En,
-        Some(Language::De) => ffi::Language::De,
-        Some(Language::Fr) => ffi::Language::Fr,
-        Some(Language::Es) => ffi::Language::Es,
-        Some(Language::It) => ffi::Language::It,
-        Some(Language::Nl) => ffi::Language::Nl,
+    let default_setup;
+    let setup = match setup {
+        Some(setup) => setup,
+        None => {
+            default_setup = Setup::default();
+            &default_setup
+        }
     };
+    let display = display.copied().unwrap_or_default();
     Ok(ffi::apply_system_settings(
         nand,
         &ffi::SystemSettings {
-            nickname: setup
-                .and_then(|setup| setup.nickname.as_ref())
-                .map(|name| name.as_str().to_owned())
-                .unwrap_or_default(),
-            language,
-            country: setup.map_or(0, |setup| setup.country_for(menu).as_u8()),
-            sensor_bar_above: toggle(setup.map(|setup| setup.sensor_bar_for() == SensorBar::Above)),
-            widescreen: toggle(
-                display
-                    .and_then(|display| display.aspect)
-                    .map(|aspect| aspect == Aspect::SixteenNine),
-            ),
-            progressive: toggle(display.and_then(|display| display.progressive)),
-            pal60: toggle(display.and_then(|display| display.pal60)),
+            nickname: setup.nickname.as_str(),
+            language: setup.language_for(menu).as_u8(),
+            country: setup.country_for(menu).as_u8(),
+            sensor_bar_above: setup.sensor_bar == SensorBar::Above,
+            widescreen: display.aspect == Aspect::SixteenNine,
+            progressive: display.progressive,
+            pal60: display.pal60,
         },
     )?)
 }
@@ -141,64 +139,28 @@ pub fn apply_priiloader(
     settings: &PriiloaderSettings,
     hacks: Option<&HackSettings>,
 ) -> Result<()> {
+    const KEEP: u8 = u8::MAX;
     let settings = ffi::PriiloaderSettings {
-        autoboot: match settings.autoboot {
-            None => ffi::Autoboot::Unset,
-            Some(Autoboot::Disabled) => ffi::Autoboot::Disabled,
-            Some(Autoboot::HomebrewChannel) => ffi::Autoboot::HomebrewChannel,
-            Some(Autoboot::BootmiiIos) => ffi::Autoboot::BootmiiIos,
-            Some(Autoboot::SystemMenu) => ffi::Autoboot::SystemMenu,
-            Some(Autoboot::File) => ffi::Autoboot::File,
-        },
-        return_to: match settings.return_to {
-            None => ffi::ReturnTo::Unset,
-            Some(ReturnTo::SystemMenu) => ffi::ReturnTo::SystemMenu,
-            Some(ReturnTo::Priiloader) => ffi::ReturnTo::Priiloader,
-            Some(ReturnTo::Autoboot) => ffi::ReturnTo::Autoboot,
-            Some(ReturnTo::File) => ffi::ReturnTo::File,
-        },
-        shutdown_to: match settings.shutdown_to {
-            None => ffi::ShutdownTo::Unset,
-            Some(ShutdownTo::None) => ffi::ShutdownTo::None,
-            Some(ShutdownTo::Priiloader) => ffi::ShutdownTo::Priiloader,
-            Some(ShutdownTo::Autoboot) => ffi::ShutdownTo::Autoboot,
-        },
-        preferred_mount_point: match settings.preferred_mount_point {
-            None => ffi::MountPoint::Unset,
-            Some(MountPoint::Auto) => ffi::MountPoint::Auto,
-            Some(MountPoint::Sd) => ffi::MountPoint::Sd,
-            Some(MountPoint::Usb) => ffi::MountPoint::Usb,
-        },
-        stop_disc: toggle(settings.stop_disc),
-        lid_slot_on_error: toggle(settings.lid_slot_on_error),
-        ignore_shutdown_mode: toggle(settings.ignore_shutdown_mode),
-        black_background: toggle(settings.black_background),
-        dump_gecko_text: toggle(settings.dump_gecko_text),
-        show_rc_updates: toggle(settings.show_rc_updates),
+        autoboot: settings.autoboot.map_or(KEEP, |value| value as u8),
+        return_to: settings.return_to.map_or(KEEP, |value| value as u8),
+        shutdown_to: settings.shutdown_to.map_or(KEEP, |value| value as u8),
+        preferred_mount_point: settings
+            .preferred_mount_point
+            .map_or(KEEP, |value| value as u8),
+        stop_disc: settings.stop_disc.into(),
+        lid_slot_on_error: settings.lid_slot_on_error.into(),
+        ignore_shutdown_mode: settings.ignore_shutdown_mode.into(),
+        black_background: settings.black_background.into(),
+        dump_gecko_text: settings.dump_gecko_text.into(),
+        show_rc_updates: settings.show_rc_updates.into(),
     };
-    use ffi::Hack;
     let overrides: Vec<_> = hacks
         .into_iter()
-        .flat_map(|hacks| {
-            [
-                (Hack::Fix480p, hacks.fix_480p),
-                (Hack::BlockOnlineUpdates, hacks.block_online_updates),
-                (Hack::BlockDiscUpdates, hacks.block_disc_updates),
-                (Hack::BlockDiscAutoboot, hacks.block_disc_autoboot),
-                (Hack::AutoPressA, hacks.auto_press_a),
-                (Hack::RemoveDeflicker, hacks.remove_deflicker),
-                (Hack::MoveDiscChannel, hacks.move_disc_channel),
-                (
-                    Hack::RemoveNocopySaveProtection,
-                    hacks.remove_nocopy_save_protection,
-                ),
-                (Hack::ReplaceHealthScreen, hacks.replace_health_screen),
-                (Hack::NoBackgroundMusic, hacks.no_background_music),
-                (Hack::Wiimmfi, hacks.wiimmfi),
-                (Hack::RegionFreeEverything, hacks.region_free_everything),
-            ]
+        .flat_map(HackSettings::overrides)
+        .map(|(hack, enabled)| ffi::HackOverride {
+            hack: hack as u8,
+            enabled,
         })
-        .filter_map(|(hack, value)| value.map(|enabled| ffi::HackOverride { hack, enabled }))
         .collect();
     Ok(ffi::apply_priiloader(
         nand,

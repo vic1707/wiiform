@@ -10,9 +10,11 @@ pub mod titles;
 
 pub use model::{Recipe, RecipeFile};
 pub use parser::{MAX_BYTES, MAX_DEPTH, MAX_EVENTS, RecipeError, load_recipe, parse_recipe};
+#[cfg(feature = "cli")]
+pub use priiloader::parse_on_off;
 pub use priiloader::{
-    Autoboot, HackSettings, MountPoint, Priiloader, PriiloaderFile, PriiloaderSettings, ReturnTo,
-    ShutdownTo,
+    Autoboot, HackSettings, MountPoint, Priiloader, PriiloaderFile, PriiloaderHack,
+    PriiloaderSettings, ReturnTo, ShutdownTo,
 };
 pub use schema::json_schema;
 pub use system::{Aspect, CountryCode, Display, Language, Menu, Nickname, SensorBar, Setup};

@@ -1,18 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result};
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     recipe::Menu,
     workflow::{self, BootPolicy, BuildOptions},
 };
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum BootPolicyArg {
-    Stock,
-    #[value(name = "preserve-source")]
-    PreserveSource,
-}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -43,7 +36,7 @@ struct Cli {
 
     /// Boot-area validation policy.
     #[arg(long, value_enum, default_value = "stock")]
-    boot_policy: BootPolicyArg,
+    boot_policy: BootPolicy,
 
     /// Override the recipe menu with 4.3E, 4.3U, or 4.3J.
     #[arg(long)]
@@ -51,17 +44,13 @@ struct Cli {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let boot_policy = match cli.boot_policy {
-        BootPolicyArg::Stock => BootPolicy::Stock,
-        BootPolicyArg::PreserveSource => BootPolicy::PreserveSource,
-    };
     let options = BuildOptions {
         seed: cli.seed,
         recipe: cli.recipe,
         output: cli.output,
         cache: cli.cache,
         offline: cli.offline,
-        boot_policy,
+        boot_policy: cli.boot_policy,
         menu: cli.menu,
     };
     workflow::build(&options).context("Wiiform build failed")?;

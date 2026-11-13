@@ -6,8 +6,6 @@
 #include <cstdint>
 
 namespace wiiform::ffi {
-  enum class BootPolicy : std::uint8_t;
-  enum class Menu : std::uint8_t;
   enum class CacheMode : std::uint8_t;
   enum class WadPolicy : std::uint8_t;
   struct SystemSettings;

@@ -29,6 +29,12 @@ impl Nickname {
     }
 }
 
+impl Default for Nickname {
+    fn default() -> Self {
+        Self::try_from("Wii".to_owned()).expect("built-in Wii nickname is valid")
+    }
+}
+
 impl std::str::FromStr for Nickname {
     type Err = NicknameError;
 

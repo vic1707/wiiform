@@ -11,17 +11,18 @@ remove:
   # - photo-channel
   # - "0001000248414650"
 
-# Optional values to write before the first System Menu boot.
+# Either setup or display marks first-run setup complete.
+# Use an empty mapping for defaults. Omit both sections to run the Wii setup wizard.
 setup:
-  nickname: "Speed Wii"
-  language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja
-  country: "110" # Quoted Wii code. Common values are 110 UK, 49 USA, and 1 Japan.
+  nickname: "Speed Wii" # Defaults to "Wii".
+  language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.
+  country: "110" # Quoted Wii code. Defaults to 110 (E), 49 (U), or 1 (J).
   sensor_bar: above # above or below; defaults to above.
 
 display:
-  aspect: "16:9" # "4:3" or "16:9"
-  progressive: true # Priiloader fix_480p is a separate System Menu hack.
-  pal60: false
+  aspect: "16:9" # Defaults to "4:3".
+  progressive: true # Enables 480p where supported, off by default. fix_480p is a separate hack.
+  pal60: false # Off by default.
 
 titles:
   - path: wads/example-pal-channel.wad

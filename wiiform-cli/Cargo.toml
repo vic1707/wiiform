@@ -6,7 +6,7 @@ license = "GPL-2.0-only"
 publish = false
 
 [dependencies]
-wiiform-recipe = { path = "recipe" }
+wiiform-recipe = { path = "recipe", features = ["cli"] }
 anyhow = "1"
 base64 = "=0.23.1"
 clap = { version = "4.6", features = ["derive"] }

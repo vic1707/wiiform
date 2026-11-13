@@ -6,5 +6,5 @@
 #include <span>
 
 namespace sysconf {
-  void initialize(std::span<std::uint8_t> image, const SettingsOverrides& overrides);
+  void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings);
 }

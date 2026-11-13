@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 use wiiform::{
     native::{self, CacheMode, WadPolicy},
-    recipe::{
-        Autoboot, HackSettings, MountPoint, PriiloaderSettings, ReturnTo, Sha256, ShutdownTo,
-        TitleId,
-    },
+    recipe::{HackSettings, PriiloaderHack, PriiloaderSettings, Sha256, TitleId, parse_on_off},
     workflow::{publish_edit, read_bounded, validate_output},
 };
 
@@ -75,131 +72,32 @@ enum Command {
         #[arg(long)]
         hack_definitions: Option<PathBuf>,
         #[command(flatten)]
-        settings: PriiloaderArgs,
+        settings: PriiloaderSettings,
         #[arg(long = "hack", value_parser = parse_hack, value_name = "KEY=on|off")]
         hacks: Vec<HackOverride>,
     },
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum OnOff {
-    On,
-    Off,
-}
-
-impl OnOff {
-    fn enabled(self) -> bool {
-        matches!(self, Self::On)
-    }
-}
-
-#[derive(Args)]
-struct PriiloaderArgs {
-    #[arg(long, value_parser = ["disabled", "homebrew_channel", "bootmii_ios", "system_menu", "file"])]
-    autoboot: Option<String>,
-    #[arg(long, value_parser = ["system_menu", "priiloader", "autoboot", "file"])]
-    return_to: Option<String>,
-    #[arg(long, value_parser = ["none", "priiloader", "autoboot"])]
-    shutdown_to: Option<String>,
-    #[arg(long, value_parser = ["auto", "sd", "usb"])]
-    preferred_mount_point: Option<String>,
-    #[arg(long, value_enum)]
-    stop_disc: Option<OnOff>,
-    #[arg(long, value_enum)]
-    lid_slot_on_error: Option<OnOff>,
-    #[arg(long, value_enum)]
-    ignore_shutdown_mode: Option<OnOff>,
-    #[arg(long, value_enum)]
-    black_background: Option<OnOff>,
-    #[arg(long, value_enum)]
-    dump_gecko_text: Option<OnOff>,
-    #[arg(long, value_enum)]
-    show_rc_updates: Option<OnOff>,
-}
-
-impl From<PriiloaderArgs> for PriiloaderSettings {
-    fn from(args: PriiloaderArgs) -> Self {
-        Self {
-            autoboot: args.autoboot.as_deref().map(|name| match name {
-                "disabled" => Autoboot::Disabled,
-                "homebrew_channel" => Autoboot::HomebrewChannel,
-                "bootmii_ios" => Autoboot::BootmiiIos,
-                "system_menu" => Autoboot::SystemMenu,
-                "file" => Autoboot::File,
-                _ => unreachable!("validated by clap"),
-            }),
-            return_to: args.return_to.as_deref().map(|name| match name {
-                "system_menu" => ReturnTo::SystemMenu,
-                "priiloader" => ReturnTo::Priiloader,
-                "autoboot" => ReturnTo::Autoboot,
-                "file" => ReturnTo::File,
-                _ => unreachable!("validated by clap"),
-            }),
-            shutdown_to: args.shutdown_to.as_deref().map(|name| match name {
-                "none" => ShutdownTo::None,
-                "priiloader" => ShutdownTo::Priiloader,
-                "autoboot" => ShutdownTo::Autoboot,
-                _ => unreachable!("validated by clap"),
-            }),
-            preferred_mount_point: args
-                .preferred_mount_point
-                .as_deref()
-                .map(|name| match name {
-                    "auto" => MountPoint::Auto,
-                    "sd" => MountPoint::Sd,
-                    "usb" => MountPoint::Usb,
-                    _ => unreachable!("validated by clap"),
-                }),
-            stop_disc: args.stop_disc.map(OnOff::enabled),
-            lid_slot_on_error: args.lid_slot_on_error.map(OnOff::enabled),
-            ignore_shutdown_mode: args.ignore_shutdown_mode.map(OnOff::enabled),
-            black_background: args.black_background.map(OnOff::enabled),
-            dump_gecko_text: args.dump_gecko_text.map(OnOff::enabled),
-            show_rc_updates: args.show_rc_updates.map(OnOff::enabled),
-        }
-    }
-}
-
 #[derive(Clone)]
 struct HackOverride {
-    name: String,
+    hack: PriiloaderHack,
     enabled: bool,
 }
 
 fn parse_hack(value: &str) -> Result<HackOverride> {
-    let (name, state) = value.split_once('=').context("expected KEY=on|off")?;
-    let enabled = match state {
-        "on" => true,
-        "off" => false,
-        _ => bail!("expected KEY=on|off"),
-    };
-    Ok(HackOverride {
-        name: name.to_owned(),
-        enabled,
-    })
+    let (key, state) = value.split_once('=').context("expected KEY=on|off")?;
+    let hack = PriiloaderHack::from_str(key, false).map_err(anyhow::Error::msg)?;
+    let enabled = parse_on_off(state).map_err(anyhow::Error::msg)?;
+    Ok(HackOverride { hack, enabled })
 }
 
 fn hack_settings(overrides: Vec<HackOverride>) -> Result<HackSettings> {
     let mut hacks = HackSettings::default();
-    for HackOverride { name, enabled } in overrides {
-        let field = match name.as_str() {
-            "fix_480p" => &mut hacks.fix_480p,
-            "block_online_updates" => &mut hacks.block_online_updates,
-            "block_disc_updates" => &mut hacks.block_disc_updates,
-            "block_disc_autoboot" => &mut hacks.block_disc_autoboot,
-            "auto_press_a" => &mut hacks.auto_press_a,
-            "remove_deflicker" => &mut hacks.remove_deflicker,
-            "move_disc_channel" => &mut hacks.move_disc_channel,
-            "remove_nocopy_save_protection" => &mut hacks.remove_nocopy_save_protection,
-            "replace_health_screen" => &mut hacks.replace_health_screen,
-            "no_background_music" => &mut hacks.no_background_music,
-            "wiimmfi" => &mut hacks.wiimmfi,
-            "region_free_everything" => &mut hacks.region_free_everything,
-            _ => bail!("unknown Priiloader hack {name}"),
-        };
+    for HackOverride { hack, enabled } in overrides {
         ensure!(
-            field.replace(enabled).is_none(),
-            "repeated Priiloader hack {name}"
+            hacks.set(hack, enabled),
+            "repeated Priiloader hack {}",
+            hack.as_str()
         );
     }
     Ok(hacks)
@@ -267,7 +165,7 @@ fn main() -> Result<()> {
             image.edit(|nand| {
                 let app = optional_bytes(app.as_deref(), 747_968)?;
                 let definitions = optional_bytes(hack_definitions.as_deref(), 64 * 1024)?;
-                native::apply_priiloader(nand, &app, &definitions, &settings.into(), hacks.as_ref())
+                native::apply_priiloader(nand, &app, &definitions, &settings, hacks.as_ref())
             })
         }
     }

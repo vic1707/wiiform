@@ -10,19 +10,20 @@ namespace {
     return {bytes.data(), bytes.size()};
   }
 
-  auto toggle(Toggle value) -> std::optional<bool> {
+  auto toggle(BoolOverride value) -> std::optional<bool> {
     switch (value) {
-      case Toggle::Unset: return std::nullopt;
-      case Toggle::Off: return false;
-      case Toggle::On: return true;
+      case BoolOverride::Keep: return std::nullopt;
+      case BoolOverride::Off: return false;
+      case BoolOverride::On: return true;
     }
     throw std::runtime_error("Unsupported toggle");
   }
 
-  template<class Output, class Input>
-  auto option(Input value) -> std::optional<Output> {
-    if (value == Input::Unset) return std::nullopt;
-    return static_cast<Output>(value);
+  template<class Enum>
+  auto option(std::uint8_t value) -> std::optional<Enum> {
+    // All current Priiloader choice codes are smaller than this reserved value.
+    if (value == 0xff) return std::nullopt;
+    return static_cast<Enum>(value);
   }
 }
 
@@ -41,10 +42,9 @@ auto create_stock(Bytes keys, Bytes boot_blocks, rust::Slice<const std::uint16_t
 
 void apply_system_settings(Nand nand, const SystemSettings& settings) {
   core::apply_system_settings(span(nand), {
-      std::string(settings.nickname), option<wiiform::Language>(settings.language),
-      settings.country ? std::optional(settings.country) : std::nullopt,
-      toggle(settings.sensor_bar_above), toggle(settings.widescreen),
-      toggle(settings.progressive), toggle(settings.pal60)});
+      std::string(settings.nickname), static_cast<wiiform::Language>(settings.language),
+      settings.country, settings.sensor_bar_above, settings.widescreen,
+      settings.progressive, settings.pal60});
 }
 
 void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,

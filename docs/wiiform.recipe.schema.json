@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "display": {
-      "description": "Optional display settings; at least one field is required when present.",
+      "description": "Optional display settings. An empty mapping uses the defaults.",
       "$ref": "#/$defs/Display"
     },
     "menu": {
@@ -38,10 +38,7 @@
   },
   "additionalProperties": false,
   "required": [
-    "menu",
-    "setup",
-    "display",
-    "priiloader"
+    "menu"
   ],
   "$defs": {
     "Aspect": {
@@ -64,31 +61,29 @@
       ]
     },
     "Display": {
-      "description": "Display configuration written to SYSCONF.",
+      "description": "Display configuration written to SYSCONF.\n\nAn explicit empty mapping applies the defaults. Omitting both setup and\ndisplay keeps factory first-run behavior.",
       "type": "object",
       "properties": {
         "aspect": {
-          "description": "Set 4:3 or widescreen output.",
-          "$ref": "#/$defs/Aspect"
+          "description": "Set 4:3 or widescreen output (defaults to 4:3).",
+          "$ref": "#/$defs/Aspect",
+          "default": "4:3"
         },
         "pal60": {
-          "description": "Enable PAL 60 Hz mode.",
-          "type": "boolean"
+          "description": "Enable PAL 60 Hz mode (defaults to off).",
+          "type": "boolean",
+          "default": false
         },
         "progressive": {
-          "description": "Enable progressive 480p output when supported by the display chain.",
-          "type": "boolean"
+          "description": "Enable progressive 480p output when supported (defaults to off).",
+          "type": "boolean",
+          "default": false
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "aspect",
-        "progressive",
-        "pal60"
-      ]
+      "additionalProperties": false
     },
     "HackSettings": {
-      "description": "Priiloader hacks supported by the pinned definitions.",
+      "description": "Explicit System Menu hack overrides.",
       "type": "object",
       "properties": {
         "auto_press_a": {
@@ -140,24 +135,10 @@
           "type": "boolean"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "fix_480p",
-        "block_online_updates",
-        "block_disc_updates",
-        "block_disc_autoboot",
-        "auto_press_a",
-        "remove_deflicker",
-        "move_disc_channel",
-        "remove_nocopy_save_protection",
-        "replace_health_screen",
-        "no_background_music",
-        "wiimmfi",
-        "region_free_everything"
-      ]
+      "additionalProperties": false
     },
     "Language": {
-      "description": "Wii language selected in the first-run settings.",
+      "description": "Wii first-run language value written to SYSCONF.",
       "type": "string",
       "enum": [
         "ja",
@@ -213,25 +194,10 @@
         "settings": {
           "description": "Optional settings overrides.",
           "$ref": "#/$defs/PriiloaderSettings",
-          "default": {
-            "autoboot": null,
-            "black_background": null,
-            "dump_gecko_text": null,
-            "ignore_shutdown_mode": null,
-            "lid_slot_on_error": null,
-            "preferred_mount_point": null,
-            "return_to": null,
-            "show_rc_updates": null,
-            "shutdown_to": null,
-            "stop_disc": null
-          }
+          "default": {}
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "app",
-        "hacks"
-      ]
+      "additionalProperties": false
     },
     "PriiloaderSettings": {
       "description": "Priiloader settings written to its settings file.",
@@ -268,19 +234,7 @@
           "type": "boolean"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "autoboot",
-        "return_to",
-        "shutdown_to",
-        "preferred_mount_point",
-        "stop_disc",
-        "lid_slot_on_error",
-        "ignore_shutdown_mode",
-        "black_background",
-        "dump_gecko_text",
-        "show_rc_updates"
-      ]
+      "additionalProperties": false
     },
     "RemovalInput": {
       "description": "One removal entry as written in a recipe: a known name or quoted title ID.",
@@ -345,36 +299,100 @@
       ]
     },
     "Setup": {
-      "description": "First-run setup fields written to SYSCONF.",
+      "description": "First-run setup values written to SYSCONF.",
       "type": "object",
       "properties": {
         "country": {
-          "description": "Wii country code used for country-dependent console settings.",
+          "description": "Country code used for country-dependent console settings.",
           "type": "string",
-          "pattern": "^(1|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50|51|52|65|66|67|74|76|77|78|79|82|83|88|94|95|96|97|98|99|105|107|108|110)$"
+          "enum": [
+            "1",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41",
+            "42",
+            "43",
+            "44",
+            "45",
+            "46",
+            "47",
+            "48",
+            "49",
+            "50",
+            "51",
+            "52",
+            "65",
+            "66",
+            "67",
+            "74",
+            "76",
+            "77",
+            "78",
+            "79",
+            "82",
+            "83",
+            "88",
+            "94",
+            "95",
+            "96",
+            "97",
+            "98",
+            "99",
+            "105",
+            "107",
+            "108",
+            "110"
+          ]
         },
         "language": {
-          "description": "Optional setup language, constrained by the effective menu region.",
+          "description": "Setup language, constrained by the effective menu region.",
           "$ref": "#/$defs/Language"
         },
         "nickname": {
-          "description": "Optional console nickname (1–10 printable BMP characters).",
+          "description": "Console nickname. Defaults to the Wii's factory name.",
           "type": "string",
+          "default": "Wii",
           "maxLength": 10,
           "minLength": 1
         },
         "sensor_bar": {
-          "description": "Physical sensor bar position.",
-          "$ref": "#/$defs/SensorBar"
+          "description": "Physical sensor bar position. Defaults to above the display.",
+          "$ref": "#/$defs/SensorBar",
+          "default": "above"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "nickname",
-        "language",
-        "country",
-        "sensor_bar"
-      ]
+      "additionalProperties": false
     },
     "ShutdownTo": {
       "description": "Priiloader shutdown destination.",

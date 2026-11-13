@@ -20,13 +20,12 @@ namespace {
   struct DisplayEntry {
     const char* name;
     int lookup_offset;
-    std::optional<bool> sysconf::DisplayOverrides::* option;
   };
 
   constexpr std::array display_entries{
-      DisplayEntry{"IPL.AR", 0x3ff8, &sysconf::DisplayOverrides::widescreen},
-      DisplayEntry{"IPL.PGS", 0x3fde, &sysconf::DisplayOverrides::progressive_scan},
-      DisplayEntry{"IPL.E60", 0x3fee, &sysconf::DisplayOverrides::pal60},
+      DisplayEntry{"IPL.AR", 0x3ff8},
+      DisplayEntry{"IPL.PGS", 0x3fde},
+      DisplayEntry{"IPL.E60", 0x3fee},
   };
 
   enum class Type : quint8 {
@@ -184,13 +183,6 @@ namespace {
     return {value(parsed.fields[0]), value(parsed.fields[1]), value(parsed.fields[2])};
   }
 
-  auto language_names() -> const std::array<QString, 7>& {
-    static const std::array<QString, 7> names{QStringLiteral("ja"), QStringLiteral("en"), QStringLiteral("de"),
-                                               QStringLiteral("fr"), QStringLiteral("es"), QStringLiteral("it"),
-                                               QStringLiteral("nl")};
-    return names;
-  }
-
   auto encode_entry(const EntryToWrite& entry) -> QByteArray {
     QByteArray result;
     result.append(char((static_cast<int>(entry.type) << 5) | (entry.name.size() - 1)));
@@ -232,11 +224,11 @@ namespace {
     return result;
   }
 
-  auto generated_entries(const sysconf::SettingsOverrides& overrides,
+  auto generated_entries(const wiiform::SystemSettings& settings,
                          const QString& menu_region) -> std::vector<EntryToWrite> {
     require(menu_region == "EUR" || menu_region == "USA" || menu_region == "JPN",
             "Unsupported menu region for SYSCONF generation");
-    const auto country = overrides.country.value_or(menu_region == "EUR" ? 110 : menu_region == "USA" ? 49 : 1);
+    const auto country = settings.country;
     const bool country_allowed = menu_region == "EUR"
         ? (country == 65 || country == 66 || country == 67 || country == 74 || country == 76 ||
            country == 77 || country == 78 || country == 79 || country == 82 || country == 83 ||
@@ -245,18 +237,17 @@ namespace {
         : menu_region == "USA" ? (country >= 8 && country <= 52) : country == 1;
     require(country_allowed, "Country code does not match the requested menu region");
 
-    const auto language = overrides.language.value_or(menu_region == "JPN" ? "ja" : "en");
-    if (menu_region == "JPN") require(language == "ja", "Japanese menu requires Japanese language");
-    if (menu_region == "USA") require(language == "en" || language == "fr" || language == "es",
+    using wiiform::Language;
+    const auto language = settings.language;
+    const auto language_index = static_cast<std::uint8_t>(language);
+    require(language_index <= static_cast<std::uint8_t>(Language::nl), "Unsupported Wii language code");
+    if (menu_region == "JPN") require(language == Language::ja, "Japanese menu requires Japanese language");
+    if (menu_region == "USA") require(language == Language::en || language == Language::fr || language == Language::es,
                                        "Language is not supported by the USA menu");
-    if (menu_region == "EUR") require(language != "ja", "Language is not supported by the EUR menu");
-    const auto language_position =
-        std::find(language_names().cbegin(), language_names().cend(), language);
-    require(language_position != language_names().cend(), "Unsupported Wii language code");
-    const auto language_index = static_cast<int>(language_position - language_names().cbegin());
-    const auto nickname = overrides.nickname.value_or(QStringLiteral("Wii"));
-    const bool bar_above = overrides.sensor_bar_above.value_or(true);
-    const auto display = overrides.display;
+    if (menu_region == "EUR") require(language != Language::ja, "Language is not supported by the EUR menu");
+    require(settings.nickname.size() <= 30, "Nickname exceeds the supported UTF-8 size");
+    const auto nickname = QString::fromStdString(settings.nickname);
+    require(nickname.toStdString() == settings.nickname, "Nickname must be UTF-8");
 
     QByteArray country_data(0x1008, '\0');
     country_data[0] = char(country);
@@ -269,7 +260,7 @@ namespace {
       {"BT.DINF", Type::BigArray, QByteArray(0x461, '\0')},
       {"BT.CDIF", Type::BigArray, QByteArray(0x205, '\0')},
       {"BT.SENS", Type::Long, u32_bytes(3)},
-      {"BT.BAR", Type::Byte, QByteArray(1, bar_above ? char(1) : char(0))},
+      {"BT.BAR", Type::Byte, QByteArray(1, settings.sensor_bar_above ? char(1) : char(0))},
       {"BT.SPKV", Type::Byte, QByteArray(1, char(0x58))},
       {"BT.MOT", Type::Byte, QByteArray(1, char(1))},
       {"IPL.NIK", Type::SmallArray, nickname_bytes(nickname)},
@@ -277,14 +268,14 @@ namespace {
       {"IPL.SADR", Type::BigArray, country_data},
       {"IPL.PC", Type::SmallArray, parental_controls},
       {"IPL.CB", Type::Long, u32_bytes(0)},
-      {"IPL.AR", Type::Byte, QByteArray(1, display.widescreen.value_or(false) ? char(1) : char(0))},
+      {"IPL.AR", Type::Byte, QByteArray(1, settings.widescreen ? char(1) : char(0))},
       {"IPL.SSV", Type::Byte, QByteArray(1, char(1))},
       {"IPL.CD", Type::ByteBool, QByteArray(1, char(1))},
       {"IPL.CD2", Type::ByteBool, QByteArray(1, char(0))},
       {"IPL.EULA", Type::ByteBool, QByteArray(1, char(0))},
       {"IPL.UPT", Type::Byte, QByteArray(1, char(2))},
-      {"IPL.PGS", Type::Byte, QByteArray(1, display.progressive_scan.value_or(false) ? char(1) : char(0))},
-      {"IPL.E60", Type::Byte, QByteArray(1, display.pal60.value_or(false) ? char(1) : char(0))},
+      {"IPL.PGS", Type::Byte, QByteArray(1, settings.progressive ? char(1) : char(0))},
+      {"IPL.E60", Type::Byte, QByteArray(1, settings.pal60 ? char(1) : char(0))},
       {"IPL.DH", Type::Byte, QByteArray(1, char(0))},
       {"IPL.INC", Type::Long, u32_bytes(8)},
       {"IPL.FRC", Type::Long, u32_bytes(40)},
@@ -374,7 +365,8 @@ namespace sysconf {
     if (language != parsed.records.cend() && language->type == static_cast<quint8>(Type::Byte) &&
         language->value_offset >= 0) {
       const auto index = static_cast<quint8>(bytes.at(language->value_offset));
-      if (index < language_names().size()) result.language = language_names()[index];
+      if (index <= static_cast<std::uint8_t>(wiiform::Language::nl))
+        result.language = static_cast<wiiform::Language>(index);
     }
     const auto country = parsed.records.constFind("IPL.SADR");
     if (country != parsed.records.cend() &&
@@ -390,28 +382,20 @@ namespace sysconf {
     return result;
   }
 
-  auto create(const SettingsOverrides& overrides, const QString& menu_region) -> QByteArray {
-    const auto bytes = encode_new_sysconf(generated_entries(overrides, menu_region));
+  auto create(const wiiform::SystemSettings& requested, const QString& menu_region) -> QByteArray {
+    const auto bytes = encode_new_sysconf(generated_entries(requested, menu_region));
     const auto settings = read_settings(bytes);
-    require(settings.setup_complete == std::optional<bool>(true),
-            "Generated SYSCONF does not mark first-time setup complete");
-    require(settings.nickname == std::optional<QString>(overrides.nickname.value_or(QStringLiteral("Wii"))),
+    const auto display = read_display(bytes);
+    require(settings.setup_complete == true, "Generated SYSCONF does not mark first-time setup complete");
+    require(settings.nickname == QString::fromStdString(requested.nickname),
             "Generated SYSCONF nickname readback differs");
-    const auto country = overrides.country.value_or(menu_region == "EUR" ? 110 : menu_region == "USA" ? 49 : 1);
-    require(settings.country == std::optional<std::uint8_t>(country),
-            "Generated SYSCONF country readback differs");
-    require(settings.sensor_bar_above ==
-                std::optional<bool>(overrides.sensor_bar_above.value_or(true)),
+    require(settings.language == requested.language, "Generated SYSCONF language readback differs");
+    require(settings.country == requested.country, "Generated SYSCONF country readback differs");
+    require(settings.sensor_bar_above == requested.sensor_bar_above,
             "Generated SYSCONF sensor bar readback differs");
-    require(read_display(bytes).widescreen ==
-                std::optional<bool>(overrides.display.widescreen.value_or(false)),
+    require(display.widescreen == requested.widescreen &&
+                display.progressive_scan == requested.progressive && display.pal60 == requested.pal60,
             "Generated SYSCONF display readback differs");
-    require(read_display(bytes).progressive_scan ==
-                std::optional<bool>(overrides.display.progressive_scan.value_or(false)),
-            "Generated SYSCONF progressive-scan readback differs");
-    require(read_display(bytes).pal60 ==
-                std::optional<bool>(overrides.display.pal60.value_or(false)),
-            "Generated SYSCONF PAL60 readback differs");
     return bytes;
   }
 

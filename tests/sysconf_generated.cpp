@@ -51,23 +51,18 @@ namespace {
   }
 
   void check_region(const QString& menu, std::uint8_t country) {
-    sysconf::SettingsOverrides overrides;
-    overrides.country = country;
-    overrides.sensor_bar_above = false;
-    overrides.nickname = QStringLiteral("Setup");
-    overrides.language = menu == "JPN" ? QStringLiteral("ja") : QStringLiteral("en");
-    overrides.display.widescreen = true;
-    overrides.display.progressive_scan = true;
-    overrides.display.pal60 = true;
+    using wiiform::Language;
+    const auto language = menu == "JPN" ? Language::ja : Language::en;
+    const wiiform::SystemSettings requested{"Setup", language, country, false, true, true, true};
 
-    const auto bytes = sysconf::create(overrides, menu);
+    const auto bytes = sysconf::create(requested, menu);
     check(bytes.size() == sysconf::size, "Generated SYSCONF has the wrong size");
     check(bytes.startsWith("SCv0") && bytes.mid(bytes.size() - 4) == "SCed",
           "Generated SYSCONF has invalid sentinels");
     const auto settings = sysconf::read_settings(bytes);
     check(settings.setup_complete == true, "Generated SYSCONF did not skip first-time setup");
     check(settings.nickname == QStringLiteral("Setup"), "Generated nickname did not round-trip");
-    check(settings.language == (menu == "JPN" ? QStringLiteral("ja") : QStringLiteral("en")),
+    check(settings.language == language,
           "Generated language did not round-trip");
     check(settings.country == country, "Generated country did not round-trip");
     check(settings.sensor_bar_above == false, "Generated sensor-bar position did not round-trip");
@@ -102,8 +97,7 @@ int main(int argc, char** argv) {
     check_region(QStringLiteral("USA"), 49);
     check_region(QStringLiteral("JPN"), 1);
 
-    sysconf::SettingsOverrides invalid;
-    invalid.country = 1;
+    const wiiform::SystemSettings invalid{"Wii", wiiform::Language::en, 1, true, false, false, false};
     try {
       (void)sysconf::create(invalid, QStringLiteral("EUR"));
       throw std::runtime_error("SYSCONF accepted a country incompatible with its menu");

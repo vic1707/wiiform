@@ -16,15 +16,30 @@ pub struct RecipeFile {
     #[serde(default)]
     pub remove: Vec<RemovalInput>,
     /// Optional first-run setup values.
+    #[serde(
+        default,
+        deserialize_with = "crate::schema::non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "crate::schema::NonNull<Setup>")]
     pub setup: Option<Setup>,
-    /// Optional display settings; at least one field is required when present.
+    /// Optional display settings. An empty mapping uses the defaults.
+    #[serde(
+        default,
+        deserialize_with = "crate::schema::non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "crate::schema::NonNull<Display>")]
     pub display: Option<Display>,
     /// Optional WAD titles. Every title requires a path and SHA-256.
     #[serde(default)]
     pub titles: Vec<TitleFile>,
     /// Optional Priiloader install/settings/hacks.
+    #[serde(
+        default,
+        deserialize_with = "crate::schema::non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "crate::schema::NonNull<PriiloaderFile>")]
     pub priiloader: Option<PriiloaderFile>,
 }

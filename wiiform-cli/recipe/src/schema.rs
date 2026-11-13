@@ -2,6 +2,7 @@
 use std::{borrow::Cow, marker::PhantomData};
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, schema_for};
+use serde::{Deserialize, Deserializer};
 
 use crate::RecipeFile;
 
@@ -32,4 +33,11 @@ impl<T: JsonSchema> JsonSchema for NonNull<T> {
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         T::json_schema(generator)
     }
+}
+
+/// Missing fields use Serde's default. A present field must contain a value.
+pub(crate) fn non_null_option<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
