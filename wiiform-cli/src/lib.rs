@@ -5,6 +5,7 @@ pub mod native;
 pub mod prepared_verify;
 pub mod priiloader_payload;
 pub use wiiform_recipe as recipe;
+pub mod seed;
 pub mod stock_verify;
 
 pub mod workflow;

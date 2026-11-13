@@ -8,10 +8,14 @@ publish = false
 [dependencies]
 wiiform-recipe = { path = "recipe" }
 anyhow = "1"
+base64 = "=0.23.1"
 clap = { version = "4.6", features = ["derive"] }
 cxx = "=1.0.205"
 libc = "0.2"
+lzma-rust2 = { version = "=0.25.0", features = ["std"] }
+nnn = { version = "=1.2.6", features = ["regex_validation"] }
 serde = { version = "=1.0.229", features = ["derive"] }
+serde-saphyr = "=2.1.1"
 serde_json = "=1.0.154"
 sha2 = "0.11"
 tempfile = "3"
