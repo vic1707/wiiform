@@ -32,11 +32,43 @@ pub struct RecipeFile {
 /// Fully validated recipe consumed by the build workflow.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Recipe {
-    pub menu: Menu,
+    pub(crate) menu: Menu,
     /// Canonical allowlisted IDs after alias expansion for `menu`.
-    pub remove: Vec<TitleId>,
-    pub setup: Option<Setup>,
-    pub display: Option<Display>,
-    pub titles: Vec<Title>,
-    pub priiloader: Option<Priiloader>,
+    pub(crate) remove: Vec<TitleId>,
+    pub(crate) setup: Option<Setup>,
+    pub(crate) display: Option<Display>,
+    pub(crate) titles: Vec<Title>,
+    pub(crate) priiloader: Option<Priiloader>,
+    pub(crate) remove_inputs: Vec<RemovalInput>,
+}
+
+impl Recipe {
+    pub fn menu(&self) -> Menu {
+        self.menu
+    }
+
+    pub fn remove(&self) -> &[TitleId] {
+        &self.remove
+    }
+
+    pub fn setup(&self) -> Option<&Setup> {
+        self.setup.as_ref()
+    }
+
+    pub fn display(&self) -> Option<&Display> {
+        self.display.as_ref()
+    }
+
+    pub fn titles(&self) -> &[Title] {
+        &self.titles
+    }
+
+    pub fn priiloader(&self) -> Option<&Priiloader> {
+        self.priiloader.as_ref()
+    }
+
+    /// Retarget menu-dependent recipe settings and aliases, then check coherence again.
+    pub fn with_menu(self, menu: Menu) -> Result<Self, crate::RecipeError> {
+        crate::parser::retarget_recipe(self, menu)
+    }
 }

@@ -2,38 +2,34 @@
 #pragma once
 
 #include "rust/cxx.h"
+#include <array>
 #include <cstdint>
-#include <vector>
 
 namespace wiiform::ffi {
-    enum class BootPolicy : std::uint8_t;
-    enum class Inspection : std::uint8_t;
-    enum class WadPolicy : std::uint8_t;
-    struct SettingOverride;
-    struct DisplaySource;
-    struct StockTitle;
+  enum class BootPolicy : std::uint8_t;
+  enum class Menu : std::uint8_t;
+  enum class CacheMode : std::uint8_t;
+  enum class WadPolicy : std::uint8_t;
+  struct SystemSettings;
+  struct PriiloaderSettings;
+  struct HackOverride;
+  struct StockOptions;
+  struct StockIdentity;
+  struct InstalledWad;
 
-    void export_seed(rust::Str nand, rust::Str seed);
-    void unpack_seed(rust::Str seed, rust::Str directory);
-    auto inventory(rust::Str nand) -> rust::String;
-    auto preflight(rust::Str seed, rust::Str reference, rust::Str candidate,
-                   BootPolicy policy, rust::Slice<const SettingOverride> settings) -> rust::String;
-    auto inspect(rust::Str nand, Inspection scope) -> rust::String;
-    auto display_source(rust::Str nand) -> DisplaySource;
-    auto priiloader_app(rust::Str nand) -> rust::Vec<std::uint8_t>;
-    auto inspect_wad(rust::Str wad, rust::Str digest, WadPolicy policy) -> rust::String;
-    auto stock_titles(rust::Str area) -> rust::Vec<StockTitle>;
+  using Bytes = rust::Slice<const std::uint8_t>;
+  using Nand = rust::Slice<std::uint8_t>;
 
-    void create(rust::Str seed, rust::Str output, BootPolicy policy, rust::Slice<const SettingOverride> settings);
-    void install_nus_title(rust::Str image, rust::Str cache, std::uint64_t title, std::uint16_t version, bool offline);
-    void install_wad(rust::Str image, rust::Str package, rust::Str digest, bool allow_unsigned);
-    void remove_title(rust::Str image, std::uint64_t title);
-    auto set_display(rust::Str image, const DisplaySource& source, rust::Slice<const SettingOverride> settings) -> rust::String;
-    auto set_sysconf(rust::Str image, const DisplaySource& source, rust::Slice<const SettingOverride> settings) -> rust::String;
-    auto install_priiloader(rust::Str image, rust::Str app, rust::Str output,
-                           rust::Slice<const SettingOverride> settings) -> rust::String;
-    auto set_priiloader_settings(rust::Str image, rust::Str output, rust::Slice<const SettingOverride> settings,
-                                rust::Str definitions, rust::Slice<const SettingOverride> hacks) -> rust::String;
-    auto normalize_backupmii_footer(rust::Str image, rust::Str expected_sha256) -> rust::String;
-    auto prepare_backupmii_keys(rust::Str image, rust::Str output, rust::Str expected_sha256) -> rust::String;
+  auto extract_seed(Bytes nand, Bytes sidecar_keys) -> rust::String;
+  auto create_stock(Bytes keys, Bytes boot_blocks, rust::Slice<const std::uint16_t> bad_blocks,
+                    Bytes setting_txt, Nand nand, rust::Str cache, const StockOptions& options) -> StockIdentity;
+  void apply_system_settings(Nand nand, const SystemSettings& settings);
+  void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
+                         std::uint16_t version, CacheMode mode);
+  auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
+                   WadPolicy policy) -> InstalledWad;
+  void remove_title(Nand nand, std::uint64_t title_id);
+  void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
+                       const PriiloaderSettings& settings, rust::Slice<const HackOverride> hacks);
+  auto prepare_backupmii(Nand nand, const StockIdentity& expected) -> rust::Vec<std::uint8_t>;
 }

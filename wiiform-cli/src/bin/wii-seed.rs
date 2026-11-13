@@ -1,46 +1,44 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use anyhow::Result;
-use clap::{Parser, Subcommand};
-use std::path::PathBuf;
-use wiiform::native;
+use anyhow::{Context, Result, ensure};
+use clap::Parser;
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
+use wiiform::{native, workflow::read_bounded};
 
 #[derive(Debug, Parser)]
 #[command(
     name = "wii-seed",
     version,
-    about = "Export and unpack decrypted Wii console seeds"
+    about = "Extract a plaintext console seed to stdout"
 )]
 struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
+    backup: PathBuf,
 
-#[derive(Debug, Subcommand)]
-enum Command {
-    /// Export the console inputs from a full NAND backup into a plaintext seed.
-    Export {
-        nand_backup: PathBuf,
-        new_seed: PathBuf,
-    },
-    /// Unpack a decrypted seed into individual plaintext files.
-    Unpack {
-        seed: PathBuf,
-        new_directory: PathBuf,
-    },
+    /// Matching keys.bin for a footerless backup. Defaults to keys.bin beside BACKUP.
+    #[arg(long, value_name = "FILE")]
+    keys: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    match cli.command {
-        Command::Export {
-            nand_backup,
-            new_seed,
-        } => native::export_seed(&nand_backup, &new_seed)?,
-        Command::Unpack {
-            seed,
-            new_directory,
-        } => native::unpack_seed(&seed, &new_directory)?,
-    }
-    println!("Wrote plaintext output. Keep console key material private.");
+    let nand = read_bounded(&cli.backup, native::RAW_NAND_BYTES, native::NAND_BYTES)
+        .context("cannot read NAND backup")?;
+    ensure!(
+        [native::RAW_NAND_BYTES, native::NAND_BYTES].contains(&nand.len()),
+        "unsupported NAND backup size"
+    );
+    let sidecar = if nand.len() == native::RAW_NAND_BYTES {
+        let keys = cli
+            .keys
+            .unwrap_or_else(|| cli.backup.with_file_name("keys.bin"));
+        read_bounded(&keys, 0x400, 0x400)?
+    } else {
+        ensure!(cli.keys.is_none(), "--keys is only for a footerless backup");
+        Vec::new()
+    };
+    let seed = native::extract_seed(&nand, &sidecar)?;
+    io::stdout().lock().write_all(seed.as_bytes())?;
     Ok(())
 }

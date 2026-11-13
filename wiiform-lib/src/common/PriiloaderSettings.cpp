@@ -78,28 +78,24 @@ namespace {
 }
 
 namespace priiloader {
-  auto inspect_settings(const QByteArray& bytes) -> QJsonObject {
+  auto read_settings(const QByteArray& bytes) -> Settings {
     if (bytes.size() != settings_size)
-      return {{"status", "unsupported"}, {"reason", "unsupported_file_size"}};
+      throw std::runtime_error("Cannot write settings in an unsupported Priiloader format");
 
     const auto version = read_u32(bytes, 4);
     const auto release_candidate = read_u32(bytes, 16);
     if (version != merged_version_010 || release_candidate != 0)
-      return {{"status", "unsupported"}, {"reason", "unsupported_version"}};
+      throw std::runtime_error("Cannot write settings in an unsupported Priiloader format");
 
     for (const auto& setting : boolean_settings)
       if (byte(bytes, setting.offset) > 1)
-        return {{"status", "invalid"}, {"format", "0.10.0"}, {"reason", "invalid_boolean"}};
+        throw std::runtime_error("Cannot write malformed Priiloader settings");
 
     for (const auto& setting : enum_settings)
       if (static_cast<std::size_t>(byte(bytes, setting.offset)) >= setting.choice_count)
-        return {{"status", "invalid"}, {"format", "0.10.0"}, {"reason", "invalid_enum"}};
+        throw std::runtime_error("Cannot write malformed Priiloader settings");
 
-    QJsonObject values{{"system_menu_ios", byte(bytes, 20)}};
-    for (const auto& setting : enum_settings) values[setting.name] = setting_value(bytes, setting);
-    for (const auto& setting : boolean_settings)
-      values[setting.name] = byte(bytes, setting.offset) != 0;
-    return {{"status", "decoded"}, {"format", "0.10.0"}, {"values", values}};
+    return {setting_value(bytes, enum_settings[0]), setting_value(bytes, enum_settings[1])};
   }
 
   auto default_settings() -> QByteArray {
@@ -112,12 +108,7 @@ namespace priiloader {
   }
 
   auto patch_settings(QByteArray bytes, const QMap<QString, QString>& overrides) -> QByteArray {
-    const auto inspection = inspect_settings(bytes);
-    const auto status = inspection["status"].toString();
-    if (status == "unsupported")
-      throw std::runtime_error("Cannot write settings in an unsupported Priiloader format");
-    if (status != "decoded")
-      throw std::runtime_error("Cannot write malformed Priiloader settings");
+    read_settings(bytes);
 
     QMap<QString, const EnumSetting*> enum_by_name;
     for (const auto& setting : enum_settings) enum_by_name.insert(QLatin1String(setting.name), &setting);

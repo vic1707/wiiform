@@ -2,15 +2,15 @@
 #pragma once
 
 #include <Layout.hpp>
-#include <QFile>
+#include <NandBuffer.hpp>
 #include <nandbin.h>
 
 namespace working_image {
   class Image {
-    QFile lock;
+    nand_buffer::Device device;
 
   public:
-    explicit Image(const QString& path);
+    explicit Image(std::span<std::uint8_t> image);
     NandBin nand;
     inspect::LayoutSummary layout;
   };

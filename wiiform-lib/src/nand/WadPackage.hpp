@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #pragma once
 
-#include <QString>
 #include <tools.h>
+#include <cstdint>
+#include <span>
 
 namespace wad_package {
   enum class Policy { Standard, LegacyChannel };
@@ -18,8 +19,7 @@ namespace wad_package {
     bool nintendo_signed() const { return tmd_nintendo_signed && ticket_nintendo_signed; }
   };
 
-  // Read a standard installable Wii WAD, validate every decrypted content,
-  // and report signature authenticity independently.
-  auto read(const QString& path, const QByteArray& expected_sha256 = {},
+  // Parse bounded caller-owned bytes without copying the complete WAD.
+  auto read(std::span<const std::uint8_t> bytes, const QByteArray& expected_sha256,
             Policy policy = Policy::Standard) -> Package;
 }

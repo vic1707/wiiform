@@ -6,9 +6,10 @@ call that core in-process through direct CXX bindings. Qt types stay inside the 
 implementation. The public C++ headers use standard-library types and
 project-owned value types.
 
-The command suite contains `wiiform` for recipe builds, `wii-nand` for focused
-NAND operations and inspection, and `wii-seed` for seed export and unpacking.
-The library opens source backups and inspected NANDs read-only.
+The command suite contains `wiiform` for recipe builds, `wii-nand` for editing
+an existing image into a new file, and `wii-seed` for extracting a seed to
+stdout. Rust owns the NAND buffer and publishes files after the native
+operation succeeds.
 
 ## Build from a checkout
 
@@ -26,7 +27,7 @@ directory for its bundled Lua files. Use `mise tasks` to list individual tasks.
 
 ```sh
 mise run run:wiiform -- --help
-mise run run:wii-nand -- stock-titles EUR
+mise run run:wii-nand -- --help
 mise run run:wii-seed -- --help
 ```
 
@@ -59,40 +60,36 @@ display settings; WAD installs; and Priiloader settings and named hacks.
 ```sh
 wiiform --seed console.seed.yaml --recipe recipe.yaml \
   --output prepared-console [--cache ./cache] [--offline] \
-  [--reference same-console.nand.bin] \
   [--boot-policy stock|preserve-source] [--menu 4.3E|4.3U|4.3J]
 ```
 
 The output must be a new directory. A successful build publishes `nand.bin`
-and the matching BootMii `keys.bin` together. Builds that set up or import
-display settings require `--reference` from the same console. The command
-retains private evidence next to the bundle. Keep that directory protected:
-the seed and reports contain console identity material. `--offline` forbids
-downloads and requires the requested system titles and Priiloader payloads to
-be in the cache.
+and its matching BootMii `keys.bin` together. Setup or display settings generate
+a fresh SYSCONF and mark first-run setup complete. Pair Wii Remotes again after
+restoring a prepared image. A stock recipe without either section uses the
+console's first-run setup. `--offline` requires the requested NUS and
+Priiloader assets in the cache.
 
-The seed is plaintext console key material. Store it and any generated key
-files securely. `wii-seed export BACKUP SEED` and `wii-seed unpack SEED DIR`
-write plaintext outputs and refuse to overwrite existing targets.
+The seed contains plaintext console key material. Save the output privately.
+For a footerless backup, place its matching 1,024-byte `keys.bin` next to it
+or pass `--keys`.
+
+```sh
+(umask 077; wii-seed BACKUP > console.seed.yaml)
+```
 
 ## Direct commands
 
-Run `wii-nand --help` and `wii-nand <command> --help` for the complete native
-operation interface. Common commands include:
-
 ```sh
-wii-nand stock-titles EUR
-wii-nand create [--boot-policy stock] SEED NEW_NAND
-wii-nand install-title --in-place [--offline] NAND CACHE TITLE_ID VERSION
-wii-nand remove-title --in-place NAND TITLE_ID
-wii-nand inspect-wad --sha256 SHA256 PACKAGE.wad
-wii-nand inventory NAND NEW_REPORT.json
-wii-nand preflight --candidate-only SEED CANDIDATE REPORT.json
+wii-nand install-title INPUT OUTPUT CACHE TITLE_ID VERSION --offline
+wii-nand install-wad INPUT OUTPUT PACKAGE.wad --sha256 SHA256
+wii-nand remove-title INPUT OUTPUT TITLE_ID
+wii-nand install-priiloader INPUT OUTPUT --app PRIILOADER.app
 ```
 
-Commands that mutate an existing image require `--in-place`. The native core
-validates packages and available NAND space before mutation. Rich inspection
-and inventory reports are JSON.
+Each edit requires a new output path. Run `wii-nand <command> --help` for
+settings, signature policy and Priiloader hack options. An edit uses about
+528 MiB of memory for the working NAND plus the payload being installed.
 
 ## Release packaging
 

@@ -2,22 +2,20 @@
 #pragma once
 
 #include <Inspection.hpp>
-#include <Seed.hpp>
+#include <wiiform/types.hpp>
 #include <QStringList>
+#include <span>
+#include <cstdint>
 
 namespace nand_build {
-  struct Options {
-    inspect::BootPolicy boot_policy = inspect::BootPolicy::Stock;
-    QMap<QString, QString> setting_overrides;
-  };
-
   struct Profile {
     QString area;
     QByteArray settings;
     QList<quint16> bad_blocks;
   };
 
-  auto boot_policy_name(inspect::BootPolicy policy) -> QString;
-  auto resolve_profile(const seed::Components& seed, const Options& options) -> Profile;
-  void create(const QString& seed_path, const QString& output, const Options& options);
+  auto resolve_profile(const QByteArray& keys, const QByteArray& settings,
+                       std::span<const std::uint16_t> bad_blocks, wiiform::Menu menu) -> Profile;
+  void initialize_image(std::span<std::uint8_t> image, const QByteArray& keys, const QByteArray& boot,
+                        const Profile& profile, inspect::BootPolicy policy);
 } // namespace nand_build

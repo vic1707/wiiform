@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // SFFS selection and field layout adapted from giantpune's WiiQt nandbin.cpp.
 #include <Layout.hpp>
+#include <NandBuffer.hpp>
 
-#include <QFile>
-#include <QFileInfo>
 #include <QtEndian>
 
 #include <array>
@@ -41,21 +40,21 @@ namespace {
     if (!condition) throw std::runtime_error(message);
   }
 
-  auto read_exact(QFile& file, qint64 offset, qint64 size) -> QByteArray {
+  auto read_exact(QIODevice& file, qint64 offset, qint64 size) -> QByteArray {
     require(offset >= 0 && size >= 0 && offset <= file.size() && size <= file.size() - offset,
             "NAND layout read is out of bounds");
     require(file.seek(offset), "Cannot seek NAND layout input");
     const auto bytes = file.read(size);
-    require(bytes.size() == size && file.error() == QFileDevice::NoError,
+    require(bytes.size() == size,
             "Incomplete NAND layout input");
     return bytes;
   }
 
-  auto read_data_page(QFile& file, quint32 page) -> QByteArray {
+  auto read_data_page(QIODevice& file, quint32 page) -> QByteArray {
     return read_exact(file, qint64(page) * raw_page_bytes, data_page_bytes);
   }
 
-  auto supercluster_data(QFile& file, quint16 supercluster) -> QByteArray {
+  auto supercluster_data(QIODevice& file, quint16 supercluster) -> QByteArray {
     QByteArray result;
     result.reserve(metadata_clusters * data_cluster_bytes);
     const quint32 first_page = quint32(supercluster) * pages_per_cluster;
@@ -109,7 +108,7 @@ namespace {
     return cluster >= data_cluster_first && cluster < metadata_cluster_first;
   }
 
-  auto select_supercluster(QFile& file) -> quint16 {
+  auto select_supercluster(QIODevice& file) -> quint16 {
     // Pinned WiiQt FindSuperblock() policy for ECC-bearing type-1/type-2 dumps:
     // scan physical superclusters in order, skip non-SFFS magic while increasing
     // rewind, stop at the first non-increasing generation, then apply rewind.
@@ -274,9 +273,7 @@ namespace {
 } // namespace
 
 namespace inspect {
-  auto validate_layout(const QString& path, bool generated) -> LayoutSummary {
-    QFile file(path);
-    require(QFileInfo(path).isFile() && file.open(QIODevice::ReadOnly), "Cannot read NAND layout input");
+  static auto validate_device(QIODevice& file, bool generated) -> LayoutSummary {
     require(file.size() == nand_bytes || file.size() == nand_bytes + footer_bytes,
             "Expected an ECC-bearing NAND dump with optional keys footer");
     const auto selected = select_supercluster(file);
@@ -288,5 +285,9 @@ namespace inspect {
     auto summary = validate_tree_and_chains(metadata, fats, entries, generated);
     summary.active_metadata = selected;
     return summary;
+  }
+  auto validate_layout(std::span<const std::uint8_t> image, bool generated) -> LayoutSummary {
+    nand_buffer::Device device(image);
+    return validate_device(device, generated);
   }
 } // namespace inspect

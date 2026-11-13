@@ -2,8 +2,6 @@
 #include <Inspection.hpp>
 
 #include <Factory.hpp>
-#include <PriiloaderHacks.hpp>
-#include <PriiloaderSettings.hpp>
 #include <Titles.hpp>
 #include <sharedcontentmap.h>
 #include <tiktmd.h>
@@ -11,13 +9,10 @@
 
 #include <QCryptographicHash>
 #include <QDir>
-#include <QJsonArray>
-#include <QJsonObject>
 #include <QMap>
 #include <QSet>
 #include <QTreeWidgetItem>
 #include <QtEndian>
-#include <algorithm>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -38,6 +33,10 @@ namespace {
       if (!((c >= QChar('0') && c <= QChar('9')) || (c >= QChar('a') && c <= QChar('f')) ||
             (c >= QChar('A') && c <= QChar('F')))) return false;
     return true;
+  }
+
+  auto title_path(quint64 id) -> QString {
+    return QString("%1").arg(id, 16, 16, QChar('0'));
   }
 
   auto hex_id(const QString& text, bool& ok) -> quint32 {
@@ -219,215 +218,53 @@ namespace {
     QMap<QString, QSet<QString>> children_;
   };
 
-  auto title_path(quint64 id) -> QString {
-    return QString("%1").arg(id, 16, 16, QChar('0'));
-  }
-
-  auto hex_title_id(quint64 value) -> QString {
-    return QString("%1").arg(value, 16, 16, QChar('0'));
-  }
-
-  auto hash_bytes(const QByteArray& bytes, QCryptographicHash::Algorithm algorithm) -> QString {
-    return QString::fromLatin1(QCryptographicHash::hash(bytes, algorithm).toHex());
-  }
-
-  auto inventory_uid_map(const QByteArray& bytes) -> QJsonObject {
-    require(bytes.size() > 0 && bytes.size() % 12 == 0, "Malformed UID map length");
-    QSet<quint64> title_ids;
-    QSet<quint32> uids;
-    QList<QPair<quint64, quint32>> parsed;
-    for (int offset = 0; offset < bytes.size(); offset += 12) {
-      const auto* raw = reinterpret_cast<const uchar*>(bytes.constData() + offset);
-      const auto title = qFromBigEndian<quint64>(raw);
-      const auto uid = qFromBigEndian<quint32>(raw + 8);
-      require(title != 0 && uid != 0 && !title_ids.contains(title) && !uids.contains(uid),
-              "Malformed UID map record");
-      title_ids.insert(title);
-      uids.insert(uid);
-      parsed.append({title, uid});
-    }
-    std::sort(parsed.begin(), parsed.end(), [](const auto& left, const auto& right) {
-      return left.first < right.first;
-    });
-    QJsonArray records;
-    for (const auto& item : parsed)
-      records.append(QJsonObject{{"title_id", hex_title_id(item.first)},
-                                 {"uid", static_cast<qint64>(item.second)}});
-    return QJsonObject{{"present", true}, {"records", records}};
-  }
-
-  auto inventory_shared_map(const QByteArray& bytes) -> QJsonObject {
-    QJsonArray records;
-    require(bytes.size() % 28 == 0, "Malformed shared-content map length");
-    QSet<QString> names;
-    for (int offset = 0; offset < bytes.size(); offset += 28) {
-      const auto name_bytes = bytes.mid(offset, 8);
-      bool ok = false;
-      const auto number = name_bytes.toUInt(&ok, 16);
-      const auto name = QString::fromLatin1(name_bytes);
-      require(is_hex_id(name) && ok && number == static_cast<quint32>(offset / 28) && !names.contains(name),
-              "Malformed shared-content map record");
-      names.insert(name);
-      records.append(QJsonObject{{"name", name},
-                                 {"sha1", QString::fromLatin1(bytes.mid(offset + 8, 20).toHex())}});
-    }
-    return QJsonObject{{"present", true}, {"records", records}};
-  }
-
-  auto inventory_title(const QString& path, const QByteArray& bytes) -> QJsonObject {
-    // Check the count and exact table size before constructing WiiQt's legacy
-    // Tmd view, whose constructor trusts those fields when it sets pointers.
-    require(bytes.size() >= 0x1e4 &&
-                qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(bytes.constData())) == ES_SIG_RSA2048 &&
-                bytes.mid(0x140, 0x40).contains('\0'),
-            "Malformed title metadata header");
-    const auto count = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(bytes.constData() + 0x1de));
-    require(bytes.size() == 0x1e4 + static_cast<int>(count) * 0x24,
-            "Malformed title metadata content table");
-    Tmd tmd(bytes);
-    const auto title = tmd.Tid();
-    require(title != 0 && tmd.Count() == count && tmd.SignedSize() == static_cast<quint32>(bytes.size()),
-            "Malformed title metadata fields");
-    const auto parts = path.split('/');
-    require(parts.size() == 6 && parts[1] == "title" && is_hex_id(parts[2]) && is_hex_id(parts[3]) &&
-                parts[4] == "content" && parts[5] == "title.tmd",
-            "Malformed title metadata path");
-    bool high_ok = false;
-    bool low_ok = false;
-    const auto path_title = (quint64(parts[2].toUInt(&high_ok, 16)) << 32) | parts[3].toUInt(&low_ok, 16);
-    require(high_ok && low_ok && path_title == title, "Title metadata ID does not match its path");
-    QSet<QString> content_ids;
-    QSet<quint16> content_indices;
-    for (quint16 i = 0; i < count; ++i) {
-      const auto cid = tmd.Cid(i);
-      const auto index = tmd.Index(i);
-      // The TMD's declared size is a metadata fact, not an input to this
-      // inventory's bounded reads or allocations. Modified titles can declare
-      // content sizes outside a stock NAND profile.
-      require(cid.size() == 8 && !content_ids.contains(cid) && !content_indices.contains(index),
-              "Malformed title metadata content entries");
-      content_ids.insert(cid);
-      content_indices.insert(index);
-    }
-    return QJsonObject{{"path", path}, {"title_id", hex_title_id(title)}, {"version", tmd.Version()},
-                       {"ios", hex_title_id(tmd.IOS())}, {"content_count", count},
-                       {"tmd_sha256", hash_bytes(bytes, QCryptographicHash::Sha256)}};
-  }
-
   const QString menu_path = "/title/00000001/00000002";
   const QString menu_tmd_path = menu_path + "/content/title.tmd";
-
-  struct FileProbe {
-    QJsonObject evidence;
-    QByteArray bytes;
-  };
-
-  auto probe_file(ImageIndex& index, const QString& path, qint64 limit) -> FileProbe {
-    QJsonObject evidence{{"path", path}};
-    const auto* entry = index.entry(path);
-    if (!entry) {
-      evidence["status"] = "missing";
-      return {evidence, {}};
-    }
-    if (entry->directory) {
-      evidence["status"] = "not-a-file";
-      return {evidence, {}};
-    }
-    evidence["size"] = static_cast<qint64>(entry->size);
-    if (entry->size > quint64(limit)) {
-      evidence["status"] = "size-limit";
-      return {evidence, {}};
-    }
-    auto bytes = index.read(path, limit);
-    evidence["status"] = "present";
-    evidence["sha256"] = hash_bytes(bytes, QCryptographicHash::Sha256);
-    return {evidence, bytes};
-  }
+  const QString original_menu_tmd_path = menu_path + "/content/title_or.tmd";
 
   struct MenuBootContent {
     QString cid;
-    quint16 index;
-    quint16 version;
-    quint64 size;
+    quint16 index = 0;
+    quint16 version = 0;
+    quint64 size = 0;
     QByteArray sha1;
-    bool nintendo_signed;
+    bool nintendo_signed = false;
   };
 
-  auto probe_menu_tmd(FileProbe& file) -> std::optional<MenuBootContent> {
-    if (file.evidence["status"].toString() != "present") return std::nullopt;
-    try {
-      // A backup TMD must identify the same title as the active TMD.
-      const auto metadata = inventory_title(menu_tmd_path, file.bytes);
-      for (const auto* key : {"version", "ios", "content_count"})
-        file.evidence[key] = metadata[key];
-    } catch (const std::runtime_error&) {
-      file.evidence["status"] = "malformed";
-      return std::nullopt;
-    }
-    const bool signed_tmd = check_cert_chain(file.bytes) == ERROR_SUCCESS;
-    file.evidence["nintendo_signed"] = signed_tmd;
-    Tmd tmd(file.bytes);
+  auto parse_menu_tmd(const QByteArray& bytes) -> std::optional<MenuBootContent> {
+    if (bytes.size() < 0x1e4 || bytes.size() > 2 * 1024 * 1024 ||
+        qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(bytes.constData())) != ES_SIG_RSA2048 ||
+        !bytes.mid(0x140, 0x40).contains('\0')) return std::nullopt;
+    const auto count = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(bytes.constData() + 0x1de));
+    if (bytes.size() != 0x1e4 + static_cast<int>(count) * 0x24) return std::nullopt;
+    Tmd tmd(bytes);
+    if (tmd.Tid() != 0x100000002ull || tmd.Count() != count ||
+        tmd.SignedSize() != static_cast<quint32>(bytes.size())) return std::nullopt;
+    QSet<QString> cids;
+    QSet<quint16> indices;
     const auto boot_index = tmd.BootIndex();
-    for (quint16 i = 0; i < tmd.Count(); ++i) {
-      if (tmd.Index(i) != boot_index || tmd.Type(i) != 1) continue;
-      file.evidence["boot_index"] = boot_index;
-      file.evidence["boot_cid"] = tmd.Cid(i);
-      return MenuBootContent{tmd.Cid(i), boot_index, tmd.Version(), tmd.Size(i), tmd.Hash(i), signed_tmd};
+    for (quint16 i = 0; i < count; ++i) {
+      const auto cid = tmd.Cid(i);
+      const auto index = tmd.Index(i);
+      if (cid.size() != 8 || cids.contains(cid) || indices.contains(index)) return std::nullopt;
+      cids.insert(cid);
+      indices.insert(index);
+      if (index == boot_index && tmd.Type(i) == 1)
+        return MenuBootContent{cid, index, tmd.Version(), tmd.Size(i), tmd.Hash(i),
+                               check_cert_chain(bytes) == ERROR_SUCCESS};
     }
-    file.evidence["status"] = "unsupported-boot-content";
     return std::nullopt;
   }
 
-  struct BootApp {
-    QJsonObject evidence;
-    QByteArray sha1;
-    quint64 size;
-  };
-
-  auto probe_boot_app(ImageIndex& index, const QString& cid) -> BootApp {
-    const auto file = probe_file(index, menu_path + "/content/" + cid + ".app", 32 * 1024 * 1024);
-    const auto sha1 = file.evidence["status"].toString() == "present"
-                          ? QCryptographicHash::hash(file.bytes, QCryptographicHash::Sha1) : QByteArray();
-    return {file.evidence, sha1, static_cast<quint64>(file.bytes.size())};
+  auto read_optional(ImageIndex& index, const QString& path, qint64 limit) -> QByteArray {
+    const auto* entry = index.entry(path);
+    if (!entry || entry->directory || entry->size > quint64(limit)) return {};
+    return index.read(path, limit);
   }
 
-  auto compare_boot_app(BootApp& app, const MenuBootContent& expected,
-                        const QString& label = "tmd") -> bool {
-    if (app.sha1.isEmpty()) return false;
-    const bool hash_matches = app.sha1 == expected.sha1;
-    const bool size_matches = app.size == expected.size;
-    app.evidence["matches_" + label + "_hash"] = hash_matches;
-    app.evidence["matches_" + label + "_size"] = size_matches;
-    return hash_matches && size_matches;
-  }
-
-  auto probe_menu_boot(ImageIndex& index) -> QJsonObject {
-    auto tmd = probe_file(index, menu_tmd_path, 2 * 1024 * 1024);
-    auto backup_tmd = probe_file(index, menu_path + "/content/title_or.tmd", 2 * 1024 * 1024);
-    const auto boot = probe_menu_tmd(tmd);
-    const auto original = probe_menu_tmd(backup_tmd);
-    QJsonObject result{{"tmd", tmd.evidence}, {"backup_tmd", backup_tmd.evidence},
-                       {"status", "system-menu-unavailable"}};
-    if (!boot) return result;
-
-    auto app = probe_boot_app(index, boot->cid);
-    const bool stock_app = compare_boot_app(app, *boot) && boot->nintendo_signed;
-    result["boot_app"] = app.evidence;
-    if (app.size != 0) result["status"] = stock_app ? "stock-boot" : "unidentified-boot";
-    // The Wii installer substitutes 1 for the first digit of the stock CID.
-    // A signed TMD must identify the relocated app as the original menu.
-    if (!boot->cid.startsWith('0')) return result;
-    auto backup = probe_boot_app(index, "1" + boot->cid.mid(1));
-    bool stock_backup = compare_boot_app(backup, *boot) && boot->nintendo_signed;
-    if (original && original->version == boot->version &&
-        original->cid == boot->cid && original->index == boot->index) {
-      const bool matches_original = compare_boot_app(backup, *original, "original_tmd");
-      stock_backup = stock_backup || (matches_original && original->nintendo_signed);
-    }
-    result["backup_app"] = backup.evidence;
-    if (!stock_app && stock_backup && app.size != 0 && app.sha1 != backup.sha1)
-      result["status"] = "priiloader-layout";
-    return result;
+  auto same_content(const QByteArray& app, const MenuBootContent& expected) -> bool {
+    return !app.isEmpty() && quint64(app.size()) == expected.size &&
+           QCryptographicHash::hash(app, QCryptographicHash::Sha1) == expected.sha1;
   }
 
   auto collect_title_ids(const ImageIndex& index) -> QSet<quint64> {
@@ -663,93 +500,43 @@ namespace {
 } // namespace
 
 namespace inspect {
-  auto read_file(NandBin& nand, const QString& path, qint64 limit) -> QByteArray {
+  auto priiloader_evidence(NandBin& nand) -> PriiloaderEvidence {
     ImageIndex index(nand);
-    return index.read(path, limit);
-  }
+    PriiloaderEvidence evidence;
+    const auto active_tmd_bytes = read_optional(index, menu_tmd_path, 2 * 1024 * 1024);
+    const auto active_tmd = parse_menu_tmd(active_tmd_bytes);
+    if (!active_tmd) return evidence;
 
-  auto priiloader_evidence(NandBin& nand) -> QJsonObject {
-    ImageIndex index(nand);
-    auto menu = probe_menu_boot(index);
-    const auto status = menu.take("status");
-    QJsonObject artifacts;
-    QJsonObject settings{{"status", "missing"}};
-    QByteArray hack_definitions, hack_states;
-    const QStringList names{"loader.ini", "hacks.ini", "hacks_s.ini", "hackshas.ini", "hacksh_s.ini"};
-    for (const auto& name : names) {
-      const auto file = probe_file(index, menu_path + "/data/" + name, 1024 * 1024);
-      const auto file_status = file.evidence["status"].toString();
-      if (file_status == "missing") continue;
-      artifacts[name] = file.evidence;
-      if (name == "loader.ini") {
-        if (file_status == "present") settings = priiloader::inspect_settings(file.bytes);
-        else settings = QJsonObject{{"status", "unsupported"}, {"reason", file_status}};
-      }
-      if (name == "hackshas.ini") hack_definitions = file.bytes;
-      if (name == "hacksh_s.ini") hack_states = file.bytes;
-    }
-    QJsonObject report{{"status", status}, {"system_menu", menu}, {"artifacts", artifacts}, {"settings", settings}};
-    if (!hack_definitions.isEmpty() && !hack_states.isEmpty()) {
-      const int version = menu["tmd"].toObject()["version"].toInt();
-      try {
-        report["hacks"] = priiloader::inspect_hacks(hack_definitions, hack_states, version);
-      } catch (const std::exception&) {
-        // Keep authenticated file evidence available for dumps built with other
-        // Priiloader releases whose source definitions are not pinned here.
-        report["hacks_status"] = "unrecognized-definitions";
+    evidence.menu_version = active_tmd->version;
+    Tmd active_tmd_view(active_tmd_bytes);
+    evidence.system_menu_ios = active_tmd_view.IOS();
+    evidence.boot_app_path = menu_path + "/content/" + active_tmd->cid + ".app";
+    const auto boot_app = read_optional(index, evidence.boot_app_path, 32 * 1024 * 1024);
+    if (boot_app.isEmpty()) return evidence;
+    const bool stock_boot = active_tmd->nintendo_signed && same_content(boot_app, *active_tmd);
+    evidence.layout = stock_boot ? PriiloaderLayout::StockBoot : PriiloaderLayout::UnidentifiedBoot;
+
+    if (!active_tmd->cid.startsWith('0')) return evidence;
+    evidence.backup_app_path = menu_path + "/content/1" + active_tmd->cid.mid(1) + ".app";
+    const auto backup_app = read_optional(index, evidence.backup_app_path, 32 * 1024 * 1024);
+    const auto backup_tmd_bytes = read_optional(index, original_menu_tmd_path, 2 * 1024 * 1024);
+    const auto original_tmd = parse_menu_tmd(backup_tmd_bytes);
+    if (original_tmd) {
+      evidence.backup_tmd_nintendo_signed = original_tmd->nintendo_signed;
+      if (original_tmd->version == active_tmd->version && original_tmd->cid == active_tmd->cid &&
+          original_tmd->index == active_tmd->index) {
+        evidence.backup_app_matches_original_tmd_hash =
+            !backup_app.isEmpty() && QCryptographicHash::hash(backup_app, QCryptographicHash::Sha1) == original_tmd->sha1;
+        evidence.backup_app_matches_original_tmd_size =
+            !backup_app.isEmpty() && quint64(backup_app.size()) == original_tmd->size;
       }
     }
-    return report;
-  }
-
-  auto inventory_filesystem(NandBin& nand) -> QJsonObject {
-    ImageIndex index(nand);
-    QJsonArray entries;
-    const auto& root = index.root_metadata();
-    entries.append(QJsonObject{{"path", "/"}, {"type", "directory"}, {"size", 0},
-                               {"uid", static_cast<qint64>(root.uid)}, {"gid", root.gid},
-                               {"attr", root.attr}, {"mode", root.mode},
-                               {"x3", static_cast<qint64>(root.x3)}, {"sha256", QJsonValue(QJsonValue::Null)},
-                               {"fst_index", 0}, {"clusters", QJsonArray()}});
-
-    QJsonArray titles;
-    quint64 total_file_bytes = 0;
-    for (auto it = index.files().cbegin(); it != index.files().cend(); ++it) {
-      const auto& path = it.key();
-      require(!path.contains(QChar::ReplacementCharacter), "Unsupported NAND filename encoding");
-      const auto& entry = it.value();
-      QJsonArray clusters;
-      QJsonValue file_hash(QJsonValue::Null);
-      if (!entry.directory) {
-        total_file_bytes += entry.size;
-        require(total_file_bytes <= maximum_title_size, "NAND live-file data exceeds inventory limits");
-        const auto data = index.read(path, static_cast<qint64>(maximum_title_size));
-        file_hash = hash_bytes(data, QCryptographicHash::Sha256);
-        const auto file_clusters = nand.GetFatsForFile(entry.id);
-        const auto expected_clusters = (entry.size + 0x3fff) / 0x4000;
-        require(static_cast<quint64>(file_clusters.size()) == expected_clusters,
-                "NAND file allocation differs from its declared size");
-        for (const auto cluster : file_clusters) clusters.append(cluster);
-        if (path.endsWith("/content/title.tmd")) titles.append(inventory_title(path, data));
-      }
-      entries.append(QJsonObject{{"path", path},
-                                 {"type", entry.directory ? "directory" : "file"},
-                                 {"size", static_cast<qint64>(entry.size)},
-                                 {"uid", static_cast<qint64>(entry.metadata.uid)},
-                                 {"gid", entry.metadata.gid}, {"attr", entry.metadata.attr},
-                                 {"mode", entry.metadata.mode},
-                                 {"x3", static_cast<qint64>(entry.metadata.x3)},
-                                 {"sha256", file_hash}, {"fst_index", entry.id}, {"clusters", clusters}});
-    }
-
-    QJsonObject maps;
-    maps["uid"] = index.contains("/sys/uid.sys")
-                       ? inventory_uid_map(index.read("/sys/uid.sys", 1024 * 1024))
-                       : QJsonObject{{"present", false}, {"records", QJsonArray()}};
-    maps["shared"] = index.contains("/shared1/content.map")
-                          ? inventory_shared_map(index.read("/shared1/content.map", 1024 * 1024))
-                          : QJsonObject{{"present", false}, {"records", QJsonArray()}};
-    return QJsonObject{{"entries", entries}, {"maps", maps}, {"titles", titles}};
+    const bool matches_active_tmd = same_content(backup_app, *active_tmd) && active_tmd->nintendo_signed;
+    const bool matches_original_tmd = evidence.backup_tmd_nintendo_signed &&
+        evidence.backup_app_matches_original_tmd_hash && evidence.backup_app_matches_original_tmd_size;
+    if (!stock_boot && (matches_active_tmd || matches_original_tmd) && boot_app != backup_app)
+      evidence.layout = PriiloaderLayout::Installed;
+    return evidence;
   }
 
   auto verify_metadata(NandBin& nand, const QString& area) -> MetadataSummary {

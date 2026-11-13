@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Seed.hpp>
+#include <Layout.hpp>
+#include <NandBuffer.hpp>
 #include <BootFlags.hpp>
 #include <nandbin.h>
 
 #include <QCryptographicHash>
-#include <QTemporaryDir>
-#include <QTemporaryFile>
 #include <QtEndian>
 #include <lzma.h>
 #include <yaml-cpp/yaml.h>
 
 #include <array>
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -29,16 +28,6 @@ namespace {
 
   auto sha256(const QByteArray& data) -> std::string {
     return QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex().toStdString();
-  }
-
-  auto read_file(const QString& path, qint64 limit) -> QByteArray {
-    QFile file(path);
-    require(file.open(QIODevice::ReadOnly), "Cannot open input file");
-    const auto size = file.size();
-    require(size >= 0 && size <= limit, "Input exceeds size limit");
-    const auto data = file.read(limit + 1);
-    require(file.error() == QFileDevice::NoError && data.size() == size, "Incomplete input read");
-    return data;
   }
 
   auto latin1(const QByteArray& data) -> std::string {
@@ -115,34 +104,6 @@ namespace {
     } else if (node.Tag() == "tag:yaml.org,2002:str") emitter << YAML::DoubleQuoted << node.as<std::string>();
     else if (node.Tag() == "tag:yaml.org,2002:binary") emitter << node.as<YAML::Binary>();
     else emitter << node;
-  }
-
-  auto binary(const YAML::Node& node, size_t limit) -> QByteArray {
-    require(node.IsScalar(), "Expected a binary scalar");
-    QByteArray result;
-    if (node.Tag() == "tag:yaml.org,2002:binary") {
-      const auto data = node.as<YAML::Binary>();
-      result = QByteArray(reinterpret_cast<const char*>(data.data()), static_cast<int>(data.size()));
-    } else {
-      // SOPS emits valid-UTF-8 binary payloads as ordinary strings after decryption.
-      result = QByteArray::fromStdString(node.as<std::string>());
-    }
-    require(static_cast<size_t>(result.size()) <= limit, "Binary value exceeds size limit");
-    return result;
-  }
-
-  void validate_yaml(const YAML::Node& node, int depth, int& remaining) {
-    require(depth <= 16 && --remaining >= 0, "YAML nesting or node limit exceeded");
-    if (node.IsMap()) {
-      std::set<std::string> keys;
-      for (const auto& entry : node) {
-        require(entry.first.IsScalar() && keys.insert(entry.first.as<std::string>()).second,
-                "Duplicate or non-scalar YAML key");
-        validate_yaml(entry.second, depth + 1, remaining);
-      }
-    } else if (node.IsSequence()) {
-      for (const auto& entry : node) validate_yaml(entry, depth + 1, remaining);
-    }
   }
 
   struct Field {
@@ -294,18 +255,6 @@ namespace {
     return crypt_settings(plain);
   }
 
-  auto destination_info(const QString& path) -> QFileInfo {
-    const QFileInfo destination(QDir::cleanPath(QFileInfo(path).absoluteFilePath()));
-    require(!destination.exists() && !destination.isSymLink(), "Destination already exists");
-    require(destination.absoluteDir().exists(), "Destination parent must exist");
-    return destination;
-  }
-
-  void write_file(QFile& file, const QByteArray& data) {
-    require(file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) && file.write(data) == data.size() &&
-                file.flush(),
-            "Cannot finish private output");
-  }
 } // namespace
 
 namespace seed {
@@ -315,16 +264,14 @@ namespace seed {
     return bytes;
   }
 
-  void export_backup(const QString& backup, const QString& output) {
-    const auto destination = destination_info(output);
-    QFile source(QFileInfo(backup).absoluteFilePath());
-    require(source.open(QIODevice::ReadOnly), "Cannot open NAND backup");
-    require(source.size() == 0x21000000 || source.size() == 0x21000400, "Expected a BootMii dump with spare data");
-    if (source.size() == 0x21000000)
-      require(QFileInfo(QFileInfo(source).absoluteDir().filePath("keys.bin")).size() == keys_size,
-              "Expected a matching 1024-byte keys.bin beside the dump");
-    NandBin nand;
-    require(nand.SetPath(source.fileName(), NandBin::Access::ReadOnly) && nand.InitNand(), "Cannot read NAND filesystem");
+  auto decode_settings(const QByteArray& raw) -> YAML::Node {
+    auto fields = describe_settings(raw);
+    require(raw.size() == 256 && restore_settings(fields) == raw, "Stock build requires canonical console settings");
+    return fields;
+  }
+
+  static auto describe_backup(NandBin& nand, QIODevice& source) -> std::string {
+    require(nand.InitNand() && source.seek(0), "Cannot read NAND filesystem");
     const auto boots = source.read(boot_size);
     require(boots.size() == boot_size, "Cannot read boot blocks");
     const auto keys = nand.Keys();
@@ -414,85 +361,19 @@ namespace seed {
     require(emitter.good(), "Cannot encode seed YAML");
     const auto text = std::string(emitter.c_str()) + '\n';
     require(text.size() <= manifest_limit, "Exported seed exceeds size limit");
-    QTemporaryFile staging(destination.absoluteDir().filePath(".wii-seed-XXXXXX"));
-    require(staging.open(), "Cannot create private staging file");
-    write_file(staging, QByteArray::fromStdString(text));
-    require(staging.rename(destination.absoluteFilePath()), "Cannot publish seed (destination must be new)");
-    staging.setAutoRemove(false);
+    return text;
   }
 
-  auto read(const QString& input) -> Components {
-    YAML::Node manifest;
-    try {
-      const auto documents = YAML::LoadAll(read_file(input, manifest_limit).toStdString());
-      require(documents.size() == 1 && documents.front().IsMap(), "Expected one YAML mapping");
-      manifest = documents.front();
-    } catch (const YAML::Exception&) {
-      // yaml-cpp parser messages can quote source text, which may include private fields.
-      throw std::runtime_error("Malformed or invalid seed YAML");
-    }
-
-    try {
-      int remaining = 8192;
-      validate_yaml(manifest, 0, remaining);
-      require(!manifest["sops"], "Decrypt with the SOPS CLI explicitly before unpacking");
-      require(manifest["source"].IsMap(), "Missing source record");
-      require(!manifest["source_sha256"] && !manifest["keys_sha256"] &&
-                  !manifest["settings_sha256"] && !manifest["setting_original"] &&
-                  !manifest["boot_blocks"]["bytes"] && !manifest["boot_blocks"]["sha256"],
-              "Seed contains obsolete payload fields. Re-export it from the NAND backup");
-      hex(manifest["source"]["sha256"], 32);
-      const auto keys = restore_keys(manifest["keys"]);
-      require(hex(manifest["keys"]["_sha256"], 32).toHex().toStdString() == sha256(keys),
-              "Keys do not match their hash");
-      const auto boot = manifest["boot_blocks"];
-      const auto boots = decompress(binary(boot["xz"], manifest_limit));
-      require(hex(boot["_sha256"], 32).toHex().toStdString() == sha256(boots),
-              "Boot blocks do not match their hash");
-      QMap<QString, QByteArray> files{{"keys.bin", keys}, {"boot-blocks.bin", boots}};
-      require(manifest["bad_blocks"].IsSequence(), "Missing bad-block list");
-      std::set<int> seen;
-      QByteArray bad_blocks;
-      for (const auto& entry : manifest["bad_blocks"]) {
-        const auto block = entry.as<int>();
-        require(block >= 8 && block < 4096 && seen.insert(block).second, "Invalid or duplicate bad block");
-        bad_blocks += QByteArray::number(block) + '\n';
-      }
-      files["bad-blocks.txt"] = bad_blocks;
-      if (manifest["settings"]) {
-        const auto original = manifest["settings"]["original"];
-        const auto raw = original ? binary(original, 4096) : restore_settings(settings_fields(manifest));
-        require(!raw.isEmpty() && hex(manifest["settings"]["_sha256"], 32).toHex().toStdString() == sha256(raw),
-                "Reconstructed settings do not match their hash");
-        files["setting.txt"] = raw;
-      }
-      return {manifest, std::move(files)};
-    } catch (const YAML::Exception&) {
-      // Bad conversions and missing nodes may include a source excerpt in yaml-cpp diagnostics.
-      throw std::runtime_error("Invalid seed field or value");
-    }
+  auto extract(std::span<const std::uint8_t> backup, std::span<const std::uint8_t> sidecar) -> std::string {
+    require((backup.size() == 0x21000000 && sidecar.size() == keys_size) ||
+                (backup.size() == 0x21000400 && sidecar.empty()),
+            "Expected an ECC-bearing NAND with an embedded footer or a matching 1024-byte sidecar");
+    inspect::validate_layout(backup, false);
+    nand_buffer::Device device(backup);
+    NandBin nand;
+    const auto keys = QByteArray(reinterpret_cast<const char*>(sidecar.data()), int(sidecar.size()));
+    require(nand.SetDevice(&device, keys), "Cannot open NAND backup buffer");
+    return describe_backup(nand, device);
   }
 
-  auto settings_fields(const YAML::Node& manifest) -> YAML::Node {
-    return manifest["settings"]["fields"];
-  }
-
-  auto has_original_settings(const YAML::Node& manifest) -> bool {
-    return static_cast<bool>(manifest["settings"]["original"]);
-  }
-
-  auto unpack(const QString& input, const QString& output) -> YAML::Node {
-    const auto destination = destination_info(output);
-    const auto components = read(input);
-    QTemporaryDir staging(destination.absoluteDir().filePath(".wii-seed-XXXXXX"));
-    require(staging.isValid(), "Cannot create private staging directory");
-    for (auto file = components.files.cbegin(); file != components.files.cend(); ++file) {
-      QFile component(QDir(staging.path()).filePath(file.key()));
-      require(component.open(QIODevice::WriteOnly | QIODevice::NewOnly), "Cannot create output component");
-      write_file(component, file.value());
-    }
-    require(QDir().rename(staging.path(), destination.absoluteFilePath()), "Cannot publish output directory");
-    staging.setAutoRemove(false);
-    return components.manifest;
-  }
 } // namespace seed

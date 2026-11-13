@@ -4,14 +4,19 @@
 
 #include <BuildOptions.hpp>
 #include <Display.hpp>
+#include <Factory.hpp>
 #include <Install.hpp>
 #include <Priiloader.hpp>
 #include <Remove.hpp>
+#include <Seed.hpp>
+#include <WorkingImage.hpp>
 
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QCryptographicHash>
 #include <QMap>
-
+#include <QTreeWidgetItem>
+#include <cstring>
+#include <limits>
+#include <memory>
 #include <stdexcept>
 
 namespace wiiform::core {
@@ -21,155 +26,164 @@ namespace {
   }
 
   auto qstring(const std::string& value, const char* label) -> QString {
-    const auto converted = QString::fromUtf8(value.data(), qsizetype(value.size()));
-    require(converted.toUtf8() == QByteArray(value.data(), qsizetype(value.size())), label);
+    require(value.size() <= std::size_t(std::numeric_limits<int>::max()), label);
+    const auto converted = QString::fromUtf8(value.data(), int(value.size()));
+    require(value.find('\0') == std::string::npos &&
+                converted.toUtf8() == QByteArray(value.data(), qsizetype(value.size())), label);
     return converted;
   }
 
-  auto json(const QJsonObject& object) -> std::string {
-    return QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString();
+  auto view(std::span<const std::uint8_t> value) -> QByteArray {
+    require(value.size() <= std::size_t(std::numeric_limits<int>::max()), "Input exceeds supported size");
+    return QByteArray::fromRawData(reinterpret_cast<const char*>(value.data()), int(value.size()));
   }
 
-  auto setting_map(const std::vector<SettingOverride>& values, const char* duplicate_error)
-      -> QMap<QString, QString> {
+  auto digest(std::span<const std::uint8_t> value) -> Sha256 {
+    const auto hash = QCryptographicHash::hash(view(value), QCryptographicHash::Sha256);
+    Sha256 result;
+    std::memcpy(result.data(), hash.constData(), result.size());
+    return result;
+  }
+
+  auto offline(CacheMode mode) -> bool {
+    switch (mode) {
+      case CacheMode::offline: return true;
+      case CacheMode::download_missing: return false;
+    }
+    throw std::runtime_error("Unsupported cache mode");
+  }
+
+  auto native_boot_policy(BootPolicy value) -> inspect::BootPolicy {
+    switch (value) {
+      case BootPolicy::stock: return inspect::BootPolicy::Stock;
+      case BootPolicy::preserve_source: return inspect::BootPolicy::PreserveSource;
+    }
+    throw std::runtime_error("Unsupported boot policy");
+  }
+
+  template<class Enum, std::size_t N>
+  auto option_name(Enum value, const std::array<const char*, N>& names) -> QString {
+    const auto index = static_cast<std::size_t>(value);
+    require(index < names.size(), "Unsupported setting value");
+    return QString::fromLatin1(names[index]);
+  }
+
+  auto priiloader_settings(const PriiloaderSettings& value) -> QMap<QString, QString> {
     QMap<QString, QString> result;
-    for (const auto& value : values) {
-      const auto key = qstring(value.key, "Setting name must be UTF-8");
-      const auto data = qstring(value.value, "Setting value must be UTF-8");
-      require(!key.isEmpty() && !data.isEmpty(), "Setting name and value must not be empty");
-      require(!result.contains(key), duplicate_error);
-      result.insert(key, data);
-    }
+    const auto toggle = [&](const QString& key, std::optional<bool> state) {
+      if (state) result.insert(key, *state ? "on" : "off");
+    };
+    if (value.autoboot)
+      result["autoboot"] = option_name(*value.autoboot,
+          std::array{"disabled", "homebrew_channel", "bootmii_ios", "system_menu", "file"});
+    if (value.return_to)
+      result["return_to"] = option_name(*value.return_to, std::array{"system_menu", "priiloader", "autoboot", "file"});
+    if (value.shutdown_to)
+      result["shutdown_to"] = option_name(*value.shutdown_to, std::array{"none", "priiloader", "autoboot"});
+    if (value.preferred_mount_point)
+      result["preferred_mount_point"] = option_name(*value.preferred_mount_point, std::array{"auto", "sd", "usb"});
+    toggle("stop_disc", value.stop_disc);
+    toggle("lid_slot_on_error", value.lid_slot_on_error);
+    toggle("ignore_shutdown_mode", value.ignore_shutdown_mode);
+    toggle("black_background", value.black_background);
+    toggle("dump_gecko_text", value.dump_gecko_text);
+    toggle("show_rc_updates", value.show_rc_updates);
     return result;
   }
 
-  auto display_overrides(const std::vector<SettingOverride>& values, bool setup_options)
-      -> sysconf::SettingsOverrides {
-    sysconf::SettingsOverrides result;
-    for (const auto& value : values) {
-      const auto key = qstring(value.key, "Setting name must be UTF-8");
-      const auto data = qstring(value.value, "Setting value must be UTF-8");
-      if (key == "aspect" && !result.display.widescreen && (data == "4:3" || data == "16:9"))
-        result.display.widescreen = data == "16:9";
-      else if (key == "progressive" && !result.display.progressive_scan && (data == "on" || data == "off"))
-        result.display.progressive_scan = data == "on";
-      else if (key == "pal60" && !result.display.pal60 && (data == "on" || data == "off"))
-        result.display.pal60 = data == "on";
-      else if (setup_options && key == "require-setup" && !result.require_setup && data == "true")
-        result.require_setup = true;
-      else if (setup_options && key == "nickname" && !result.nickname && !data.isEmpty())
-        result.nickname = data;
-      else if (setup_options && key == "language" && !result.language && !data.isEmpty())
-        result.language = data.toLower();
-      else
-        throw std::runtime_error("Invalid or repeated system setting override");
+  auto priiloader_hacks(std::span<std::uint8_t> image, std::span<const HackOverride> overrides)
+      -> QMap<QString, bool> {
+    constexpr std::array names{
+        "480p graphics fix in system menu", "Block Online Updates", "Block Disc Updates",
+        "Block Disc Autoboot", "Auto-Press A at Health Screen", "Remove Deflicker",
+        "Move Disc Channel", "Remove NoCopy Save File Protection", "Replace Health Screen with Backmenu",
+        "No System Menu Background Music", "Wiimmfi Patch v4", "Region Free EVERYTHING"};
+    QMap<QString, bool> result;
+    for (const auto& option : overrides) {
+      auto name = option_name(option.hack, names);
+      if (option.hack == Hack::region_free_everything) {
+        working_image::Image working(image);
+        const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
+        const auto data = working_image::read_authenticated_file(working.nand,
+            working_image::find_path(tree.get(), "/title/00000001/00000002/data/setting.txt"), 256);
+        if (seed::decode_settings(data)["AREA"].as<std::string>() == "JPN") name += " JP";
+      }
+      require(!result.contains(name), "Duplicate Priiloader hack override");
+      result.insert(name, option.enabled);
     }
     return result;
   }
-
-  auto sysconf_source(const DisplaySource& source) -> std::optional<sysconf::Source> {
-    if (source.sysconf.empty()) {
-      require(source.keys_data_sha256.empty() && source.settings_sha256.empty(),
-              "Incomplete authenticated display source");
-      return std::nullopt;
-    }
-    require(source.sysconf.size() == size_t(sysconf::size) &&
-                source.keys_data_sha256.size() == 64 && source.settings_sha256.size() == 64,
-            "Incomplete authenticated display source");
-    return sysconf::Source{
-        QByteArray(reinterpret_cast<const char*>(source.sysconf.data()), qsizetype(source.sysconf.size())),
-        QByteArray(source.keys_data_sha256.data(), qsizetype(source.keys_data_sha256.size())),
-        QByteArray(source.settings_sha256.data(), qsizetype(source.settings_sha256.size()))};
-  }
 }
 
-void create(const std::string& seed, const std::string& output, BootPolicy boot_policy,
-            const std::vector<SettingOverride>& setting_overrides) {
+auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
+                  const std::string& nus_cache_dir, Menu menu, BootPolicy boot_policy,
+                  CacheMode cache_mode) -> StockIdentity {
   detail::ensure_qcore_application();
-  nand_build::Options options;
-  switch (boot_policy) {
-    case BootPolicy::stock: options.boot_policy = inspect::BootPolicy::Stock; break;
-    case BootPolicy::preserve_source: options.boot_policy = inspect::BootPolicy::PreserveSource; break;
-    default: throw std::runtime_error("Unsupported boot policy");
-  }
-  options.setting_overrides = setting_map(setting_overrides, "Duplicate system setting override");
-  nand_build::create(qstring(seed, "Seed path must be UTF-8"),
-                     qstring(output, "Output path must be UTF-8"), options);
+  const auto cache = qstring(nus_cache_dir, "Cache path must be UTF-8");
+  const auto cache_only = offline(cache_mode);
+  require(nand.size() == nand_size && seed.keys.size() == 0x400 &&
+              seed.boot_blocks.size() == 0x108000 && seed.setting_txt.size() == 256,
+          "Invalid NAND image or seed component size");
+  const StockIdentity identity{digest(seed.boot_blocks), digest(seed.keys)};
+  const auto keys = view(seed.keys);
+  const auto boots = view(seed.boot_blocks);
+  const auto profile = nand_build::resolve_profile(keys, view(seed.setting_txt), seed.bad_blocks, menu);
+  nand_build::initialize_image(nand, keys, boots, profile, native_boot_policy(boot_policy));
+  const auto titles = factory::stock_titles(profile.area);
+  for (auto title = titles.cbegin(); title != titles.cend(); ++title)
+    title_install::install_nus_title(nand, cache, title.key(), title.value(), cache_only);
+
+  const auto layout = inspect::validate_layout(nand, true);
+  nand_buffer::Device device{std::span<const std::uint8_t>(nand)};
+  NandBin reopened;
+  require(reopened.SetDevice(&device) && reopened.InitNand() && reopened.CheckHmacMeta(layout.active_metadata),
+          "Cannot authenticate the stock NAND");
+  inspect::verify_filesystem(reopened, true, layout.active_metadata);
+  inspect::verify_stock(reopened, profile.area);
+  inspect::verify_metadata(reopened, profile.area);
+  return identity;
 }
 
-void install_nus_title(const std::string& image, const std::string& cache,
-                       std::uint64_t title_id, std::uint16_t version, bool offline) {
+void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings) {
   detail::ensure_qcore_application();
-  require(title_id != 0 && version != 0xffff,
-          "Install requires a nonzero title ID and a concrete title version");
-  title_install::install_nus_title(qstring(image, "Image path must be UTF-8"),
-      qstring(cache, "Cache path must be UTF-8"), quint64(title_id), quint16(version), offline);
+  sysconf::SettingsOverrides overrides;
+  if (!settings.nickname.empty()) overrides.nickname = qstring(settings.nickname, "Nickname must be UTF-8");
+  if (settings.language)
+    overrides.language = option_name(*settings.language, std::array{"ja", "en", "de", "fr", "es", "it", "nl"});
+  overrides.country = settings.country;
+  overrides.sensor_bar_above = settings.sensor_bar_above;
+  overrides.display = {settings.widescreen, settings.progressive, settings.pal60};
+  sysconf::initialize(nand, overrides);
 }
 
-void install_wad(const std::string& image, const std::string& package,
-                 const std::string& expected_sha256, WadPolicy policy) {
+void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,
+                       std::uint64_t title_id, std::uint16_t version, CacheMode cache_mode) {
   detail::ensure_qcore_application();
-  const auto sha = qstring(expected_sha256, "WAD SHA-256 must be UTF-8").toLatin1();
-  require(!sha.isEmpty(), "WAD installation requires an expected SHA-256");
-  require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel,
-          "Unsupported WAD signature policy");
-  const auto path = qstring(package, "WAD path must be UTF-8");
-  require(path != "-", "WAD installation requires a file path");
-  title_install::install_wad(qstring(image, "Image path must be UTF-8"), path, sha,
-      policy == WadPolicy::legacy_channel);
+  require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
+  title_install::install_nus_title(nand, qstring(nus_cache_dir, "Cache path must be UTF-8"),
+                                   title_id, version, offline(cache_mode));
 }
 
-void remove_title(const std::string& image, std::uint64_t title_id) {
+auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
+                 const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad {
   detail::ensure_qcore_application();
-  title_remove::remove_channel(qstring(image, "Image path must be UTF-8"), quint64(title_id));
+  require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
+  const auto [id, region] = title_install::install_wad(nand, wad, view(expected_sha256).toHex(),
+                                                      policy == WadPolicy::legacy_channel);
+  return {id, region};
 }
 
-std::string set_display(const std::string& image, const DisplaySource& source,
-                        const std::vector<SettingOverride>& overrides) {
+void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
   detail::ensure_qcore_application();
-  const auto values = display_overrides(overrides, false);
-  require(values.display.widescreen || values.display.progressive_scan || values.display.pal60 ||
-              !source.sysconf.empty(),
-          "No display settings were requested");
-  return json(sysconf::set_display(qstring(image, "Image path must be UTF-8"), values.display,
-                                   sysconf_source(source)));
+  title_remove::remove_channel(nand, title_id);
 }
 
-std::string set_sysconf(const std::string& image, const DisplaySource& source,
-                        const std::vector<SettingOverride>& overrides) {
+void apply_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app,
+                     std::span<const std::uint8_t> hacks_hash_ini, const PriiloaderSettings& settings,
+                     std::span<const HackOverride> hacks) {
   detail::ensure_qcore_application();
-  const auto values = display_overrides(overrides, true);
-  return json(sysconf::set_settings(qstring(image, "Image path must be UTF-8"), values,
-                                    sysconf_source(source)));
+  priiloader::apply(nand, app, hacks_hash_ini, priiloader_settings(settings),
+                    priiloader_hacks(nand, hacks));
 }
 
-std::string install_priiloader(const std::string& input_image, const std::string& app,
-                               const std::string& output_image,
-                               const std::vector<SettingOverride>& settings) {
-  detail::ensure_qcore_application();
-  return json(priiloader::install(qstring(input_image, "Input NAND path must be UTF-8"),
-      qstring(app, "Priiloader app path must be UTF-8"),
-      qstring(output_image, "Output NAND path must be UTF-8"),
-      setting_map(settings, "Duplicate Priiloader setting override")));
-}
-
-std::string set_priiloader_settings(const std::string& input_image, const std::string& output_image,
-                                   const std::vector<SettingOverride>& settings,
-                                   const std::string& hack_definitions,
-                                   const std::vector<SettingOverride>& hacks) {
-  detail::ensure_qcore_application();
-  QMap<QString, bool> hack_values;
-  for (const auto& hack : hacks) {
-    const auto key = qstring(hack.key, "Priiloader hack name must be UTF-8");
-    const auto value = qstring(hack.value, "Priiloader hack state must be UTF-8");
-    require(!key.isEmpty() && (value == "on" || value == "off") && !hack_values.contains(key),
-            "Invalid or repeated Priiloader hack override");
-    hack_values.insert(key, value == "on");
-  }
-  return json(priiloader::set_settings(qstring(input_image, "Input NAND path must be UTF-8"),
-      qstring(output_image, "Output NAND path must be UTF-8"),
-      setting_map(settings, "Duplicate Priiloader setting override"),
-      hack_definitions.empty() ? QString{} : qstring(hack_definitions, "Hack definitions path must be UTF-8"),
-      hack_values));
-}
 }

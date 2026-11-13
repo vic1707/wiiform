@@ -30,36 +30,20 @@ target("wiiform-core")
     end
 target_end()
 
-for _, name in ipairs({"install", "inventory", "preflight", "remove", "roundtrip", "sysconf", "wad", "backupmii_footer"}) do
-    target(name .. "-tests")
+for name, source in pairs({
+    ["nand-buffer-tests"] = "tests/nand_buffer.cpp",
+    ["nand-buffer-regressions"] = "tests/nand_buffer_regressions.cpp",
+    ["sysconf-generated-tests"] = "tests/sysconf_generated.cpp"
+}) do
+    target(name)
+        set_kind("binary")
         set_default(false)
         add_rules("qt.console")
         add_deps("wiiform-core")
         add_frameworks("QtGui", "QtWidgets", "QtNetwork")
         add_packages("wiiqt-nand", "yaml-cpp", "xz")
         add_includedirs(private_headers)
-        add_files("tests/" .. name .. ".cpp")
+        add_files(source)
         set_targetdir("build/bin")
-        set_rundir("$(projectdir)")
     target_end()
 end
-
-target("public-api-tests")
-    set_kind("binary")
-    set_default(false)
-    add_deps("wiiform-core")
-    add_files("tests/public_api.cpp")
-    set_targetdir("build/bin")
-target_end()
-
-target("nand-buffer-tests")
-    set_kind("binary")
-    set_default(false)
-    add_rules("qt.console")
-    add_deps("wiiform-core")
-    add_frameworks("QtGui", "QtWidgets", "QtNetwork")
-    add_packages("wiiqt-nand", "yaml-cpp", "xz")
-    add_includedirs(private_headers)
-    add_files("tests/nand_buffer.cpp")
-    set_targetdir("build/bin")
-target_end()

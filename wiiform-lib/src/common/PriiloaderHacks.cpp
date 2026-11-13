@@ -2,8 +2,6 @@
 #include <PriiloaderHacks.hpp>
 
 #include <QCryptographicHash>
-#include <QFile>
-#include <QFileInfo>
 #include <QMap>
 #include <QRegularExpression>
 #include <stdexcept>
@@ -31,26 +29,13 @@ namespace {
     return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex();
   }
 
-  auto read_definitions(const QString& path) -> QByteArray {
-    const QFileInfo info(path);
-    QFile file(path);
-    require(info.isFile() && !info.isSymLink() && file.open(QIODevice::ReadOnly) &&
-                file.size() > 0 && file.size() <= definitions_limit,
-            "Expected a regular Priiloader 0.10.0 hacks_hash.ini file");
-    const auto bytes = file.read(definitions_limit + 1);
-    require(bytes.size() == file.size() && bytes.size() == definitions_source_size &&
-                digest(bytes) == definitions_sha256,
+  auto validate_definitions(QByteArray bytes) -> QByteArray {
+    require(bytes.size() > 0 && bytes.size() <= definitions_limit &&
+                bytes.size() == definitions_source_size && digest(bytes) == definitions_sha256,
             "Priiloader hacks_hash.ini does not match pinned release 0.10.0");
     auto aligned = bytes;
     aligned.append(QByteArray((32 - aligned.size() % 32) % 32, '\0'));
     return aligned;
-  }
-
-  auto verified_padded_definitions(const QByteArray& bytes) -> bool {
-    if (bytes.size() != ((definitions_source_size + 31) & ~31)) return false;
-    for (qsizetype index = definitions_source_size; index < bytes.size(); ++index)
-      if (bytes.at(index) != '\0') return false;
-    return digest(bytes.left(definitions_source_size)) == definitions_sha256;
   }
 
   auto parse_definitions(const QByteArray& bytes, int menu_version) -> QList<Definition> {
@@ -112,17 +97,6 @@ namespace {
     return result;
   }
 
-  auto enabled_hacks(const QList<Definition>& definitions, const QByteArray& states,
-                     int menu_version) -> QJsonObject {
-    require(states.size() == definitions.size(), "Priiloader hack state size differs from pinned definitions");
-    QJsonObject result;
-    for (int index = 0; index < definitions.size(); ++index) {
-      const auto& definition = definitions.at(index);
-      if (definition.master.isEmpty() && definition.minimum <= menu_version && menu_version <= definition.maximum)
-        result[definition.name] = result[definition.name].toBool() || states.at(index) == 1;
-    }
-    return result;
-  }
 }
 
 namespace priiloader {
@@ -140,10 +114,14 @@ namespace priiloader {
     return data;
   }
 
-  auto prepare_hacks(const QString& definitions_path, int menu_version,
+  auto prepare_hacks(std::span<const std::uint8_t> input, int menu_version,
                      const QMap<QString, bool>& overrides,
                      const QByteArray& previous_states) -> HackFiles {
-    const auto definitions_bytes = read_definitions(definitions_path);
+    require(!input.empty() && input.size() <= definitions_limit,
+            "Expected a bounded Priiloader 0.10.0 hacks_hash.ini file");
+    auto view = QByteArray::fromRawData(reinterpret_cast<const char*>(input.data()),
+                                        static_cast<int>(input.size()));
+    const auto definitions_bytes = validate_definitions(view);
     const auto definitions = parse_definitions(definitions_bytes, menu_version);
     require(!definitions.isEmpty(), "Pinned Priiloader definitions contain no valid hacks");
     auto states = QByteArray(definitions.size(), char(0));
@@ -153,7 +131,7 @@ namespace priiloader {
         require(state == 0 || state == 1, "Invalid Priiloader hack state");
       states = previous_states;
     }
-    HackFiles result{definitions_bytes, states, {}};
+    HackFiles result{definitions_bytes, states};
     for (auto it = overrides.cbegin(); it != overrides.cend(); ++it) {
       bool found = false;
       for (int index = 0; index < definitions.size(); ++index) {
@@ -165,20 +143,7 @@ namespace priiloader {
         found = true;
       }
       require(found, "Requested Priiloader hack title is unavailable for this System Menu version");
-      result.selected[it.key()] = it.value();
     }
     return result;
-  }
-
-  auto inspect_hacks(const QByteArray& definitions, const QByteArray& states,
-                     int menu_version) -> QJsonObject {
-    if (definitions == priiloader::legacy_fix_480p_definitions()) {
-      require(states.size() == 1 && (states[0] == 0 || states[0] == 1), "Invalid legacy Priiloader hack state");
-      return {{"fix_480p", states.at(0) == 1}};
-    }
-    require(verified_padded_definitions(definitions),
-            "Priiloader hack definitions do not match pinned release 0.10.0");
-    const auto parsed = parse_definitions(definitions, menu_version);
-    return enabled_hacks(parsed, states, menu_version);
   }
 }

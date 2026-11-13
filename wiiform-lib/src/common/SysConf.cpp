@@ -3,14 +3,13 @@
 // SYSCONF name lookup table, verified against original Wii captures.
 #include <SysConf.hpp>
 
-#include <QJsonObject>
 #include <QMap>
 #include <QtEndian>
 #include <QSet>
 #include <algorithm>
 #include <array>
 #include <stdexcept>
-#include <utility>
+#include <vector>
 
 namespace {
   constexpr int header_size = 6;
@@ -59,9 +58,10 @@ namespace {
     QMap<QByteArray, Record> records;
   };
 
-  struct Addition {
-    const DisplayEntry* entry;
-    bool value;
+  struct EntryToWrite {
+    QByteArray name;
+    Type type;
+    QByteArray value;
   };
 
   void require(bool condition, const char* message) {
@@ -150,11 +150,15 @@ namespace {
 
       const int data_offset = start + 1 + name_length;
       const int value_offset = read_entry_value(bytes, data_offset, limit, type);
-      if (name == "IPL.CD" || name == "IPL.NIK" || name == "IPL.LNG") {
+      if (name == "IPL.CD" || name == "IPL.NIK" || name == "IPL.LNG" ||
+          name == "IPL.SADR" || name == "BT.BAR") {
         Record record{type, -1, 0, value_offset};
         if (type == static_cast<quint8>(Type::SmallArray)) {
           record.payload_offset = data_offset + 1;
           record.payload_size = int(static_cast<quint8>(bytes.at(data_offset))) + 1;
+        } else if (type == static_cast<quint8>(Type::BigArray)) {
+          record.payload_offset = data_offset + 2;
+          record.payload_size = int(read_u16(bytes, data_offset)) + 1;
         }
         parsed.records.insert(name, record);
       }
@@ -187,6 +191,136 @@ namespace {
     return names;
   }
 
+  auto encode_entry(const EntryToWrite& entry) -> QByteArray {
+    QByteArray result;
+    result.append(char((static_cast<int>(entry.type) << 5) | (entry.name.size() - 1)));
+    result.append(entry.name);
+    if (entry.type == Type::BigArray) {
+      require(!entry.value.isEmpty() && entry.value.size() <= 0x10000,
+              "SYSCONF big-array size is invalid");
+      const auto length = entry.value.size() - 1;
+      result.append(char((length >> 8) & 0xff));
+      result.append(char(length & 0xff));
+    } else if (entry.type == Type::SmallArray) {
+      require(!entry.value.isEmpty() && entry.value.size() <= 0x100,
+              "SYSCONF small-array size is invalid");
+      result.append(char(entry.value.size() - 1));
+    }
+    result.append(entry.value);
+    return result;
+  }
+
+  auto u32_bytes(quint32 value) -> QByteArray {
+    QByteArray result(4, '\0');
+    qToBigEndian<quint32>(value, reinterpret_cast<uchar*>(result.data()));
+    return result;
+  }
+
+  auto nickname_bytes(const QString& nickname) -> QByteArray {
+    require(!nickname.isEmpty() && nickname.size() <= 10 && !nickname.trimmed().isEmpty(),
+            "Nickname must contain 1 to 10 nonblank BMP characters");
+    QByteArray result(0x16, '\0');
+    for (int index = 0; index < nickname.size(); ++index) {
+      const auto character = nickname.at(index);
+      require(character.isPrint() && !character.isSurrogate(),
+              "Nickname contains an unsupported control or non-BMP character");
+      qToBigEndian<quint16>(character.unicode(),
+                            reinterpret_cast<uchar*>(result.data() + index * 2));
+    }
+    qToBigEndian<quint16>(static_cast<quint16>(nickname.size()),
+                          reinterpret_cast<uchar*>(result.data() + 20));
+    return result;
+  }
+
+  auto generated_entries(const sysconf::SettingsOverrides& overrides,
+                         const QString& menu_region) -> std::vector<EntryToWrite> {
+    require(menu_region == "EUR" || menu_region == "USA" || menu_region == "JPN",
+            "Unsupported menu region for SYSCONF generation");
+    const auto country = overrides.country.value_or(menu_region == "EUR" ? 110 : menu_region == "USA" ? 49 : 1);
+    const bool country_allowed = menu_region == "EUR"
+        ? (country == 65 || country == 66 || country == 67 || country == 74 || country == 76 ||
+           country == 77 || country == 78 || country == 79 || country == 82 || country == 83 ||
+           country == 88 || (country >= 94 && country <= 99) || country == 105 || country == 107 ||
+           country == 108 || country == 110)
+        : menu_region == "USA" ? (country >= 8 && country <= 52) : country == 1;
+    require(country_allowed, "Country code does not match the requested menu region");
+
+    const auto language = overrides.language.value_or(menu_region == "JPN" ? "ja" : "en");
+    if (menu_region == "JPN") require(language == "ja", "Japanese menu requires Japanese language");
+    if (menu_region == "USA") require(language == "en" || language == "fr" || language == "es",
+                                       "Language is not supported by the USA menu");
+    if (menu_region == "EUR") require(language != "ja", "Language is not supported by the EUR menu");
+    const auto language_position =
+        std::find(language_names().cbegin(), language_names().cend(), language);
+    require(language_position != language_names().cend(), "Unsupported Wii language code");
+    const auto language_index = static_cast<int>(language_position - language_names().cbegin());
+    const auto nickname = overrides.nickname.value_or(QStringLiteral("Wii"));
+    const bool bar_above = overrides.sensor_bar_above.value_or(true);
+    const auto display = overrides.display;
+
+    QByteArray country_data(0x1008, '\0');
+    country_data[0] = char(country);
+    QByteArray parental_controls(0x4a, '\0');
+    parental_controls[1] = char(0x04);
+    parental_controls[2] = char(0x14);
+    const QByteArray idle("\0\1", 2);
+
+    return {
+      {"BT.DINF", Type::BigArray, QByteArray(0x461, '\0')},
+      {"BT.CDIF", Type::BigArray, QByteArray(0x205, '\0')},
+      {"BT.SENS", Type::Long, u32_bytes(3)},
+      {"BT.BAR", Type::Byte, QByteArray(1, bar_above ? char(1) : char(0))},
+      {"BT.SPKV", Type::Byte, QByteArray(1, char(0x58))},
+      {"BT.MOT", Type::Byte, QByteArray(1, char(1))},
+      {"IPL.NIK", Type::SmallArray, nickname_bytes(nickname)},
+      {"IPL.LNG", Type::Byte, QByteArray(1, char(language_index))},
+      {"IPL.SADR", Type::BigArray, country_data},
+      {"IPL.PC", Type::SmallArray, parental_controls},
+      {"IPL.CB", Type::Long, u32_bytes(0)},
+      {"IPL.AR", Type::Byte, QByteArray(1, display.widescreen.value_or(false) ? char(1) : char(0))},
+      {"IPL.SSV", Type::Byte, QByteArray(1, char(1))},
+      {"IPL.CD", Type::ByteBool, QByteArray(1, char(1))},
+      {"IPL.CD2", Type::ByteBool, QByteArray(1, char(0))},
+      {"IPL.EULA", Type::ByteBool, QByteArray(1, char(0))},
+      {"IPL.UPT", Type::Byte, QByteArray(1, char(2))},
+      {"IPL.PGS", Type::Byte, QByteArray(1, display.progressive_scan.value_or(false) ? char(1) : char(0))},
+      {"IPL.E60", Type::Byte, QByteArray(1, display.pal60.value_or(false) ? char(1) : char(0))},
+      {"IPL.DH", Type::Byte, QByteArray(1, char(0))},
+      {"IPL.INC", Type::Long, u32_bytes(8)},
+      {"IPL.FRC", Type::Long, u32_bytes(40)},
+      {"IPL.IDL", Type::SmallArray, idle},
+      {"NET.WCFG", Type::Long, u32_bytes(1)},
+      {"NET.CTPC", Type::Long, u32_bytes(0)},
+      {"WWW.RST", Type::Byte, QByteArray(1, char(0))},
+      {"MPLS.MOVIE", Type::ByteBool, QByteArray(1, char(1))},
+    };
+  }
+
+  auto encode_new_sysconf(const std::vector<EntryToWrite>& entries) -> QByteArray {
+    QByteArray bytes(sysconf::size, '\0');
+    bytes.replace(0, 4, "SCv0");
+    write_u16(bytes, 4, static_cast<int>(entries.size()));
+    int offset = header_size + (static_cast<int>(entries.size()) + 1) * 2;
+    for (int index = 0; index < static_cast<int>(entries.size()); ++index) {
+      write_u16(bytes, table_slot(index), offset);
+      const auto encoded = encode_entry(entries[static_cast<std::size_t>(index)]);
+      require(offset + encoded.size() <= lookup_start, "Generated SYSCONF entries exceed their data area");
+      bytes.replace(offset, encoded.size(), encoded);
+      offset += encoded.size();
+    }
+    write_u16(bytes, table_slot(static_cast<int>(entries.size())), offset);
+    for (const auto& display_entry : display_entries) {
+      const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) {
+        return entry.name == display_entry.name;
+      });
+      require(found != entries.end(), "Generated SYSCONF is missing a display field");
+      write_u16(bytes, display_entry.lookup_offset,
+                table_slot(static_cast<int>(found - entries.begin())));
+    }
+    bytes.replace(footer_offset, footer_size, "SCed");
+    return bytes;
+  }
+
   auto nickname_record(const QByteArray& bytes, const Record& record) -> QString {
     require(record.type == static_cast<quint8>(Type::SmallArray) && record.payload_size == 0x16,
             "Unsupported IPL.NIK layout");
@@ -209,103 +343,6 @@ namespace {
     return result;
   }
 
-  auto patch_settings_impl(QByteArray bytes, const sysconf::SettingsOverrides& overrides) -> QByteArray {
-    const auto parsed = parse(bytes);
-    const auto setup = parsed.records.value("IPL.CD");
-    if (overrides.require_setup) {
-      require(setup.value_offset >= 0 &&
-                  (setup.type == static_cast<quint8>(Type::Byte) ||
-                   setup.type == static_cast<quint8>(Type::ByteBool)),
-              "SYSCONF has no supported IPL.CD setup flag");
-      const auto value = static_cast<quint8>(bytes.at(setup.value_offset));
-      require(value == 1, "SYSCONF indicates Wii first-time setup is incomplete");
-    }
-
-    if (overrides.nickname) {
-      const auto found = parsed.records.constFind("IPL.NIK");
-      require(found != parsed.records.cend(), "SYSCONF has no IPL.NIK nickname entry");
-      require(found->type == static_cast<quint8>(Type::SmallArray) && found->payload_size == 0x16,
-              "Unsupported IPL.NIK layout");
-      const auto& name = *overrides.nickname;
-      require(!name.isEmpty() && name.size() <= 10 && !name.trimmed().isEmpty(),
-              "Nickname must contain 1 to 10 nonblank BMP characters");
-      QByteArray utf16(0x16, '\0');
-      for (int i = 0; i < name.size(); ++i) {
-        const auto ch = name.at(i);
-        require(ch.isPrint() && !ch.isSurrogate(),
-                "Nickname contains an unsupported control or non-BMP character");
-        qToBigEndian<quint16>(ch.unicode(), reinterpret_cast<uchar*>(utf16.data() + 2 * i));
-      }
-      qToBigEndian<quint16>(static_cast<quint16>(name.size()),
-                            reinterpret_cast<uchar*>(utf16.data() + 20));
-      bytes.replace(found->payload_offset, found->payload_size, utf16);
-    }
-
-    if (overrides.language) {
-      const auto found = parsed.records.constFind("IPL.LNG");
-      require(found != parsed.records.cend() && found->type == static_cast<quint8>(Type::Byte) &&
-                  found->value_offset >= 0,
-              "SYSCONF has no supported IPL.LNG language entry");
-      const auto& names = language_names();
-      const auto found_language = std::find(names.cbegin(), names.cend(), *overrides.language);
-      require(found_language != names.cend(), "Unsupported Wii language code");
-      bytes[found->value_offset] = char(found_language - names.cbegin());
-    }
-    return sysconf::patch_display(bytes, overrides.display);
-  }
-
-  auto append_display_fields(const QByteArray& bytes, const Parsed& parsed,
-                             const QList<Addition>& additions) -> QByteArray {
-    const int count = static_cast<int>(parsed.offsets.size()) - 1;
-    const int end = parsed.offsets.last();
-    require(end <= lookup_start, "SYSCONF entries overlap the name lookup table");
-    for (int slot = lookup_start; slot < footer_offset; slot += 2) {
-      const int address = read_u16(bytes, slot);
-      require(!address || (address >= header_size && address < table_slot(count) && address % 2 == 0),
-              "Invalid SYSCONF name lookup table");
-    }
-    bool known_layout = false;
-    for (std::size_t i = 0; i < display_entries.size(); ++i) {
-      const int address = read_u16(bytes, display_entries[i].lookup_offset);
-      require(address == parsed.fields[i].table_offset, "SYSCONF display lookup does not match its entry");
-      known_layout |= address != 0;
-    }
-    require(known_layout, "Adding display fields requires a recognized Wii SYSCONF lookup table");
-
-    const int extra = static_cast<int>(additions.size());
-    const int shift = 2 * extra;
-    const int old_table_end = table_slot(count + 1);
-    QByteArray records;
-    for (const auto& addition : additions) {
-      const QByteArray name(addition.entry->name);
-      records += char((static_cast<int>(Type::Byte) << 5) | (name.size() - 1));
-      records += name;
-      records += char(addition.value);
-    }
-    require(end + shift + records.size() <= lookup_start, "Insufficient SYSCONF space for display fields");
-    const auto padding = bytes.mid(end, lookup_start - end);
-    require(std::all_of(padding.cbegin(), padding.cend(), [](char byte) { return byte == 0; }),
-            "SYSCONF contains unrecognized data after its entries");
-
-    // Keep every existing table cell at the same address so its lookup entry
-    // still points to it. Only the underlying records need to move.
-    auto result = bytes;
-    result.replace(old_table_end + shift, end - old_table_end, bytes.mid(old_table_end, end - old_table_end));
-    result.replace(end + shift, records.size(), records);
-    write_u16(result, 4, count + extra);
-    for (int i = 0; i < count; ++i)
-      write_u16(result, table_slot(i), parsed.offsets[i] + shift);
-    int offset = end + shift;
-    for (int i = 0; i < extra; ++i) {
-      const auto& entry = *additions[i].entry;
-      const int slot = table_slot(count + i);
-      write_u16(result, slot, offset);
-      write_u16(result, entry.lookup_offset, slot);
-      offset += static_cast<int>(qstrlen(entry.name)) + 2;
-    }
-    write_u16(result, table_slot(count + extra), offset);
-    return result;
-  }
 } // namespace
 
 namespace sysconf {
@@ -339,43 +376,43 @@ namespace sysconf {
       const auto index = static_cast<quint8>(bytes.at(language->value_offset));
       if (index < language_names().size()) result.language = language_names()[index];
     }
+    const auto country = parsed.records.constFind("IPL.SADR");
+    if (country != parsed.records.cend() &&
+        country->type == static_cast<quint8>(Type::BigArray) && country->payload_size == 0x1008) {
+      result.country = static_cast<std::uint8_t>(bytes.at(country->payload_offset));
+    }
+    const auto sensor_bar = parsed.records.constFind("BT.BAR");
+    if (sensor_bar != parsed.records.cend() && sensor_bar->type == static_cast<quint8>(Type::Byte) &&
+        sensor_bar->value_offset >= 0) {
+      const auto value = static_cast<quint8>(bytes.at(sensor_bar->value_offset));
+      if (value <= 1) result.sensor_bar_above = value == 1;
+    }
     return result;
   }
 
-  auto patch_settings(QByteArray bytes, const SettingsOverrides& overrides) -> QByteArray {
-    return patch_settings_impl(std::move(bytes), overrides);
-  }
-
-  auto settings_report(const Settings& settings) -> QJsonObject {
-    auto optional = [](const auto& value) -> QJsonValue {
-      return value ? QJsonValue(*value) : QJsonValue(QJsonValue::Null);
-    };
-    return {{"setup_complete", optional(settings.setup_complete)},
-            {"nickname", optional(settings.nickname)}, {"language", optional(settings.language)}};
-  }
-
-  auto patch_display(QByteArray bytes, const DisplayOverrides& overrides) -> QByteArray {
-    const auto parsed = ::parse(bytes);
-    QList<Addition> additions;
-    for (std::size_t i = 0; i < display_entries.size(); ++i) {
-      const auto& entry = display_entries[i];
-      const auto value = overrides.*entry.option;
-      if (!value) continue;
-      const auto offset = parsed.fields[i].value_offset;
-      if (offset >= 0) bytes[offset] = char(*value);
-      else additions.append({&entry, *value});
-    }
-    return additions.isEmpty() ? bytes : append_display_fields(bytes, parsed, additions);
-  }
-
-  auto display_report(const Display& display) -> QJsonObject {
-    auto boolean = [](const std::optional<bool>& value) -> QJsonValue {
-      return value ? QJsonValue(*value) : QJsonValue(QJsonValue::Null);
-    };
-    QJsonValue aspect(QJsonValue::Null);
-    if (display.widescreen) aspect = *display.widescreen ? "16:9" : "4:3";
-    return {{"aspect_ratio", aspect}, {"progressive_scan", boolean(display.progressive_scan)},
-            {"pal60", boolean(display.pal60)}};
+  auto create(const SettingsOverrides& overrides, const QString& menu_region) -> QByteArray {
+    const auto bytes = encode_new_sysconf(generated_entries(overrides, menu_region));
+    const auto settings = read_settings(bytes);
+    require(settings.setup_complete == std::optional<bool>(true),
+            "Generated SYSCONF does not mark first-time setup complete");
+    require(settings.nickname == std::optional<QString>(overrides.nickname.value_or(QStringLiteral("Wii"))),
+            "Generated SYSCONF nickname readback differs");
+    const auto country = overrides.country.value_or(menu_region == "EUR" ? 110 : menu_region == "USA" ? 49 : 1);
+    require(settings.country == std::optional<std::uint8_t>(country),
+            "Generated SYSCONF country readback differs");
+    require(settings.sensor_bar_above ==
+                std::optional<bool>(overrides.sensor_bar_above.value_or(true)),
+            "Generated SYSCONF sensor bar readback differs");
+    require(read_display(bytes).widescreen ==
+                std::optional<bool>(overrides.display.widescreen.value_or(false)),
+            "Generated SYSCONF display readback differs");
+    require(read_display(bytes).progressive_scan ==
+                std::optional<bool>(overrides.display.progressive_scan.value_or(false)),
+            "Generated SYSCONF progressive-scan readback differs");
+    require(read_display(bytes).pal60 ==
+                std::optional<bool>(overrides.display.pal60.value_or(false)),
+            "Generated SYSCONF PAL60 readback differs");
+    return bytes;
   }
 
 } // namespace sysconf

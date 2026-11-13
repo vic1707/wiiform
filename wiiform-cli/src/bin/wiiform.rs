@@ -41,10 +41,6 @@ struct Cli {
     #[arg(long)]
     offline: bool,
 
-    /// Optional same-console NAND for authenticated settings import and preflight.
-    #[arg(long, value_name = "NAND")]
-    reference: Option<PathBuf>,
-
     /// Boot-area validation policy.
     #[arg(long, value_enum, default_value = "stock")]
     boot_policy: BootPolicyArg,
@@ -64,19 +60,12 @@ fn run(cli: Cli) -> Result<()> {
         recipe: cli.recipe,
         output: cli.output,
         cache: cli.cache,
-        reference: cli.reference,
         offline: cli.offline,
         boot_policy,
         menu: cli.menu,
     };
-    let built = workflow::build(&options).context("Wiiform build failed")?;
-    println!(
-        "Built {} NAND bundle at {} (sha256 {}). Evidence: {}",
-        built.menu,
-        built.nand.parent().unwrap_or(&built.nand).display(),
-        built.nand_sha256,
-        built.evidence_dir.display(),
-    );
+    workflow::build(&options).context("Wiiform build failed")?;
+    println!("Built NAND restore bundle at {}", options.output.display());
     Ok(())
 }
 

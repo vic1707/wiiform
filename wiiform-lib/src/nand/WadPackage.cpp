@@ -5,10 +5,7 @@
 #include <tiktmd.h>
 
 #include <QCryptographicHash>
-#include <QFile>
-#include <QFileInfo>
 #include <QtEndian>
-#include <cstdio>
 #include <stdexcept>
 #include <utility>
 
@@ -33,46 +30,21 @@ namespace {
     return qFromBigEndian<quint32>(bytes.constData() + offset);
   }
 
-  auto read_file(const QString& path) -> QByteArray {
-    const QFileInfo info(path);
-    QFile file(path);
-    require(info.isFile() && !info.isSymLink() && file.open(QIODevice::ReadOnly),
-            "WAD must be a regular file");
-    const auto size = file.size();
-    require(size >= qint64(section_alignment) && size <= qint64(max_wad_size),
-            "WAD file size is outside supported bounds");
-    const auto bytes = file.read(size + 1);
-    require(bytes.size() == size && file.error() == QFileDevice::NoError, "Incomplete WAD read");
-    return bytes;
-  }
-
-  auto read_stdin() -> QByteArray {
-    QFile file;
-    require(file.open(stdin, QIODevice::ReadOnly), "Cannot read WAD from standard input");
-    QByteArray bytes;
-    char buffer[64 * 1024];
-    for (;;) {
-      const auto size = file.read(buffer, sizeof(buffer));
-      require(size >= 0, "Incomplete WAD read from standard input");
-      if (size == 0) break;
-      require(quint64(bytes.size()) + quint64(size) <= max_wad_size,
-              "WAD file size is outside supported bounds");
-      bytes.append(buffer, int(size));
-    }
-    require(quint64(bytes.size()) >= section_alignment, "WAD file size is outside supported bounds");
-    return bytes;
-  }
 }
 
 namespace wad_package {
-  auto read(const QString& path, const QByteArray& expected_sha256, Policy policy) -> Package {
+  auto read(std::span<const std::uint8_t> input, const QByteArray& expected_sha256, Policy policy) -> Package {
     const bool legacy = policy == Policy::LegacyChannel;
-    require(!legacy || !expected_sha256.isEmpty(), "Legacy channel WADs require an expected SHA-256");
-    require(path != "-" || !expected_sha256.isEmpty(), "WAD input from stdin requires an expected SHA-256");
+    require(input.size() >= wad_header_size && input.size() <= max_wad_size,
+            "WAD file size is outside supported bounds");
+    require(!expected_sha256.isEmpty(), "WADs require an expected SHA-256");
     const auto expected = expected_sha256.toLower();
     require(expected.isEmpty() || (expected.size() == 64 && QByteArray::fromHex(expected).toHex() == expected),
             "Expected WAD SHA-256 must have 64 hexadecimal digits");
-    const auto bytes = path == "-" ? read_stdin() : read_file(path);
+    // QByteArray::fromRawData is a view whose lifetime is bounded by this call.
+    // Content buffers copied into NusJob remain owned by the job.
+    const auto bytes = QByteArray::fromRawData(reinterpret_cast<const char*>(input.data()),
+                                               static_cast<int>(input.size()));
     const auto sha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex();
     require(expected.isEmpty() || sha256 == expected, "WAD SHA-256 does not match the expected package digest");
     require(u32(bytes, 0) == wad_header_size && u32(bytes, 4) == 0x49730000,
@@ -152,4 +124,5 @@ namespace wad_package {
 
     return {std::move(job), sha256, source_ticket_sha256, key_index, tmd_signed, ticket_signed};
   }
+
 }

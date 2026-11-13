@@ -15,6 +15,8 @@ remove:
 setup:
   nickname: "Speed Wii"
   language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja
+  country: "110" # Quoted Wii code. Common values are 110 UK, 49 USA, and 1 Japan.
+  sensor_bar: above # above or below; defaults to above.
 
 display:
   aspect: "16:9" # "4:3" or "16:9"

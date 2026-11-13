@@ -8,6 +8,7 @@
 #include <tiktmd.h>
 
 #include <QTreeWidgetItem>
+#include <QtEndian>
 #include <algorithm>
 #include <limits>
 #include <memory>
@@ -200,33 +201,28 @@ namespace {
     require(nand.WriteMetaData(), "Cannot persist NAND metadata");
   }
 
-  void install_job_to_image(const QString& image, NusJob job) {
+  void install_job_to_image(std::span<std::uint8_t> image, NusJob job) {
     working_image::Image working(image);
     plan_and_install(working.nand, working.layout.orphan_entries, std::move(job));
   }
 } // namespace
 
 namespace title_install {
-  void install_nus_title(const QString& image, const QString& cache, quint64 title_id,
+  void install_nus_title(std::span<std::uint8_t> image, const QString& cache, quint64 title_id,
                          quint16 version, bool offline) {
-    const auto job = factory::read_title(cache, title_id, version, offline);
-    install_job_to_image(image, job);
+    install_job_to_image(image, factory::read_title(cache, title_id, version, offline));
   }
 
-  void install_wad(const QString& image, const QString& package, const QByteArray& expected_sha256,
-                   bool legacy) {
-    require(!expected_sha256.isEmpty(), "An expected WAD SHA-256 is required for install");
+  auto install_wad(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
+                   const QByteArray& expected_sha256, bool legacy) -> std::pair<quint64, quint16> {
     auto wad = wad_package::read(package, expected_sha256, legacy ? wad_package::Policy::LegacyChannel :
                                                                    wad_package::Policy::Standard);
     require(legacy || wad.nintendo_signed(), "WAD ticket and TMD must be genuinely Nintendo-signed");
     const auto type = wad.job.tid >> 32;
     require(type == 0x00010001 || type == 0x00010002, "WAD install supports downloadable and system channels");
+    const auto installed = std::pair{wad.job.tid, qFromBigEndian<quint16>(wad.job.data[0].constData() + 0x19c)};
     install_job_to_image(image, std::move(wad.job));
+    return installed;
   }
 
-  namespace detail {
-    void install_validated_job(const QString& image, NusJob job) {
-      install_job_to_image(image, std::move(job));
-    }
-  } // namespace detail
 } // namespace title_install

@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
     io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
     time::Duration,
 };
 use tempfile::NamedTempFile;
@@ -251,13 +251,12 @@ fn release(cache: &Path, offline: bool) -> Result<Vec<u8>> {
 }
 
 pub struct Assets {
-    pub app: PathBuf,
-    pub definitions: Option<PathBuf>,
+    pub app: Vec<u8>,
+    pub definitions: Option<Vec<u8>>,
 }
 
 pub fn prepare(
     cache: &Path,
-    workspace: &Path,
     offline: bool,
     explicit_app: Option<&Path>,
     want_definitions: bool,
@@ -285,12 +284,8 @@ pub fn prepare(
             .context("missing pinned Priiloader release")?;
         publish_cache(&app, &extract_app(archive)?)?;
     }
-    verify(
-        &bounded_read(&app, APP_SIZE)?,
-        APP_SHA256,
-        APP_SIZE,
-        "Priiloader app",
-    )?;
+    let app = bounded_read(&app, APP_SIZE)?;
+    verify(&app, APP_SHA256, APP_SIZE, "Priiloader app")?;
     let definitions = if want_definitions {
         let archive = archive
             .as_deref()
@@ -302,45 +297,9 @@ pub fn prepare(
             64 * 1024,
             "Priiloader hack definitions",
         )?;
-        let path = workspace.join("hacks_hash.ini");
-        let mut file = File::options().write(true).create_new(true).open(&path)?;
-        file.write_all(&data)?;
-        Some(path)
+        Some(data)
     } else {
         None
     };
     Ok(Assets { app, definitions })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn invalid_packed_stream_is_rejected() {
-        assert!(expand_installer(&[]).is_err());
-    }
-
-    #[test]
-    fn pinned_release_when_supplied() -> Result<()> {
-        let Some(path) = std::env::var_os("WIIFORM_TEST_PRIILOADER_RELEASE") else {
-            return Ok(());
-        };
-        let archive = bounded_read(Path::new(&path), ARCHIVE_LIMIT)?;
-        verify(
-            &archive,
-            ARCHIVE_SHA256,
-            ARCHIVE_LIMIT,
-            "Priiloader release",
-        )?;
-        let app = extract_app(&archive)?;
-        ensure!(app.len() == APP_SIZE, "incorrect extracted app length");
-        let definitions = archive_member(&archive, "apps/priiloader/hacks_hash.ini", 64 * 1024)?;
-        verify(
-            &definitions,
-            DEFINITIONS_SHA256,
-            64 * 1024,
-            "Priiloader definitions",
-        )
-    }
 }

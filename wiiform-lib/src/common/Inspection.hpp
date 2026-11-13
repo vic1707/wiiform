@@ -2,7 +2,6 @@
 #pragma once
 
 #include <QByteArray>
-#include <QJsonObject>
 #include <QMap>
 #include <QSet>
 #include <QString>
@@ -27,15 +26,24 @@ namespace inspect {
     int checked_titles = 0;
   };
 
+  enum class PriiloaderLayout { Unavailable, StockBoot, UnidentifiedBoot, Installed };
+
+  struct PriiloaderEvidence {
+    PriiloaderLayout layout = PriiloaderLayout::Unavailable;
+    quint16 menu_version = 0;
+    quint64 system_menu_ios = 0;
+    QString boot_app_path;
+    QString backup_app_path;
+    bool backup_tmd_nintendo_signed = false;
+    bool backup_app_matches_original_tmd_hash = false;
+    bool backup_app_matches_original_tmd_size = false;
+  };
+
   // These routines only inspect the supplied data. Failures use fixed messages
   // so malformed console data is never copied into diagnostics.
   // Returns the erase blocks whose boot2 maps were validated.
   auto verify_boot(const QByteArray& raw, BootPolicy policy = BootPolicy::Stock) -> QSet<int>;
-  auto read_file(NandBin& nand, const QString& path, qint64 limit) -> QByteArray;
-  // Caller must first validate the active layout, authenticate metadata, and
-  // verify live-file ECC/HMAC. This emits structure and hashes, never payloads.
-  auto inventory_filesystem(NandBin& nand) -> QJsonObject;
-  auto priiloader_evidence(NandBin& nand) -> QJsonObject;
+  auto priiloader_evidence(NandBin& nand) -> PriiloaderEvidence;
   auto verify_filesystem(NandBin& nand, bool generated, quint16 active_metadata) -> FilesystemSummary;
   auto verify_metadata(NandBin& nand, const QString& area) -> MetadataSummary;
   auto verify_stock(NandBin& nand, const QString& area) -> StockSummary;

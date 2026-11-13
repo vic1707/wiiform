@@ -1,190 +1,214 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use crate::ffi::bridge as ffi;
-use anyhow::{Context, Result};
-use serde_json::Value;
 use std::path::Path;
 
-pub use ffi::{BootPolicy, DisplaySource, Inspection, SettingOverride};
+use anyhow::{Context, Result};
 
-pub fn path_text(path: &Path) -> Result<&str> {
+use crate::ffi::bridge as ffi;
+use crate::recipe::{
+    Aspect, Autoboot, Display, HackSettings, Language, Menu, MountPoint, PriiloaderSettings,
+    ReturnTo, SensorBar, Setup, Sha256, ShutdownTo,
+};
+use crate::seed::StockSeed;
+
+pub use ffi::{BootPolicy, CacheMode, InstalledWad, StockIdentity, WadPolicy};
+
+pub const RAW_NAND_BYTES: usize = 0x2100_0000;
+pub const NAND_BYTES: usize = RAW_NAND_BYTES + 0x400;
+pub const WAD_MAX_BYTES: usize = RAW_NAND_BYTES;
+
+fn cache_dir(path: &Path) -> Result<&str> {
     path.to_str()
-        .with_context(|| format!("native operations require a UTF-8 path: {}", path.display()))
+        .with_context(|| format!("NUS cache directory must be UTF-8: {}", path.display()))
 }
 
-fn report(text: String) -> Result<Value> {
-    serde_json::from_str(&text).context("native core returned invalid JSON")
+pub fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<String> {
+    Ok(ffi::extract_seed(nand, sidecar_keys)?)
 }
 
-pub fn export_seed(nand: &Path, seed: &Path) -> Result<()> {
-    Ok(ffi::export_seed(path_text(nand)?, path_text(seed)?)?)
-}
-
-pub fn unpack_seed(seed: &Path, directory: &Path) -> Result<()> {
-    Ok(ffi::unpack_seed(path_text(seed)?, path_text(directory)?)?)
-}
-
-pub fn inventory(nand: &Path) -> Result<Value> {
-    report(ffi::inventory(path_text(nand)?)?)
-}
-
-pub fn preflight(
-    seed: &Path,
-    reference: Option<&Path>,
-    candidate: &Path,
+pub fn create_stock(
+    seed: &StockSeed,
+    nand: &mut [u8],
+    cache: &Path,
+    menu: Menu,
     policy: BootPolicy,
-    settings: &[SettingOverride],
-) -> Result<Value> {
-    let reference = reference.map(path_text).transpose()?.unwrap_or_default();
-    report(ffi::preflight(
-        path_text(seed)?,
-        reference,
-        path_text(candidate)?,
-        policy,
-        settings,
-    )?)
-}
-
-pub fn inspect(nand: &Path, scope: Inspection) -> Result<Value> {
-    report(ffi::inspect(path_text(nand)?, scope)?)
-}
-
-pub fn display_source(nand: &Path) -> Result<DisplaySource> {
-    Ok(ffi::display_source(path_text(nand)?)?)
-}
-
-pub fn priiloader_app(nand: &Path) -> Result<Vec<u8>> {
-    Ok(ffi::priiloader_app(path_text(nand)?)?)
-}
-
-pub fn inspect_wad(
-    wad: &Path,
-    expected_sha256: Option<&str>,
-    allow_unverified_signatures: bool,
-) -> Result<Value> {
-    let policy = if allow_unverified_signatures {
-        ffi::WadPolicy::LegacyChannel
-    } else {
-        ffi::WadPolicy::Standard
+    cache_mode: CacheMode,
+) -> Result<StockIdentity> {
+    let menu = match menu {
+        Menu::E43 => ffi::Menu::E43,
+        Menu::U43 => ffi::Menu::U43,
+        Menu::J43 => ffi::Menu::J43,
     };
-    report(ffi::inspect_wad(
-        path_text(wad)?,
-        expected_sha256.unwrap_or_default(),
-        policy,
+    Ok(ffi::create_stock(
+        seed.keys(),
+        seed.boot_blocks(),
+        seed.bad_blocks(),
+        seed.setting_txt(),
+        nand,
+        cache_dir(cache)?,
+        &ffi::StockOptions {
+            menu,
+            boot_policy: policy,
+            cache_mode,
+        },
     )?)
 }
 
-pub fn stock_titles(area: &str) -> Result<Vec<(u64, u16)>> {
-    Ok(ffi::stock_titles(area)?
-        .into_iter()
-        .map(|title| (title.title_id, title.version))
-        .collect())
+fn toggle(value: Option<bool>) -> ffi::Toggle {
+    match value {
+        None => ffi::Toggle::Unset,
+        Some(false) => ffi::Toggle::Off,
+        Some(true) => ffi::Toggle::On,
+    }
 }
 
-pub fn create(
-    seed: &Path,
-    output: &Path,
-    policy: BootPolicy,
-    settings: &[SettingOverride],
+pub fn apply_system_settings(
+    nand: &mut [u8],
+    menu: Menu,
+    setup: Option<&Setup>,
+    display: Option<&Display>,
 ) -> Result<()> {
-    Ok(ffi::create(
-        path_text(seed)?,
-        path_text(output)?,
-        policy,
-        settings,
+    let language = match setup.and_then(|setup| setup.language) {
+        None => ffi::Language::Unset,
+        Some(Language::Ja) => ffi::Language::Ja,
+        Some(Language::En) => ffi::Language::En,
+        Some(Language::De) => ffi::Language::De,
+        Some(Language::Fr) => ffi::Language::Fr,
+        Some(Language::Es) => ffi::Language::Es,
+        Some(Language::It) => ffi::Language::It,
+        Some(Language::Nl) => ffi::Language::Nl,
+    };
+    Ok(ffi::apply_system_settings(
+        nand,
+        &ffi::SystemSettings {
+            nickname: setup
+                .and_then(|setup| setup.nickname.as_ref())
+                .map(|name| name.as_str().to_owned())
+                .unwrap_or_default(),
+            language,
+            country: setup.map_or(0, |setup| setup.country_for(menu).as_u8()),
+            sensor_bar_above: toggle(setup.map(|setup| setup.sensor_bar_for() == SensorBar::Above)),
+            widescreen: toggle(
+                display
+                    .and_then(|display| display.aspect)
+                    .map(|aspect| aspect == Aspect::SixteenNine),
+            ),
+            progressive: toggle(display.and_then(|display| display.progressive)),
+            pal60: toggle(display.and_then(|display| display.pal60)),
+        },
     )?)
 }
 
 pub fn install_nus_title(
-    image: &Path,
+    nand: &mut [u8],
     cache: &Path,
-    title: u64,
+    title_id: u64,
     version: u16,
-    offline: bool,
+    mode: CacheMode,
 ) -> Result<()> {
     Ok(ffi::install_nus_title(
-        path_text(image)?,
-        path_text(cache)?,
-        title,
+        nand,
+        cache_dir(cache)?,
+        title_id,
         version,
-        offline,
+        mode,
     )?)
 }
 
-pub fn install_wad(image: &Path, package: &Path, digest: &str, allow_unsigned: bool) -> Result<()> {
-    Ok(ffi::install_wad(
-        path_text(image)?,
-        path_text(package)?,
-        digest,
-        allow_unsigned,
-    )?)
+pub fn install_wad(
+    nand: &mut [u8],
+    wad: &[u8],
+    sha256: &Sha256,
+    policy: WadPolicy,
+) -> Result<InstalledWad> {
+    let mut digest = [0; 32];
+    for (byte, pair) in digest
+        .iter_mut()
+        .zip(sha256.as_str().as_bytes().as_chunks::<2>().0)
+    {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair)?, 16)?;
+    }
+    Ok(ffi::install_wad(nand, wad, &digest, policy)?)
 }
 
-pub fn remove_title(image: &Path, title: u64) -> Result<()> {
-    Ok(ffi::remove_title(path_text(image)?, title)?)
+pub fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()> {
+    Ok(ffi::remove_title(nand, title_id)?)
 }
 
-pub fn set_display(
-    image: &Path,
-    source: DisplaySource,
-    settings: &[SettingOverride],
-) -> Result<Value> {
-    report(ffi::set_display(path_text(image)?, &source, settings)?)
-}
-
-pub fn set_sysconf(
-    image: &Path,
-    source: DisplaySource,
-    settings: &[SettingOverride],
-) -> Result<Value> {
-    report(ffi::set_sysconf(path_text(image)?, &source, settings)?)
-}
-
-pub fn install_priiloader(
-    image: &Path,
-    app: &Path,
-    output: &Path,
-    settings: &[SettingOverride],
-) -> Result<Value> {
-    report(ffi::install_priiloader(
-        path_text(image)?,
-        path_text(app)?,
-        path_text(output)?,
-        settings,
-    )?)
-}
-
-pub fn set_priiloader_settings(
-    image: &Path,
-    output: &Path,
-    settings: &[SettingOverride],
-    definitions: Option<&Path>,
-    hacks: &[SettingOverride],
-) -> Result<Value> {
-    let definitions = definitions.map(path_text).transpose()?.unwrap_or_default();
-    report(ffi::set_priiloader_settings(
-        path_text(image)?,
-        path_text(output)?,
-        settings,
+pub fn apply_priiloader(
+    nand: &mut [u8],
+    app: &[u8],
+    definitions: &[u8],
+    settings: &PriiloaderSettings,
+    hacks: Option<&HackSettings>,
+) -> Result<()> {
+    let settings = ffi::PriiloaderSettings {
+        autoboot: match settings.autoboot {
+            None => ffi::Autoboot::Unset,
+            Some(Autoboot::Disabled) => ffi::Autoboot::Disabled,
+            Some(Autoboot::HomebrewChannel) => ffi::Autoboot::HomebrewChannel,
+            Some(Autoboot::BootmiiIos) => ffi::Autoboot::BootmiiIos,
+            Some(Autoboot::SystemMenu) => ffi::Autoboot::SystemMenu,
+            Some(Autoboot::File) => ffi::Autoboot::File,
+        },
+        return_to: match settings.return_to {
+            None => ffi::ReturnTo::Unset,
+            Some(ReturnTo::SystemMenu) => ffi::ReturnTo::SystemMenu,
+            Some(ReturnTo::Priiloader) => ffi::ReturnTo::Priiloader,
+            Some(ReturnTo::Autoboot) => ffi::ReturnTo::Autoboot,
+            Some(ReturnTo::File) => ffi::ReturnTo::File,
+        },
+        shutdown_to: match settings.shutdown_to {
+            None => ffi::ShutdownTo::Unset,
+            Some(ShutdownTo::None) => ffi::ShutdownTo::None,
+            Some(ShutdownTo::Priiloader) => ffi::ShutdownTo::Priiloader,
+            Some(ShutdownTo::Autoboot) => ffi::ShutdownTo::Autoboot,
+        },
+        preferred_mount_point: match settings.preferred_mount_point {
+            None => ffi::MountPoint::Unset,
+            Some(MountPoint::Auto) => ffi::MountPoint::Auto,
+            Some(MountPoint::Sd) => ffi::MountPoint::Sd,
+            Some(MountPoint::Usb) => ffi::MountPoint::Usb,
+        },
+        stop_disc: toggle(settings.stop_disc),
+        lid_slot_on_error: toggle(settings.lid_slot_on_error),
+        ignore_shutdown_mode: toggle(settings.ignore_shutdown_mode),
+        black_background: toggle(settings.black_background),
+        dump_gecko_text: toggle(settings.dump_gecko_text),
+        show_rc_updates: toggle(settings.show_rc_updates),
+    };
+    use ffi::Hack;
+    let overrides: Vec<_> = hacks
+        .into_iter()
+        .flat_map(|hacks| {
+            [
+                (Hack::Fix480p, hacks.fix_480p),
+                (Hack::BlockOnlineUpdates, hacks.block_online_updates),
+                (Hack::BlockDiscUpdates, hacks.block_disc_updates),
+                (Hack::BlockDiscAutoboot, hacks.block_disc_autoboot),
+                (Hack::AutoPressA, hacks.auto_press_a),
+                (Hack::RemoveDeflicker, hacks.remove_deflicker),
+                (Hack::MoveDiscChannel, hacks.move_disc_channel),
+                (
+                    Hack::RemoveNocopySaveProtection,
+                    hacks.remove_nocopy_save_protection,
+                ),
+                (Hack::ReplaceHealthScreen, hacks.replace_health_screen),
+                (Hack::NoBackgroundMusic, hacks.no_background_music),
+                (Hack::Wiimmfi, hacks.wiimmfi),
+                (Hack::RegionFreeEverything, hacks.region_free_everything),
+            ]
+        })
+        .filter_map(|(hack, value)| value.map(|enabled| ffi::HackOverride { hack, enabled }))
+        .collect();
+    Ok(ffi::apply_priiloader(
+        nand,
+        app,
         definitions,
-        hacks,
+        &settings,
+        &overrides,
     )?)
 }
 
-pub fn normalize_backupmii_footer(image: &Path, expected_sha256: &str) -> Result<String> {
-    Ok(ffi::normalize_backupmii_footer(
-        path_text(image)?,
-        expected_sha256,
-    )?)
-}
-
-pub fn prepare_backupmii_keys(
-    image: &Path,
-    output: &Path,
-    expected_sha256: &str,
-) -> Result<String> {
-    Ok(ffi::prepare_backupmii_keys(
-        path_text(image)?,
-        path_text(output)?,
-        expected_sha256,
-    )?)
+pub fn prepare_backupmii(nand: &mut [u8], expected: &StockIdentity) -> Result<Vec<u8>> {
+    Ok(ffi::prepare_backupmii(nand, expected)?)
 }

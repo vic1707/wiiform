@@ -2,20 +2,13 @@
 #pragma once
 
 #include <QByteArray>
-#include <QJsonObject>
 #include <QString>
+#include <cstdint>
 #include <optional>
 
 namespace sysconf {
   constexpr int size = 0x4000;
   constexpr auto path = "/shared2/sys/SYSCONF";
-  constexpr int key_header_bytes = 0x100;
-
-  struct Source {
-    QByteArray bytes;
-    QByteArray keys_data_sha256;
-    QByteArray settings_sha256;
-  };
 
   struct Display {
     std::optional<bool> widescreen;
@@ -30,24 +23,22 @@ namespace sysconf {
   };
 
   struct SettingsOverrides {
-    bool require_setup = false;
     std::optional<QString> nickname;
     std::optional<QString> language;
     DisplayOverrides display;
+    std::optional<std::uint8_t> country;
+    std::optional<bool> sensor_bar_above;
   };
 
   struct Settings {
     std::optional<bool> setup_complete;
     std::optional<QString> nickname;
     std::optional<QString> language;
+    std::optional<std::uint8_t> country;
+    std::optional<bool> sensor_bar_above;
   };
 
-  // Missing display fields can be added to a recognized Wii lookup layout.
-  // Invalid or unsupported data raises a fixed, payload-free diagnostic.
   auto read_display(const QByteArray& bytes) -> Display;
   auto read_settings(const QByteArray& bytes) -> Settings;
-  auto patch_settings(QByteArray bytes, const SettingsOverrides& overrides) -> QByteArray;
-  auto settings_report(const Settings& settings) -> QJsonObject;
-  auto patch_display(QByteArray bytes, const DisplayOverrides& overrides) -> QByteArray;
-  auto display_report(const Display& display) -> QJsonObject;
+  auto create(const SettingsOverrides& overrides, const QString& menu_region) -> QByteArray;
 } // namespace sysconf

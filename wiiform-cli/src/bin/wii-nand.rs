@@ -1,540 +1,274 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use anyhow::{Context, Result, bail};
-use clap::{ArgAction, Parser, Subcommand, ValueEnum};
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use anyhow::{Context, Result, bail, ensure};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use std::path::{Path, PathBuf};
 use wiiform::{
-    native::{self, BootPolicy, DisplaySource, Inspection, SettingOverride},
-    recipe::{Aspect, Language, Nickname, Sha256, TitleId},
+    native::{self, CacheMode, WadPolicy},
+    recipe::{
+        Autoboot, HackSettings, MountPoint, PriiloaderSettings, ReturnTo, Sha256, ShutdownTo,
+        TitleId,
+    },
+    workflow::{publish_edit, read_bounded, validate_output},
 };
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "wii-nand",
-    version,
-    about = "Inspect and prepare Wii NAND images"
-)]
+#[derive(Parser)]
+#[command(name = "wii-nand", version, about = "Edit a Wii NAND into a new file")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Args)]
+struct ImagePaths {
+    /// Existing footer-bearing NAND.
+    input: PathBuf,
+    /// New path for the edited NAND.
+    output: PathBuf,
+}
+
+impl ImagePaths {
+    fn edit(self, operation: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
+        validate_output(&self.output)?;
+        let mut nand = read_bounded(&self.input, native::NAND_BYTES, native::NAND_BYTES)?;
+        operation(&mut nand)?;
+        publish_edit(&nand, &self.output)
+    }
+}
+
+#[derive(Subcommand)]
 enum Command {
-    /// Initialize a fresh 4.3 image from a console seed.
-    Create {
-        #[arg(long, value_enum, default_value = "stock")]
-        boot_policy: BootArgument,
-        #[arg(long = "setting-override", value_parser = parse_override, action = ArgAction::Append)]
-        settings: Vec<SettingOverride>,
-        seed: PathBuf,
-        new_nand: PathBuf,
-    },
-    /// Install one exact NUS title ID and version from the cache or network.
+    /// Install one exact Nintendo title version.
     InstallTitle {
-        #[arg(long, required = true)]
-        in_place: bool,
-        #[arg(long)]
-        offline: bool,
-        work_nand: PathBuf,
+        #[command(flatten)]
+        image: ImagePaths,
         cache: PathBuf,
         title_id: TitleId,
         #[arg(value_parser = clap::value_parser!(u16).range(..65535))]
         version: u16,
-    },
-    /// Validate a WAD and report its content hashes and signature state.
-    InspectWad {
         #[arg(long)]
-        allow_unverified_signatures: bool,
-        #[arg(long)]
-        sha256: Option<Sha256>,
-        /// Use `-` to read the WAD bytes from standard input.
-        wad: PathBuf,
+        offline: bool,
     },
-    /// Install a WAD after checking its expected SHA-256.
+    /// Install a WAD after verifying its SHA-256.
     InstallWad {
-        #[arg(long, required = true)]
-        in_place: bool,
+        #[command(flatten)]
+        image: ImagePaths,
+        wad: PathBuf,
+        #[arg(long)]
+        sha256: Sha256,
         #[arg(long)]
         allow_unverified_signatures: bool,
-        #[arg(long, required = true)]
-        sha256: Sha256,
-        work_nand: PathBuf,
-        wad: PathBuf,
     },
-    /// Remove one supported downloadable channel by its 16-digit title ID.
+    /// Remove one allowlisted channel by title ID.
     RemoveTitle {
-        #[arg(long, required = true)]
-        in_place: bool,
-        work_nand: PathBuf,
+        #[command(flatten)]
+        image: ImagePaths,
         title_id: TitleId,
     },
-    /// Inspect installed display settings.
-    InspectDisplay { nand: PathBuf },
-    /// Inspect Wii setup and language settings in SYSCONF.
-    InspectSysconf { nand: PathBuf },
-    /// Inspect the installed Priiloader layout and settings.
-    InspectPriiloader { nand: PathBuf },
-    /// Export the recognized, pinned Priiloader app from an authenticated NAND.
-    ExportPriiloaderApp { nand: PathBuf, new_app: PathBuf },
-    /// Install the pinned Priiloader app and configure its settings.
+    /// Install or configure the pinned Priiloader release.
     InstallPriiloader {
-        #[arg(long = "setting-override", value_parser = parse_override, action = ArgAction::Append)]
-        settings: Vec<SettingOverride>,
-        nand: PathBuf,
-        priiloader_app: PathBuf,
-        new_nand: PathBuf,
-    },
-    /// Set Priiloader settings and optional supported system-menu hacks.
-    SetPriiloader {
-        #[arg(long = "setting-override", value_parser = parse_override, action = ArgAction::Append)]
-        settings: Vec<SettingOverride>,
+        #[command(flatten)]
+        image: ImagePaths,
+        /// Extracted Wii Priiloader 0.10.0 app, required for a fresh install.
+        #[arg(long)]
+        app: Option<PathBuf>,
+        /// Pinned release hacks_hash.ini.
         #[arg(long)]
         hack_definitions: Option<PathBuf>,
-        #[arg(long = "hack-override", value_parser = parse_override, action = ArgAction::Append)]
-        hacks: Vec<SettingOverride>,
-        nand: PathBuf,
-        new_nand: PathBuf,
+        #[command(flatten)]
+        settings: PriiloaderArgs,
+        #[arg(long = "hack", value_parser = parse_hack, value_name = "KEY=on|off")]
+        hacks: Vec<HackOverride>,
     },
-    /// Set display fields in the NAND's SYSCONF.
-    SetDisplay {
-        #[arg(long, required = true)]
-        in_place: bool,
-        #[arg(long)]
-        from: Option<PathBuf>,
-        /// Screen aspect ratio, 4:3 or 16:9.
-        #[arg(long)]
-        aspect: Option<Aspect>,
-        #[arg(long, value_enum)]
-        progressive: Option<OnOff>,
-        #[arg(long, value_enum)]
-        pal60: Option<OnOff>,
-        work_nand: PathBuf,
-    },
-    /// Set setup, nickname, language, and display fields in SYSCONF.
-    SetSysconf {
-        #[arg(long, required = true)]
-        in_place: bool,
-        #[arg(long)]
-        from: Option<PathBuf>,
-        #[arg(long)]
-        require_setup: bool,
-        /// Console nickname with 1–10 printable BMP characters.
-        #[arg(long)]
-        nickname: Option<Nickname>,
-        /// Language code, one of ja, en, de, fr, es, it, or nl.
-        #[arg(long)]
-        language: Option<Language>,
-        /// Screen aspect ratio, 4:3 or 16:9.
-        #[arg(long)]
-        aspect: Option<Aspect>,
-        #[arg(long, value_enum)]
-        progressive: Option<OnOff>,
-        #[arg(long, value_enum)]
-        pal60: Option<OnOff>,
-        work_nand: PathBuf,
-    },
-    /// Print the pinned stock 4.3 title IDs and versions for an area.
-    StockTitles {
-        #[arg(value_parser = ["EUR", "USA", "JPN"])]
-        area: String,
-    },
-    /// Check a seed and images on the host, writing a new report.
-    Preflight {
-        #[arg(long)]
-        candidate_only: bool,
-        #[arg(long, value_enum, default_value = "stock")]
-        boot_policy: BootArgument,
-        #[arg(long = "setting-override", value_parser = parse_override, action = ArgAction::Append)]
-        settings: Vec<SettingOverride>,
-        seed: PathBuf,
-        /// REFERENCE CANDIDATE REPORT, or CANDIDATE REPORT with --candidate-only.
-        #[arg(required = true, num_args = 2..=3)]
-        paths: Vec<PathBuf>,
-    },
-    /// Write a new read-only filesystem inventory report.
-    Inventory { nand: PathBuf, new_report: PathBuf },
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-#[value(rename_all = "kebab-case")]
-enum BootArgument {
-    #[default]
-    Stock,
-    PreserveSource,
-}
-
-impl From<BootArgument> for BootPolicy {
-    fn from(value: BootArgument) -> Self {
-        match value {
-            BootArgument::Stock => Self::Stock,
-            BootArgument::PreserveSource => Self::PreserveSource,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum)]
 enum OnOff {
     On,
     Off,
 }
 
 impl OnOff {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::On => "on",
-            Self::Off => "off",
+    fn enabled(self) -> bool {
+        matches!(self, Self::On)
+    }
+}
+
+#[derive(Args)]
+struct PriiloaderArgs {
+    #[arg(long, value_parser = ["disabled", "homebrew_channel", "bootmii_ios", "system_menu", "file"])]
+    autoboot: Option<String>,
+    #[arg(long, value_parser = ["system_menu", "priiloader", "autoboot", "file"])]
+    return_to: Option<String>,
+    #[arg(long, value_parser = ["none", "priiloader", "autoboot"])]
+    shutdown_to: Option<String>,
+    #[arg(long, value_parser = ["auto", "sd", "usb"])]
+    preferred_mount_point: Option<String>,
+    #[arg(long, value_enum)]
+    stop_disc: Option<OnOff>,
+    #[arg(long, value_enum)]
+    lid_slot_on_error: Option<OnOff>,
+    #[arg(long, value_enum)]
+    ignore_shutdown_mode: Option<OnOff>,
+    #[arg(long, value_enum)]
+    black_background: Option<OnOff>,
+    #[arg(long, value_enum)]
+    dump_gecko_text: Option<OnOff>,
+    #[arg(long, value_enum)]
+    show_rc_updates: Option<OnOff>,
+}
+
+impl From<PriiloaderArgs> for PriiloaderSettings {
+    fn from(args: PriiloaderArgs) -> Self {
+        Self {
+            autoboot: args.autoboot.as_deref().map(|name| match name {
+                "disabled" => Autoboot::Disabled,
+                "homebrew_channel" => Autoboot::HomebrewChannel,
+                "bootmii_ios" => Autoboot::BootmiiIos,
+                "system_menu" => Autoboot::SystemMenu,
+                "file" => Autoboot::File,
+                _ => unreachable!("validated by clap"),
+            }),
+            return_to: args.return_to.as_deref().map(|name| match name {
+                "system_menu" => ReturnTo::SystemMenu,
+                "priiloader" => ReturnTo::Priiloader,
+                "autoboot" => ReturnTo::Autoboot,
+                "file" => ReturnTo::File,
+                _ => unreachable!("validated by clap"),
+            }),
+            shutdown_to: args.shutdown_to.as_deref().map(|name| match name {
+                "none" => ShutdownTo::None,
+                "priiloader" => ShutdownTo::Priiloader,
+                "autoboot" => ShutdownTo::Autoboot,
+                _ => unreachable!("validated by clap"),
+            }),
+            preferred_mount_point: args
+                .preferred_mount_point
+                .as_deref()
+                .map(|name| match name {
+                    "auto" => MountPoint::Auto,
+                    "sd" => MountPoint::Sd,
+                    "usb" => MountPoint::Usb,
+                    _ => unreachable!("validated by clap"),
+                }),
+            stop_disc: args.stop_disc.map(OnOff::enabled),
+            lid_slot_on_error: args.lid_slot_on_error.map(OnOff::enabled),
+            ignore_shutdown_mode: args.ignore_shutdown_mode.map(OnOff::enabled),
+            black_background: args.black_background.map(OnOff::enabled),
+            dump_gecko_text: args.dump_gecko_text.map(OnOff::enabled),
+            show_rc_updates: args.show_rc_updates.map(OnOff::enabled),
         }
     }
 }
 
-fn parse_override(value: &str) -> std::result::Result<SettingOverride, String> {
-    let (name, value) = value
-        .split_once('=')
-        .ok_or_else(|| "expected NAME=VALUE".to_owned())?;
-    if name.is_empty() || value.is_empty() {
-        return Err("expected non-empty NAME=VALUE".into());
-    }
-    Ok(SettingOverride {
+#[derive(Clone)]
+struct HackOverride {
+    name: String,
+    enabled: bool,
+}
+
+fn parse_hack(value: &str) -> Result<HackOverride> {
+    let (name, state) = value.split_once('=').context("expected KEY=on|off")?;
+    let enabled = match state {
+        "on" => true,
+        "off" => false,
+        _ => bail!("expected KEY=on|off"),
+    };
+    Ok(HackOverride {
         name: name.to_owned(),
-        value: value.to_owned(),
+        enabled,
     })
 }
 
-fn unique_overrides(values: Vec<SettingOverride>, label: &str) -> Result<Vec<SettingOverride>> {
-    let mut names = std::collections::HashSet::with_capacity(values.len());
-    for value in &values {
-        if !names.insert(value.name.as_str()) {
-            bail!("duplicate {label} override: {}", value.name);
-        }
+fn hack_settings(overrides: Vec<HackOverride>) -> Result<HackSettings> {
+    let mut hacks = HackSettings::default();
+    for HackOverride { name, enabled } in overrides {
+        let field = match name.as_str() {
+            "fix_480p" => &mut hacks.fix_480p,
+            "block_online_updates" => &mut hacks.block_online_updates,
+            "block_disc_updates" => &mut hacks.block_disc_updates,
+            "block_disc_autoboot" => &mut hacks.block_disc_autoboot,
+            "auto_press_a" => &mut hacks.auto_press_a,
+            "remove_deflicker" => &mut hacks.remove_deflicker,
+            "move_disc_channel" => &mut hacks.move_disc_channel,
+            "remove_nocopy_save_protection" => &mut hacks.remove_nocopy_save_protection,
+            "replace_health_screen" => &mut hacks.replace_health_screen,
+            "no_background_music" => &mut hacks.no_background_music,
+            "wiimmfi" => &mut hacks.wiimmfi,
+            "region_free_everything" => &mut hacks.region_free_everything,
+            _ => bail!("unknown Priiloader hack {name}"),
+        };
+        ensure!(
+            field.replace(enabled).is_none(),
+            "repeated Priiloader hack {name}"
+        );
     }
-    drop(names);
-    Ok(values)
+    Ok(hacks)
 }
 
-fn report(value: serde_json::Value) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&value)?);
-    Ok(())
+fn optional_bytes(path: Option<&Path>, limit: usize) -> Result<Vec<u8>> {
+    path.map(|path| read_bounded(path, 1, limit))
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
-fn require_native_settings(settings: Vec<SettingOverride>) -> Result<Vec<SettingOverride>> {
-    unique_overrides(settings, "setting")
-}
-
-fn display_overrides(
-    aspect: Option<Aspect>,
-    progressive: Option<OnOff>,
-    pal60: Option<OnOff>,
-) -> Vec<SettingOverride> {
-    let mut values = Vec::new();
-    if let Some(aspect) = aspect {
-        values.push(SettingOverride {
-            name: "aspect".into(),
-            value: aspect.as_str().to_owned(),
-        });
-    }
-    if let Some(progressive) = progressive {
-        values.push(SettingOverride {
-            name: "progressive".into(),
-            value: progressive.as_str().into(),
-        });
-    }
-    if let Some(pal60) = pal60 {
-        values.push(SettingOverride {
-            name: "pal60".into(),
-            value: pal60.as_str().into(),
-        });
-    }
-    values
-}
-
-fn output_parent(path: &Path) -> &Path {
-    path.parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."))
-}
-
-fn new_output_path(path: &Path, inputs: &[&Path]) -> Result<PathBuf> {
-    let parent = output_parent(path)
-        .canonicalize()
-        .with_context(|| format!("cannot resolve output directory for {}", path.display()))?;
-    let destination = parent.join(path.file_name().context("output path has no filename")?);
-    for input in inputs {
-        if let (Ok(parent), Some(name)) = (output_parent(input).canonicalize(), input.file_name())
-            && parent.join(name) == destination
-        {
-            bail!("output destination must differ from every input");
-        }
-    }
-    match destination.symlink_metadata() {
-        Ok(_) => bail!("output already exists: {}", destination.display()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(destination),
-        Err(error) => Err(error).context("cannot check output destination"),
-    }
-}
-
-fn write_new_output(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = output_parent(path);
-    let mut staging = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("cannot stage output in {}", parent.display()))?;
-    staging.write_all(bytes)?;
-    staging.as_file().sync_all()?;
-    staging
-        .persist_noclobber(path)
-        .with_context(|| format!("cannot publish new output {}", path.display()))?;
-    Ok(())
-}
-
-fn write_json_report(path: &Path, value: &serde_json::Value) -> Result<()> {
-    let mut bytes = serde_json::to_vec_pretty(value)?;
-    bytes.push(b'\n');
-    write_new_output(path, &bytes)
-}
-
-fn execute(cli: Cli) -> Result<i32> {
-    match cli.command {
-        Command::Create {
-            boot_policy,
-            settings,
-            seed,
-            new_nand,
-        } => {
-            native::create(
-                &seed,
-                &new_nand,
-                boot_policy.into(),
-                &require_native_settings(settings)?,
-            )?;
-            println!("Wrote an initialized NAND working image.");
-            Ok(0)
-        }
+fn main() -> Result<()> {
+    match Cli::parse().command {
         Command::InstallTitle {
-            in_place: _,
-            offline,
-            work_nand,
+            image,
             cache,
             title_id,
             version,
+            offline,
         } => {
-            native::install_nus_title(&work_nand, &cache, title_id.as_u64(), version, offline)?;
-            Ok(0)
-        }
-        Command::InspectWad {
-            allow_unverified_signatures,
-            sha256,
-            wad,
-        } => {
-            report(native::inspect_wad(
-                &wad,
-                sha256.as_ref().map(Sha256::as_str),
-                allow_unverified_signatures,
-            )?)?;
-            Ok(0)
-        }
-        Command::InstallWad {
-            in_place: _,
-            allow_unverified_signatures,
-            sha256,
-            work_nand,
-            wad,
-        } => {
-            native::install_wad(
-                &work_nand,
-                &wad,
-                sha256.as_str(),
-                allow_unverified_signatures,
-            )?;
-            Ok(0)
-        }
-        Command::RemoveTitle {
-            in_place: _,
-            work_nand,
-            title_id,
-        } => {
-            native::remove_title(&work_nand, title_id.as_u64())?;
-            Ok(0)
-        }
-        Command::InspectDisplay { nand } => {
-            report(native::inspect(&nand, Inspection::Display)?)?;
-            Ok(0)
-        }
-        Command::InspectSysconf { nand } => {
-            report(native::inspect(&nand, Inspection::SystemSettings)?)?;
-            Ok(0)
-        }
-        Command::InspectPriiloader { nand } => {
-            report(native::inspect(&nand, Inspection::Priiloader)?)?;
-            Ok(0)
-        }
-        Command::ExportPriiloaderApp { nand, new_app } => {
-            let output = new_output_path(&new_app, &[&nand])?;
-            let bytes = native::priiloader_app(&nand)?;
-            write_new_output(&output, &bytes)?;
-            println!("Exported the pinned Priiloader app.");
-            Ok(0)
-        }
-        Command::InstallPriiloader {
-            settings,
-            nand,
-            priiloader_app,
-            new_nand,
-        } => {
-            report(native::install_priiloader(
-                &nand,
-                &priiloader_app,
-                &new_nand,
-                &require_native_settings(settings)?,
-            )?)?;
-            Ok(0)
-        }
-        Command::SetPriiloader {
-            settings,
-            hack_definitions,
-            hacks,
-            nand,
-            new_nand,
-        } => {
-            let settings = require_native_settings(settings)?;
-            let hacks = unique_overrides(hacks, "hack")?;
-            report(native::set_priiloader_settings(
-                &nand,
-                &new_nand,
-                &settings,
-                hack_definitions.as_deref(),
-                &hacks,
-            )?)?;
-            Ok(0)
-        }
-        Command::SetDisplay {
-            in_place: _,
-            from,
-            aspect,
-            progressive,
-            pal60,
-            work_nand,
-        } => {
-            let source = match from {
-                Some(path) => native::display_source(&path)?,
-                None => DisplaySource::default(),
-            };
-            report(native::set_display(
-                &work_nand,
-                source,
-                &display_overrides(aspect, progressive, pal60),
-            )?)?;
-            Ok(0)
-        }
-        Command::SetSysconf {
-            in_place: _,
-            from,
-            require_setup,
-            nickname,
-            language,
-            aspect,
-            progressive,
-            pal60,
-            work_nand,
-        } => {
-            let source = match from {
-                Some(path) => native::display_source(&path)?,
-                None => DisplaySource::default(),
-            };
-            let mut overrides = display_overrides(aspect, progressive, pal60);
-            if require_setup {
-                overrides.push(SettingOverride {
-                    name: "require-setup".into(),
-                    value: "true".into(),
-                });
-            }
-            if let Some(nickname) = nickname {
-                overrides.push(SettingOverride {
-                    name: "nickname".into(),
-                    value: nickname.as_str().to_owned(),
-                });
-            }
-            if let Some(language) = language {
-                overrides.push(SettingOverride {
-                    name: "language".into(),
-                    value: language.as_str().to_owned(),
-                });
-            }
-            report(native::set_sysconf(&work_nand, source, &overrides)?)?;
-            Ok(0)
-        }
-        Command::StockTitles { area } => {
-            let titles = native::stock_titles(&area)?;
-            report(serde_json::json!(
-                titles
-                    .into_iter()
-                    .map(|(id, version)| (format!("{id:016x}"), version))
-                    .collect::<Vec<_>>()
-            ))?;
-            Ok(0)
-        }
-        Command::Preflight {
-            candidate_only,
-            boot_policy,
-            settings,
-            seed,
-            paths,
-        } => {
-            let expected_paths = if candidate_only { 2 } else { 3 };
-            if paths.len() != expected_paths {
-                bail!(
-                    "{} requires {} path arguments after SEED",
-                    if candidate_only {
-                        "--candidate-only"
-                    } else {
-                        "preflight"
-                    },
-                    expected_paths
-                );
-            }
-            let settings = require_native_settings(settings)?;
-            let policy: BootPolicy = boot_policy.into();
-            let (reference, candidate, new_report) = if candidate_only {
-                (None, &paths[0], &paths[1])
+            let mode = if offline {
+                CacheMode::Offline
             } else {
-                (Some(&paths[0]), &paths[1], &paths[2])
+                CacheMode::DownloadMissing
             };
-            let reference = reference.map(PathBuf::as_path);
-            let inputs: Vec<_> = [Some(seed.as_path()), reference, Some(candidate.as_path())]
-                .into_iter()
-                .flatten()
-                .collect();
-            let output = new_output_path(new_report, &inputs)?;
-            let value = native::preflight(&seed, reference, candidate, policy, &settings)?;
-            write_json_report(&output, &value)?;
-            let status = value["host_status"].as_str().unwrap_or("fail");
-            println!(
-                "Preflight host checks: {status}. Restore readiness: blocked. Wrote private evidence report."
-            );
-            Ok(match status {
-                "pass" => 0,
-                "blocked" => 3,
-                _ => 1,
+            if !offline {
+                std::fs::create_dir_all(&cache).context("cannot create title cache")?;
+            }
+            image.edit(|nand| {
+                native::install_nus_title(nand, &cache, title_id.as_u64(), version, mode)
             })
         }
-        Command::Inventory { nand, new_report } => {
-            let output = new_output_path(&new_report, &[&nand])?;
-            let value = native::inventory(&nand)?;
-            write_json_report(&output, &value)?;
-            let status = value["status"].as_str().unwrap_or("fail");
-            println!("Read-only filesystem inventory: {status}. Wrote private evidence report.");
-            Ok(if status == "pass" { 0 } else { 1 })
+        Command::InstallWad {
+            image,
+            wad,
+            sha256,
+            allow_unverified_signatures,
+        } => {
+            let policy = if allow_unverified_signatures {
+                WadPolicy::LegacyChannel
+            } else {
+                WadPolicy::Standard
+            };
+            image.edit(|nand| {
+                let bytes = read_bounded(&wad, 0x40, native::WAD_MAX_BYTES)?;
+                native::install_wad(nand, &bytes, &sha256, policy)?;
+                Ok(())
+            })
         }
-    }
-}
-
-fn main() {
-    let cli = Cli::parse();
-    match execute(cli) {
-        Ok(code) => std::process::exit(code),
-        Err(error) => {
-            eprintln!("error: {error:#}");
-            std::process::exit(1);
+        Command::RemoveTitle { image, title_id } => {
+            image.edit(|nand| native::remove_title(nand, title_id.as_u64()))
+        }
+        Command::InstallPriiloader {
+            image,
+            app,
+            hack_definitions,
+            settings,
+            hacks,
+        } => {
+            let hacks = if hacks.is_empty() {
+                None
+            } else {
+                Some(hack_settings(hacks)?)
+            };
+            image.edit(|nand| {
+                let app = optional_bytes(app.as_deref(), 747_968)?;
+                let definitions = optional_bytes(hack_definitions.as_deref(), 64 * 1024)?;
+                native::apply_priiloader(nand, &app, &definitions, &settings.into(), hacks.as_ref())
+            })
         }
     }
 }

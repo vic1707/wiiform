@@ -10,18 +10,12 @@
 #include <tiktmd.h>
 
 #include <QCryptographicHash>
-#include <QDir>
-#include <QFileInfo>
-#include <QTemporaryDir>
 #include <QTreeWidgetItem>
 #include <QtEndian>
 #include <memory>
 #include <stdexcept>
-#include <sys/file.h>
-#include <unistd.h>
 
 namespace {
-  constexpr qint64 nand_size = 0x21000400;
   constexpr int menu_app_limit = 32 * 1024 * 1024;
   constexpr int tmd_limit = 2 * 1024 * 1024;
   using priiloader::release_app_size;
@@ -40,61 +34,9 @@ namespace {
     if (!ok) throw std::runtime_error(message);
   }
 
-  auto sha256(const QByteArray& bytes) -> QByteArray {
-    return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex();
-  }
-
-  auto read_app(const QString& path) -> QByteArray {
-    const QFileInfo info(path);
-    QFile file(path);
-    require(info.isFile() && !info.isSymLink() && file.open(QIODevice::ReadOnly) &&
-                file.size() == release_app_size, "Expected the extracted Priiloader 0.10.0 Wii app");
-    const auto bytes = file.read(release_app_size + 1);
-    require(priiloader::is_release_app(bytes),
-            "Priiloader app SHA-256 does not match the pinned release");
-    return bytes;
-  }
-
-  template<class Edit>
-  auto edit_copy(const QString& input, const QString& output, Edit edit) -> QJsonObject {
-    const QFileInfo destination(QDir::cleanPath(QFileInfo(output).absoluteFilePath()));
-    require(!output.isEmpty() && !destination.exists() && !destination.isSymLink() &&
-                destination.absoluteDir().exists(), "Priiloader output needs a new path in an existing directory");
-    const QFileInfo info(input);
-    QFile original(input);
-    require(info.isFile() && !info.isSymLink() && original.open(QIODevice::ReadOnly) &&
-                original.size() == nand_size, "Priiloader needs a regular footer-bearing NAND image");
-    require(flock(original.handle(), LOCK_SH | LOCK_NB) == 0, "Cannot lock the input NAND for copying");
-
-    QTemporaryDir staging(destination.absoluteDir().filePath(".wii-priiloader-XXXXXX"));
-    require(staging.isValid(), "Cannot create private Priiloader staging directory");
-    const auto image = staging.filePath("nand.bin");
-    {
-      QFile copy(image);
-      require(copy.open(QIODevice::WriteOnly | QIODevice::NewOnly) &&
-                  copy.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner),
-              "Cannot create a private NAND working copy");
-      for (qint64 offset = 0; offset < nand_size;) {
-        const auto bytes = original.read(qMin(qint64(1024 * 1024), nand_size - offset));
-        require(!bytes.isEmpty() && copy.write(bytes) == bytes.size(), "Cannot copy the input NAND");
-        offset += bytes.size();
-      }
-      require(original.atEnd() && copy.flush(), "Cannot finish the NAND working copy");
-    }
-    auto report = edit(image);
-    QFile verified(image);
-    require(verified.open(QIODevice::ReadOnly) && fsync(verified.handle()) == 0,
-            "Cannot sync the verified Priiloader image");
-    // Link publication fails if a concurrent caller creates the destination.
-    require(link(QFile::encodeName(image).constData(), QFile::encodeName(destination.absoluteFilePath()).constData()) == 0,
-            "Cannot publish Priiloader NAND to the new path");
-    return report;
-  }
-
-  auto menu_version(const QJsonObject& evidence) -> int {
-    const auto tmd = evidence["system_menu"].toObject()["tmd"].toObject();
-    const int version = tmd["version"].toInt();
-    require((version == 512 || version == 513 || version == 514) && tmd["ios"].toString() == "0000000100000050",
+  auto menu_version(const inspect::PriiloaderEvidence& evidence) -> int {
+    const int version = evidence.menu_version;
+    require((version == 512 || version == 513 || version == 514) && evidence.system_menu_ios == 0x100000050ull,
             "Priiloader offline preparation supports Wii System Menu 4.3J, 4.3U and 4.3E with IOS80");
     return version;
   }
@@ -121,10 +63,10 @@ namespace {
     return ticket;
   }
 
-  void check_destinations(NandBin& nand, QTreeWidgetItem* tree, const QJsonObject& settings) {
-    const auto values = settings["values"].toObject();
-    const auto autoboot = values["autoboot"].toString();
-    if (autoboot == "file" || values["return_to"].toString() == "file") {
+  void check_destinations(NandBin& nand, QTreeWidgetItem* tree, const priiloader::Settings& settings) {
+    const auto autoboot = settings.autoboot;
+    const auto return_to = settings.return_to;
+    if (autoboot == "file" || return_to == "file") {
       require(!read_authenticated_file(nand, find_path(tree, menu + "/data/main.bin"), menu_app_limit).isEmpty(),
               "Priiloader file boot needs an installed executable");
     }
@@ -154,33 +96,101 @@ namespace {
     return (quint64(bytes) + 0x3fff) / 0x4000;
   }
 
-  auto persist(NandBin& nand, const QMap<QString, PendingFile>& files) -> QJsonObject {
-    QJsonObject report;
+  void persist_buffer(NandBin& nand, const QMap<QString, PendingFile>& files) {
     for (auto it = files.cbegin(); it != files.cend(); ++it) {
       const auto& file = it.value();
       if (file.replace) require(nand.Delete(file.path), "Cannot replace a Priiloader target file");
       const auto id = file.existing_id ? file.existing_id :
           nand.CreateEntry(file.path, 0x1000, 1, NAND_FILE, NAND_RW, NAND_RW, file.other_permissions);
       require(id && nand.SetData(id, file.bytes), "Cannot write a Priiloader target file");
-      report[it.key()] = QJsonObject{{"path", file.path}, {"size", static_cast<qint64>(file.bytes.size())},
-                                     {"sha256", QString::fromLatin1(sha256(file.bytes))}};
     }
     require(nand.WriteMetaData(), "Cannot persist Priiloader NAND metadata");
-    return report;
   }
 
-  void verify_readback(const QString& image, const QMap<QString, PendingFile>& files) {
-    const auto layout = inspect::validate_layout(image, false);
+  void verify_readback_buffer(std::span<std::uint8_t> image,
+                              const QMap<QString, PendingFile>& files) {
+    const auto layout = inspect::validate_layout(std::span<const std::uint8_t>(image.data(), image.size()), false);
+    nand_buffer::Device device(std::span<const std::uint8_t>(image.data(), image.size()));
     NandBin nand;
-    require(nand.SetPath(image) && nand.InitNand() && nand.CheckHmacMeta(layout.active_metadata),
+    require(nand.SetDevice(&device) && nand.InitNand() && nand.CheckHmacMeta(layout.active_metadata),
             "Cannot authenticate the prepared Priiloader image");
     inspect::verify_filesystem(nand, false, layout.active_metadata);
     const std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
     for (const auto& file : files)
       require(read_authenticated_file(nand, find_path(tree.get(), file.path), file.bytes.size()) == file.bytes,
               "Priiloader file readback differs from the planned bytes");
-    const auto report = inspect::priiloader_evidence(nand);
-    require(report["status"].toString() == "priiloader-layout", "Prepared image lacks the verified Priiloader layout");
+    const auto evidence = inspect::priiloader_evidence(nand);
+    require(evidence.layout == inspect::PriiloaderLayout::Installed,
+            "Prepared image lacks the verified Priiloader layout");
+  }
+
+  void plan_hacks(NandBin& nand, QTreeWidgetItem* tree, int version,
+                  std::span<const std::uint8_t> definitions,
+                  const QMap<QString, bool>& requested,
+                  QMap<QString, PendingFile>& files) {
+    if (requested.isEmpty()) return;
+    const auto* definition_entry = find_path(tree, priiloader::hack_definitions_path);
+    const auto* state_entry = find_path(tree, priiloader::hack_states_path);
+    require(bool(definition_entry) == bool(state_entry),
+            "Priiloader hack files must be a matching pair");
+    QByteArray previous_definitions;
+    QByteArray previous_states;
+    bool recognized_legacy = false;
+    if (definition_entry) {
+      previous_definitions = read_authenticated_file(nand, definition_entry, 64 * 1024);
+      previous_states = read_authenticated_file(nand, state_entry, 64 * 1024);
+      recognized_legacy = previous_definitions == priiloader::legacy_fix_480p_definitions();
+      if (recognized_legacy) {
+        require(previous_states.size() == 1 &&
+                    (previous_states.at(0) == 0 || previous_states.at(0) == 1),
+                "Invalid legacy Priiloader hack state");
+      } else {
+        require(!definitions.empty(),
+                "Existing Priiloader hack definitions need the pinned 0.10.0 source");
+      }
+    }
+
+    require(!definitions.empty(), "Priiloader hacks need pinned hacks_hash.ini bytes");
+    auto overrides = requested;
+    if (recognized_legacy && !overrides.contains("480p graphics fix in system menu"))
+      overrides["480p graphics fix in system menu"] = previous_states.at(0) == 1;
+    auto desired = priiloader::prepare_hacks(definitions, version, overrides,
+                                             !definition_entry || recognized_legacy ? QByteArray{} : previous_states);
+    if (definition_entry) {
+      require(previous_definitions == desired.definitions || recognized_legacy,
+              "Existing Priiloader hack definitions differ from the pinned 0.10.0 release");
+      if (previous_definitions != desired.definitions)
+        files["hack_definitions"] = {priiloader::hack_definitions_path, desired.definitions, NAND_RW, true};
+      if (previous_states != desired.states)
+        files["hack_states"] = {priiloader::hack_states_path, desired.states, NAND_RW, true};
+    } else {
+      files["hack_definitions"] = {priiloader::hack_definitions_path, desired.definitions};
+      files["hack_states"] = {priiloader::hack_states_path, desired.states};
+    }
+  }
+
+  void check_buffer_capacity(NandBin& nand, QTreeWidgetItem* tree, int orphan_entries,
+                             const QMap<QString, PendingFile>& files) {
+    int needed_entries = 0;
+    quint64 needed_clusters = 0;
+    for (const auto& file : files) {
+      const auto* existing = find_path(tree, file.path);
+      const auto new_clusters = clusters(file.bytes.size());
+      if (!existing) {
+        ++needed_entries;
+        needed_clusters += new_clusters;
+      } else if (file.replace) {
+        ++needed_entries;
+        bool size_ok = false;
+        const auto old_size = existing->text(2).toULongLong(&size_ok, 16);
+        require(size_ok, "Invalid Priiloader configuration file size");
+        const auto old_clusters = clusters(old_size);
+        if (new_clusters > old_clusters) needed_clusters += new_clusters - old_clusters;
+      }
+    }
+    if (needed_entries || needed_clusters)
+      working_image::require_capacity(nand, tree->child(0), orphan_entries,
+                                      needed_entries, needed_clusters);
   }
 
   void require_clean_menu_data(QTreeWidgetItem* tree) {
@@ -190,15 +200,14 @@ namespace {
       require(!find_path(tree, menu + "/data/" + name), "System Menu contains existing Priiloader data");
   }
 
-  void require_installed_menu(NandBin& nand, QTreeWidgetItem* tree, const QJsonObject& evidence) {
-    const auto boot = evidence["system_menu"].toObject();
-    require(evidence["status"].toString() == "priiloader-layout" &&
-                boot["backup_tmd"].toObject()["nintendo_signed"].toBool() &&
-                boot["backup_app"].toObject()["matches_original_tmd_hash"].toBool() &&
-                boot["backup_app"].toObject()["matches_original_tmd_size"].toBool(),
+  void require_installed_menu(NandBin& nand, QTreeWidgetItem* tree,
+                              const inspect::PriiloaderEvidence& evidence) {
+    require(evidence.layout == inspect::PriiloaderLayout::Installed &&
+                evidence.backup_tmd_nintendo_signed &&
+                evidence.backup_app_matches_original_tmd_hash &&
+                evidence.backup_app_matches_original_tmd_size,
             "Settings writes need a verified Priiloader 0.10.0 installation with its original System Menu");
-    const auto app_path = boot["boot_app"].toObject()["path"].toString();
-    const auto app = read_authenticated_file(nand, find_path(tree, app_path), release_app_size);
+    const auto app = read_authenticated_file(nand, find_path(tree, evidence.boot_app_path), release_app_size);
     require(priiloader::is_release_app(app),
             "Installed Priiloader app does not match the pinned release");
     const auto original = read_authenticated_file(nand, find_path(tree, original_tmd_path), tmd_limit);
@@ -211,148 +220,72 @@ namespace {
 }
 
 namespace priiloader {
-  auto install(const QString& input, const QString& app, const QString& output,
-               const QMap<QString, QString>& overrides) -> QJsonObject {
-    const auto payload = read_app(app);
-    const auto config = overrides.isEmpty() ? QByteArray() : patch_settings(default_settings(), overrides);
-    return edit_copy(input, output, [&](const QString& image) {
-      working_image::Image working(image);
-      auto& nand = working.nand;
-      inspect::verify_filesystem(nand, false, working.layout.active_metadata);
-      const auto evidence = inspect::priiloader_evidence(nand);
-      require(evidence["status"].toString() == "stock-boot", "Priiloader install needs an authenticated stock System Menu boot app");
-      const auto version = menu_version(evidence);
-      inspect::verify_stock_titles(nand, {{0x100000002ull, static_cast<quint16>(version)}, {0x100000050ull, 6944}});
-      const auto boot = evidence["system_menu"].toObject();
-      const auto app_path = boot["boot_app"].toObject()["path"].toString();
-      const auto backup_path = boot["backup_app"].toObject()["path"].toString();
-      require(!backup_path.isEmpty(), "System Menu boot CID does not support the Wii Priiloader backup layout");
-      const std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
+  void apply(std::span<std::uint8_t> image, std::span<const std::uint8_t> app_bytes,
+             std::span<const std::uint8_t> definition_bytes,
+             const QMap<QString, QString>& setting_overrides,
+             const QMap<QString, bool>& hack_overrides) {
+    require(app_bytes.empty() || app_bytes.size() == release_app_size,
+            "Expected the extracted Priiloader 0.10.0 Wii app");
+    const auto app = QByteArray::fromRawData(reinterpret_cast<const char*>(app_bytes.data()),
+                                             static_cast<int>(app_bytes.size()));
+    require(app.isEmpty() || priiloader::is_release_app(app),
+            "Priiloader app SHA-256 does not match the pinned release");
+
+    working_image::Image working(image);
+    auto& nand = working.nand;
+    inspect::verify_filesystem(nand, false, working.layout.active_metadata);
+    const auto evidence = inspect::priiloader_evidence(nand);
+    const bool installing = evidence.layout == inspect::PriiloaderLayout::StockBoot;
+    require(installing || evidence.layout == inspect::PriiloaderLayout::Installed,
+            "Priiloader preparation needs a stock System Menu or an existing Priiloader layout");
+    const int version = menu_version(evidence);
+    const std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
+
+    QMap<QString, PendingFile> files;
+    if (installing) {
+      require(!app.isEmpty(), "Installing Priiloader requires the pinned app payload");
+      inspect::verify_stock_titles(
+          nand, {{0x100000002ull, static_cast<quint16>(version)}, {0x100000050ull, 6944}});
       require_clean_menu_data(tree.get());
+      const auto& app_path = evidence.boot_app_path;
+      const auto& backup_path = evidence.backup_app_path;
+      require(!backup_path.isEmpty(),
+              "System Menu boot CID does not support the Wii Priiloader backup layout");
       for (const auto& path : {backup_path, original_tmd_path, content + "ticket"})
         require(!find_path(tree.get(), path), "Priiloader installer backup or ticket already exists");
       const auto tmd = read_authenticated_file(nand, find_path(tree.get(), tmd_path), tmd_limit);
       const auto original = read_authenticated_file(nand, find_path(tree.get(), app_path), menu_app_limit);
       const auto ticket = authentic_ticket(nand, tree.get(), tmd);
-      QMap<QString, PendingFile> files{
-          {"backup_app", {backup_path, original}},
-          {"backup_tmd", {original_tmd_path, tmd, 0}},
-          {"boot_app", {app_path, payload, NAND_RW, true}},
-          {"ticket", {content + "ticket", ticket}},
-          {"tmd", {tmd_path, patched_tmd(tmd, payload), 0, true}},
-      };
-      QJsonObject report{{"status", "installed"}, {"release", release}, {"menu_version", version},
-                         {"app_sha256", QString::fromLatin1(release_app_hash)}};
-      if (!config.isEmpty()) {
-        const auto settings = inspect_settings(config);
-        check_destinations(nand, tree.get(), settings);
-        files["settings"] = {settings_path, config};
-        report["settings"] = settings;
-      }
-      working_image::require_capacity(nand, tree->child(0), working.layout.orphan_entries, files.size() - 2,
-                                      clusters(original.size()) + clusters(tmd.size()) + clusters(ticket.size()) +
-                                          clusters(config.size()));
-      report["files"] = persist(nand, files);
-      verify_readback(image, files);
-      return report;
-    });
-  }
-
-  auto set_settings(const QString& input, const QString& output,
-                    const QMap<QString, QString>& overrides,
-                    const QString& pinned_definitions,
-                    const QMap<QString, bool>& hack_overrides) -> QJsonObject {
-    return edit_copy(input, output, [&](const QString& image) {
-      working_image::Image working(image);
-      auto& nand = working.nand;
-      inspect::verify_filesystem(nand, false, working.layout.active_metadata);
-      const auto evidence = inspect::priiloader_evidence(nand);
-      const auto version = menu_version(evidence);
-      const std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
+      files["backup_app"] = {backup_path, original};
+      files["backup_tmd"] = {original_tmd_path, tmd, 0};
+      files["boot_app"] = {app_path, app, NAND_RW, true};
+      files["ticket"] = {content + "ticket", ticket};
+      files["tmd"] = {tmd_path, patched_tmd(tmd, app), 0, true};
+    } else {
       require_installed_menu(nand, tree.get(), evidence);
-      const auto* entry = find_path(tree.get(), settings_path);
-      const auto original = entry ? read_authenticated_file(nand, entry, 32) : default_settings();
-      const auto config = patch_settings(original, overrides);
-      const auto settings = inspect_settings(config);
-      check_destinations(nand, tree.get(), settings);
-      QJsonObject report{{"status", "configured"}, {"release", release}, {"menu_version", version},
-                         {"settings", settings}};
-      QMap<QString, PendingFile> files;
-      if (!entry || config != original)
-        files["settings"] = {settings_path, config, NAND_RW, false, entry ? entry_id(entry) : quint16(0)};
-      if (!hack_overrides.isEmpty()) {
-        const auto* definitions = find_path(tree.get(), hack_definitions_path);
-        const auto* states = find_path(tree.get(), hack_states_path);
-        require(bool(definitions) == bool(states), "Priiloader hack files must be a matching pair");
-        QByteArray previous_definitions;
-        QByteArray previous_states;
-        bool recognized_legacy = false;
-        if (definitions) {
-          previous_definitions = read_authenticated_file(nand, definitions, 64 * 1024);
-          previous_states = read_authenticated_file(nand, states, 64 * 1024);
-          recognized_legacy = previous_definitions == priiloader::legacy_fix_480p_definitions();
-          if (recognized_legacy) {
-            require(previous_states.size() == 1 && (previous_states.at(0) == 0 || previous_states.at(0) == 1),
-                    "Invalid legacy Priiloader hack state");
-          } else if (pinned_definitions.isEmpty()) {
-            require(false, "Existing Priiloader hack definitions need the pinned 0.10.0 source");
-          }
-        }
-        HackFiles desired;
-        if (pinned_definitions.isEmpty()) {
-          require(hack_overrides.size() == 1 && hack_overrides.contains("480p graphics fix in system menu"),
-                  "Priiloader hacks need the pinned hacks_hash.ini source");
-          desired.definitions = priiloader::legacy_fix_480p_definitions();
-          desired.states = QByteArray(1, hack_overrides.value("480p graphics fix in system menu") ? char(1) : char(0));
-          desired.selected["fix_480p"] = hack_overrides.value("480p graphics fix in system menu");
-        } else {
-          auto requested = hack_overrides;
-          if (recognized_legacy && !requested.contains("480p graphics fix in system menu"))
-            requested["480p graphics fix in system menu"] = previous_states.at(0) == 1;
-          desired = prepare_hacks(pinned_definitions, version, requested,
-                                  !definitions || recognized_legacy ? QByteArray{} : previous_states);
-          if (recognized_legacy && !hack_overrides.contains("480p graphics fix in system menu"))
-            desired.selected.remove("480p graphics fix in system menu");
-        }
-        if (definitions) {
-          require(previous_definitions == desired.definitions || recognized_legacy,
-                  "Existing Priiloader hack definitions differ from the pinned 0.10.0 release");
-          if (previous_definitions != desired.definitions)
-            files["hack_definitions"] = {priiloader::hack_definitions_path, desired.definitions, NAND_RW, true};
-          if (previous_states != desired.states)
-            files["hack_states"] = {hack_states_path, desired.states, NAND_RW, true};
-        } else {
-          files["hack_definitions"] = {priiloader::hack_definitions_path, desired.definitions};
-          files["hack_states"] = {priiloader::hack_states_path, desired.states};
-        }
-        report["hacks"] = desired.selected;
-      }
-      report["changed"] = !files.isEmpty();
-      if (files.isEmpty()) return report;
+      require(app.isEmpty(), "Priiloader is already installed, so no installer app is needed");
+    }
 
-      int needed_entries = 0;
-      quint64 needed_clusters = 0;
-      for (const auto& file : files) {
-        const auto* existing = find_path(tree.get(), file.path);
-        const auto new_clusters = clusters(file.bytes.size());
-        if (!existing) {
-          ++needed_entries;
-          needed_clusters += new_clusters;
-        } else if (file.replace) {
-          ++needed_entries;
-          bool size_ok = false;
-          const auto old_size = existing->text(2).toULongLong(&size_ok, 16);
-          require(size_ok, "Invalid Priiloader configuration file size");
-          const auto old_clusters = clusters(old_size);
-          if (new_clusters > old_clusters) needed_clusters += new_clusters - old_clusters;
-        }
-      }
-      if (needed_entries || needed_clusters)
-        working_image::require_capacity(nand, tree->child(0), working.layout.orphan_entries,
-                                        needed_entries, needed_clusters);
-      report["files"] = persist(nand, files);
-      verify_readback(image, files);
-      return report;
-    });
+    const auto* settings_entry = find_path(tree.get(), settings_path);
+    const auto settings_before = settings_entry
+        ? read_authenticated_file(nand, settings_entry, 32)
+        : default_settings();
+    const auto settings_bytes = patch_settings(settings_before, setting_overrides);
+    const auto settings = read_settings(settings_bytes);
+    check_destinations(nand, tree.get(), settings);
+    if ((!installing || !setting_overrides.isEmpty()) &&
+        (!settings_entry || settings_bytes != settings_before)) {
+      files["settings"] = {settings_path, settings_bytes, NAND_RW, false,
+                            settings_entry ? entry_id(settings_entry) : quint16(0)};
+    }
+
+    if (!hack_overrides.isEmpty()) {
+      plan_hacks(nand, tree.get(), version, definition_bytes, hack_overrides, files);
+    }
+
+    check_buffer_capacity(nand, tree.get(), working.layout.orphan_entries, files);
+    if (files.isEmpty()) return;
+    persist_buffer(nand, files);
+    verify_readback_buffer(image, files);
   }
 }

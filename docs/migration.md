@@ -18,11 +18,11 @@ are under `wiiform-lib/include/wiiform` and the implementation is under
 `wiiform-lib/src`. Cargo builds the commands under `wiiform-cli`. The
 CXX adapter lives in `wiiform-cli/src/interop`.
 
-Rust owns CLI arguments, recipe orchestration, and bundle publication.
-Native calls handle NAND paths, title IDs, and settings values directly.
-C++ returns JSON for rich reports and typed values for stock titles and
-authenticated SYSCONF data. Seed export, inventory, preflight, and source
-settings import open input NANDs with WiiQt's explicit read-only mode.
+Rust owns CLI arguments, seed and recipe validation, the NAND allocation, and
+publication. C++ borrows the buffer for each synchronous operation. The public
+headers use `std::span` and project-owned value types. CXX translates native
+exceptions to Rust errors. Callers can discard a working buffer if an error
+occurs after writes begin.
 
 To use the public C++ API, include `wiiform/read.hpp` or `wiiform/write.hpp`.
 Initialize the native API from the application's main thread. An application
@@ -41,9 +41,9 @@ The project-owned C++ library wraps the following areas:
 
 - **WiiQt** provides the NAND filesystem, title access and related console
   formats. The xmake package pins the `vic1707/wiiqt-tools` fork at commit
-  `42536a2c3becf384687a64a3d9ddadad435dc22b` with a local patch for per-image read-only access.
+  `42536a2c3becf384687a64a3d9ddadad435dc22b` with local patches for read-only file access and a random-access buffer backend.
 - **Wiiform C++ code** owns the narrow library API, boot validation, seed
-  reconstruction, title creation/install/removal, WAD validation and install,
+  extraction, stock image creation, title operations, WAD validation and install,
   SYSCONF writes, Priiloader files/settings, and BackupMii footer/key-sidecar
   handling. The CXX adapter is glue; it converts Rust-friendly values into
   native calls and maps exceptions to Rust errors.
@@ -68,25 +68,15 @@ prerequisites.
 
 ## Commands and supported operations
 
-`wii-seed` exports the selected console inputs from a backup into a plaintext
-seed and can unpack a seed for inspection. `wii-nand` exposes focused native
-operations and read-only report commands: stock title tables, NAND creation,
-NUS title installs, WAD inspection and install, allowlisted channel removal,
-display/SYSCONF handling, Priiloader, preflight, and inventory. `wiiform`
-combines those operations into one verified build from a seed and recipe.
+Use `wii-seed BACKUP` to write the existing seed format to stdout. Use
+`wiiform` for a new image and `wii-nand` for title installs, channel removal,
+and combined Priiloader installation and configuration on an existing image.
+Each editor command takes separate input and output paths.
 
-Wiiform recipes are a small declarative DSL validated by a Rust model. The
-model drives the generated editor schema. The workflow verifies each input
-hash, checks WAD signature policy and package identity, prepares stock titles
-in deterministic title-ID order, records inventory evidence after each
-requested stage, and refuses to replace an existing output directory. It
-publishes the NAND and its matching `keys.bin` as one directory operation.
-Failures retain private evidence for diagnosis and do not publish the bundle.
-
-Current recipe features are documented in `../README.md` and the example
-recipe. Future recipe fields should remain declarative: the recipe specifies
-the desired operation, while native library functions perform format-aware
-validation and mutation.
+The Rust recipe model drives the generated editor schema. Wiiform validates
+the declared recipe before applying a menu override and validates it again
+after retargeting. It publishes the NAND and its matching `keys.bin` as one
+directory operation after the last native check succeeds.
 
 ## Developer tasks
 
@@ -103,8 +93,9 @@ Move keys under the old `system:` block up one indentation level. Keep
 keys. WAD paths remain relative to the recipe and require SHA-256. For a WAD
 that the recipe deliberately permits without a Nintendo signature, use
 `signature_policy: allow-unsigned`. Existing decrypted seeds remain valid.
-Private checkpoints stay in test tooling. The normal recipe command publishes
-the final NAND and matching keys together.
+Remove `--reference` from scripts. Setup and display options now generate
+SYSCONF using recipe values and menu defaults. Supply a country code to change
+the default for a menu and pair Wii Remotes after restore.
 
 ## Release archive and mise
 

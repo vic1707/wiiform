@@ -129,10 +129,11 @@ namespace {
 }
 
 namespace title_remove {
-  void remove_channel(const QString& image, quint64 title_id) {
+  void remove_channel(std::span<std::uint8_t> image, quint64 title_id) {
     require(title_id_is_removable(title_id),
             "Only allowlisted Forecast, News, Shop and Photo Channel titles can be removed");
     working_image::Image working(image);
     remove_title_contents(working.nand, title_id);
   }
+
 }

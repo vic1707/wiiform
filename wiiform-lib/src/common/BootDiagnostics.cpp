@@ -5,7 +5,6 @@
 
 #include <Titles.hpp>
 
-#include <QJsonObject>
 #include <QMap>
 #include <QSet>
 #include <QtEndian>
@@ -149,56 +148,26 @@ namespace inspect {
   }
 } // namespace inspect
 
-namespace preflight {
-  auto diagnose_boot_ecc(const QByteArray& boots, const QByteArray& seed_boots,
-                         inspect::BootPolicy policy) -> BootEccDiagnostics {
-    BootEccDiagnostics result;
-    if (boots.size() != kBootAreaSize) {
-      result.blocked = true;
-      return result;
-    }
-
+namespace inspect {
+  void verify_boot_ecc(const QByteArray& boots, BootPolicy policy, const QSet<int>& map_blocks) {
+    require(boots.size() == kBootAreaSize, "Unexpected boot-area size");
     QList<int> mismatches;
     for (int page = 0; page < 512; ++page) {
       const auto raw = boots.mid(page * kPageSize, kPageSize);
       const auto data = raw.left(kDataSize);
       if (data == QByteArray(kDataSize, '\xff')) continue;
-      const auto ecc = raw.mid(0x830, 0x10);
-      if (NandSpare::CalcEcc(data) == ecc) continue;
-      mismatches << page;
+      if (NandSpare::CalcEcc(data) != raw.mid(0x830, 0x10)) mismatches << page;
     }
-    if (mismatches.isEmpty()) return result;
+    if (mismatches.isEmpty()) return;
 
-    QSet<int> map_pages;
-    if (boots == seed_boots) {
-      try {
-        for (const auto block : ::inspect::verify_boot(boots, policy))
-          map_pages.insert(block * kPagesPerBlock + (kPagesPerBlock - 1));
-      } catch (const std::runtime_error&) {
-        // Without validated maps every mismatch stays unclassified.
-      }
-    }
-    const bool stock = policy == inspect::BootPolicy::Stock;
-    const bool explainable_set = map_pages.size() >= 2 && (!stock || mismatches.size() == map_pages.size()) &&
-                                 std::all_of(mismatches.cbegin(), mismatches.cend(),
-                                             [&](int page) { return map_pages.contains(page); });
-
+    require(map_blocks.size() >= 2 &&
+                (policy != BootPolicy::Stock || mismatches.size() == map_blocks.size()),
+            "Boot-page ECC mismatches require review");
     for (const auto page : mismatches) {
-      const auto raw = boots.mid(page * kPageSize, kPageSize);
-      const auto unwritten_ecc = raw.mid(0x830, 0x10) == QByteArray(0x10, '\xff');
-      const bool map_page = map_pages.contains(page);
-      const bool classified = explainable_set && map_page && unwritten_ecc;
-      result.pages.append(QJsonObject{{"page", page},
-                                      {"block", page / kPagesPerBlock},
-                                      {"type", classified ? "boot2-map-unwritten-ecc" : "unclassified"},
-                                      {"ecc_unwritten", unwritten_ecc},
-                                      {"matches_seed", page * kPageSize + kPageSize <= seed_boots.size() &&
-                                                           raw == seed_boots.mid(page * kPageSize, kPageSize)},
-                                      {"classification_evidence", classified ?
-                                           "Validated redundant boot2 map with unwritten ECC in the exact seed boot area" :
-                                           "The image-specific boot policy, seed, redundant-map, placement or all-FF ECC evidence is incomplete"}});
-      if (!classified) result.blocked = true;
+      const auto ecc = boots.mid(page * kPageSize + 0x830, 0x10);
+      require(page % kPagesPerBlock == kPagesPerBlock - 1 &&
+                  map_blocks.contains(page / kPagesPerBlock) && ecc == QByteArray(0x10, '\xff'),
+              "Boot-page ECC mismatches require review");
     }
-    return result;
   }
-} // namespace preflight
+} // namespace inspect

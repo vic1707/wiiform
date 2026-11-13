@@ -2,12 +2,9 @@
 #include <WorkingImage.hpp>
 #include <tools.h>
 
-#include <QFileInfo>
 #include <QTreeWidgetItem>
 #include <algorithm>
-#include <cerrno>
 #include <stdexcept>
-#include <sys/file.h>
 
 namespace {
   auto count_fst_entries(const QTreeWidgetItem* item) -> int {
@@ -18,22 +15,11 @@ namespace {
 }
 
 namespace working_image {
-  Image::Image(const QString& path) {
-    constexpr qint64 nand_size_with_footer = 0x21000400;
-    const QFileInfo info(path);
-    if (!info.isFile() || info.isSymLink() || info.size() != nand_size_with_footer)
-      throw std::runtime_error("In-place edits require a regular footer-bearing NAND image");
-    const auto absolute_path = info.absoluteFilePath();
-    lock.setFileName(absolute_path);
-    if (!lock.open(QIODevice::ReadWrite | QIODevice::ExistingOnly))
-      throw std::runtime_error("NAND image is not writable");
-    // The inode lock covers hard links and stays open until WiiQt closes.
-    if (flock(lock.handle(), LOCK_EX | LOCK_NB) != 0) {
-      if (errno == EWOULDBLOCK) throw std::runtime_error("Another edit already holds the NAND image lock");
-      throw std::runtime_error("Cannot lock NAND image for editing");
-    }
-    layout = inspect::validate_layout(absolute_path, false);
-    if (!nand.SetPath(absolute_path) || !nand.InitNand())
+  Image::Image(std::span<std::uint8_t> image) : device(image) {
+    if (image.size() != 0x21000400)
+      throw std::runtime_error("Expected a footer-bearing NAND buffer");
+    layout = inspect::validate_layout(image, false);
+    if (!nand.SetDevice(&device) || !nand.InitNand())
       throw std::runtime_error("Cannot open NAND filesystem for editing");
     if (!nand.CheckHmacMeta(layout.active_metadata))
       throw std::runtime_error("Active NAND metadata HMAC is invalid");

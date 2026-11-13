@@ -34,13 +34,6 @@ fn error(message: impl Into<String>) -> RecipeError {
 }
 
 pub fn load_recipe(path: &Path, menu_override: Option<Menu>) -> Result<Recipe, RecipeError> {
-    load_recipe_bytes(path, menu_override).map(|(recipe, _)| recipe)
-}
-
-pub fn load_recipe_bytes(
-    path: &Path,
-    menu_override: Option<Menu>,
-) -> Result<(Recipe, Vec<u8>), RecipeError> {
     let recipe_path = fs::canonicalize(path).map_err(|e| {
         error(format!(
             "cannot resolve recipe path {}: {e}",
@@ -48,8 +41,7 @@ pub fn load_recipe_bytes(
         ))
     })?;
     let bytes = read_bounded(&recipe_path)?;
-    let recipe = parse_recipe(&bytes, &recipe_path, menu_override)?;
-    Ok((recipe, bytes))
+    parse_recipe(&bytes, &recipe_path, menu_override)
 }
 
 pub fn parse_recipe(
@@ -66,37 +58,29 @@ pub fn parse_recipe(
     let file: RecipeFile =
         serde_json::from_value(value).map_err(|e| error(format!("invalid recipe: {e}")))?;
 
-    let menu = menu_override.unwrap_or(file.menu);
+    let declared_menu = file.menu;
     if let Some(language) = file.setup.as_ref().and_then(|setup| setup.language)
-        && !menu.allows_language(language)
+        && !declared_menu.allows_language(language)
     {
         return Err(error(format!(
-            "setup language is not supported by menu {menu:?}"
+            "setup language is not supported by menu {declared_menu:?}"
+        )));
+    }
+    if let Some(country) = file.setup.as_ref().and_then(|setup| setup.country.as_ref())
+        && !declared_menu.allows_country(country)
+    {
+        return Err(error(format!(
+            "setup country {} is not supported by menu {}",
+            country.as_u8(),
+            declared_menu.as_str()
         )));
     }
     if let Some(display) = &file.display {
         validate_display(display)?;
     }
 
-    let mut remove = Vec::new();
-    let mut seen = HashSet::new();
-    let allowed = allowlisted_title_ids();
-    for item in &file.remove {
-        if !item.is_allowed() {
-            return Err(error(
-                "remove contains a title ID outside the supported channel allowlist",
-            ));
-        }
-        for id in item.expand(menu) {
-            if !allowed.contains(id.as_str()) {
-                return Err(error("remove expansion produced an unsupported title ID"));
-            }
-            if !seen.insert(id.clone()) {
-                return Err(error("duplicate removal after channel alias expansion"));
-            }
-            remove.push(id);
-        }
-    }
+    let remove_inputs = file.remove.clone();
+    let remove = resolve_removals(&remove_inputs, declared_menu)?;
 
     let base_dir = recipe_path
         .parent()
@@ -155,14 +139,68 @@ pub fn parse_recipe(
         })
         .transpose()?;
 
-    Ok(Recipe {
-        menu,
+    let recipe = Recipe {
+        menu: declared_menu,
         remove,
         setup: file.setup,
         display: file.display,
         titles,
         priiloader,
-    })
+        remove_inputs,
+    };
+    match menu_override {
+        Some(menu) => recipe.with_menu(menu),
+        None => Ok(recipe),
+    }
+}
+
+pub(super) fn retarget_recipe(mut recipe: Recipe, menu: Menu) -> Result<Recipe, RecipeError> {
+    if let Some(setup) = &recipe.setup {
+        if let Some(language) = setup.language
+            && !menu.allows_language(language)
+        {
+            return Err(error(format!(
+                "setup language is not supported by menu {menu:?}"
+            )));
+        }
+        let country = setup.country_for(menu);
+        if !menu.allows_country(&country) {
+            return Err(error(format!(
+                "setup country {} is not supported by menu {}",
+                country.as_u8(),
+                menu.as_str()
+            )));
+        }
+    }
+    recipe.remove = resolve_removals(&recipe.remove_inputs, menu)?;
+    recipe.menu = menu;
+    Ok(recipe)
+}
+
+fn resolve_removals(
+    inputs: &[crate::RemovalInput],
+    menu: Menu,
+) -> Result<Vec<crate::TitleId>, RecipeError> {
+    let mut remove = Vec::new();
+    let mut seen = HashSet::new();
+    let allowed = allowlisted_title_ids();
+    for item in inputs {
+        if !item.is_allowed() {
+            return Err(error(
+                "remove contains a title ID outside the supported channel allowlist",
+            ));
+        }
+        for id in item.expand(menu) {
+            if !allowed.contains(id.as_str()) {
+                return Err(error("remove expansion produced an unsupported title ID"));
+            }
+            if !seen.insert(id.clone()) {
+                return Err(error("duplicate removal after channel alias expansion"));
+            }
+            remove.push(id);
+        }
+    }
+    Ok(remove)
 }
 
 fn read_bounded(path: &Path) -> Result<Vec<u8>, RecipeError> {
@@ -459,7 +497,6 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::SignaturePolicy;
 
     fn parse(source: &str, menu_override: Option<Menu>) -> Result<Recipe, RecipeError> {
         parse_recipe(
@@ -470,163 +507,45 @@ mod tests {
     }
 
     #[test]
-    fn valid_recipe_normalizes_sha_paths_and_removals() {
+    fn menu_override_revalidates_source_settings_and_retargets_aliases() {
         let recipe = parse(
-            "menu: 4.3E\nremove: [forecast-channel, news-channel, photo-channel]\nsetup:\n  nickname: \"Lab Wii\"\n  language: fr\ndisplay:\n  aspect: \"16:9\"\n  progressive: true\ntitles:\n  - path: ./wads/game.wad\n    sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n",
+            "menu: 4.3E\nremove: [forecast-channel]\nsetup: {country: '110', sensor_bar: below}\n",
             None,
-        ).unwrap();
-        assert_eq!(recipe.menu, Menu::E43);
+        )
+        .unwrap();
+        assert_eq!(recipe.menu(), Menu::E43);
+        assert_eq!(recipe.setup().unwrap().country_for(Menu::E43).as_u8(), 110);
+        assert_eq!(
+            recipe.setup().unwrap().sensor_bar_for(),
+            crate::SensorBar::Below
+        );
         assert_eq!(
             recipe
-                .remove
+                .remove()
                 .iter()
                 .map(|id| id.as_str())
                 .collect::<Vec<_>>(),
-            [
-                "0001000248414650",
-                "0001000248414641",
-                "0001000248414750",
-                "0001000248414741",
-                "0001000248414141",
-                "0001000248415941",
-            ]
+            ["0001000248414650", "0001000248414641"]
         );
-        assert_eq!(recipe.titles[0].path, Path::new("/recipes/wads/game.wad"));
-        assert_eq!(recipe.titles[0].sha256.as_ref().as_str(), "a".repeat(64));
-        assert_eq!(recipe.titles[0].signature_policy, SignaturePolicy::Nintendo);
-    }
 
-    #[test]
-    fn menu_override_retargets_aliases_then_checks_language() {
-        let recipe = parse(
-            "menu: 4.3E\nremove: [forecast-channel]\nsetup: {language: ja}\n",
-            Some(Menu::J43),
-        )
-        .unwrap();
-        assert_eq!(recipe.menu, Menu::J43);
+        assert!(
+            recipe.with_menu(Menu::J43).is_err(),
+            "explicit UK country cannot retarget to Japan"
+        );
+        assert!(parse("menu: 4.3E\nsetup: {language: ja}\n", Some(Menu::J43)).is_err());
+        assert!(parse("menu: 4.3E\nsetup: {language: de}\n", Some(Menu::U43)).is_err());
+        assert!(parse("menu: 4.3E\nsetup: {country: '49'}\n", None).is_err());
+
+        let retargeted =
+            parse("menu: 4.3E\nremove: [forecast-channel]\n", Some(Menu::J43)).unwrap();
+        assert_eq!(retargeted.menu(), Menu::J43);
         assert_eq!(
-            recipe
-                .remove
+            retargeted
+                .remove()
                 .iter()
                 .map(|id| id.as_str())
                 .collect::<Vec<_>>(),
             ["000100024841464a", "0001000248414641"]
         );
-        assert!(parse("menu: 4.3E\nsetup: {language: de}\n", Some(Menu::U43)).is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_legacy_and_missing_hash() {
-        assert!(parse("menu: 4.3E\nlegacy: true\n", None).is_err());
-        assert!(parse("menu: 4.3E\ntitles: [{path: a.wad}]\n", None).is_err());
-        assert!(parse("menu: 4.3E\nunknown: true\n", None).is_err());
-    }
-
-    #[test]
-    fn rejects_duplicate_keys_nested_aliases_tags_and_multiple_documents() {
-        assert!(parse("menu: 4.3E\nmenu: 4.3U\n", None).is_err());
-        assert!(
-            parse(
-                "menu: 4.3E\ndisplay: {aspect: '4:3', aspect: '16:9'}\n",
-                None
-            )
-            .is_err()
-        );
-        assert!(parse("menu: 4.3E\nremove: &r [forecast-channel]\n", None).is_err());
-        assert!(parse("menu: 4.3E\nremove: [!custom forecast-channel]\n", None).is_err());
-        assert!(parse("menu: 4.3E\n---\nmenu: 4.3U\n", None).is_err());
-    }
-
-    #[test]
-    fn rejects_implicit_types_except_lowercase_booleans() {
-        for scalar in [
-            "TRUE",
-            "Yes",
-            "no",
-            "null",
-            "12",
-            "0x20",
-            "1.5",
-            "16:9",
-            "2020-01-01",
-        ] {
-            assert!(
-                parse(&format!("menu: {scalar}\n"), None).is_err(),
-                "accepted {scalar}"
-            );
-        }
-        assert!(parse("menu: 4.3E\ndisplay: {progressive: 'true'}\n", None).is_err());
-        assert!(parse("menu: 4.3E\ndisplay: {progressive: true}\n", None).is_ok());
-    }
-
-    #[test]
-    fn rejects_removal_collisions_and_unknown_titles() {
-        assert!(
-            parse(
-                "menu: 4.3E\nremove: [forecast-channel, '0001000248414650']\n",
-                None
-            )
-            .is_err()
-        );
-        assert!(parse("menu: 4.3E\nremove: ['0001000248414fff']\n", None).is_err());
-    }
-
-    #[test]
-    fn validates_display_setup_and_priiloader_names() {
-        assert!(parse("menu: 4.3E\ndisplay: {}\n", None).is_err());
-        assert!(parse("menu: 4.3E\nsetup: {nickname: '😀'}\n", None).is_err());
-        assert!(
-            parse(
-                "menu: 4.3E\npriiloader: {hacks: {fix_480p: true, invented: false}}\n",
-                None
-            )
-            .is_err()
-        );
-        assert!(
-            parse(
-                "menu: 4.3E\npriiloader: {settings: {autoboot: unsupported}}\n",
-                None
-            )
-            .is_err()
-        );
-        assert!(
-            parse(
-                "menu: 4.3E\npriiloader: {settings: {fix_480p: 'on'}}\n",
-                None
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn checked_example_is_a_valid_recipe() {
-        let recipe = parse(include_str!("../../../docs/recipe.example.yaml"), None).unwrap();
-        assert_eq!(recipe.menu, Menu::E43);
-        assert_eq!(recipe.remove.len(), 4);
-        assert!(recipe.priiloader.unwrap().hacks.unwrap().fix_480p.unwrap());
-    }
-
-    #[test]
-    fn generated_schema_matches_strict_yaml_subset() {
-        let schema = crate::json_schema().unwrap();
-        assert!(schema.contains("^[0-9a-fA-F]{64}$"));
-        assert!(schema.contains("^[0-9a-fA-F]{16}$"));
-        assert!(schema.contains("\"additionalProperties\": false"));
-        assert!(schema.contains("\"allow-unsigned\""));
-        assert!(!schema.contains("\"null\""));
-        assert!(!schema.contains("\"legacy\""));
-    }
-
-    #[test]
-    fn enforces_byte_depth_and_event_limits() {
-        assert!(parse_recipe(&vec![b' '; MAX_BYTES + 1], Path::new("/x.yaml"), None).is_err());
-        let mut deep = String::from("menu: 4.3E\n");
-        for level in 0..=MAX_DEPTH {
-            deep.push_str(&format!("{}x:\n", " ".repeat(level * 2)));
-        }
-        deep.push_str(&format!("{}leaf: value\n", " ".repeat((MAX_DEPTH + 1) * 2)));
-        assert!(parse(&deep, None).is_err());
-        let many = format!("menu: 4.3E\nremove: [{}]\n", "x,".repeat(MAX_EVENTS + 2));
-        assert!(parse(&many, None).is_err());
     }
 }

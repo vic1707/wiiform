@@ -10,11 +10,17 @@ pub mod bridge {
 
     #[repr(u8)]
     #[derive(Clone, Copy, Debug)]
-    enum Inspection {
-        Display,
-        SystemSettings,
-        DisplaySource,
-        Priiloader,
+    enum Menu {
+        E43,
+        U43,
+        J43,
+    }
+
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum CacheMode {
+        Offline,
+        DownloadMissing,
     }
 
     #[repr(u8)]
@@ -24,91 +30,155 @@ pub mod bridge {
         LegacyChannel,
     }
 
-    #[derive(Clone, Debug)]
-    struct SettingOverride {
-        name: String,
-        value: String,
+    #[repr(u8)]
+    enum Toggle {
+        Unset,
+        Off,
+        On,
     }
 
-    #[derive(Default)]
-    struct DisplaySource {
-        sysconf: Vec<u8>,
-        keys_data_sha256: String,
-        settings_sha256: String,
+    #[repr(u8)]
+    enum Language {
+        Ja,
+        En,
+        De,
+        Fr,
+        Es,
+        It,
+        Nl,
+        Unset,
     }
 
-    struct StockTitle {
+    struct SystemSettings {
+        nickname: String,
+        language: Language,
+        country: u8,
+        sensor_bar_above: Toggle,
+        widescreen: Toggle,
+        progressive: Toggle,
+        pal60: Toggle,
+    }
+
+    #[repr(u8)]
+    enum Autoboot {
+        Disabled,
+        HomebrewChannel,
+        BootmiiIos,
+        SystemMenu,
+        File,
+        Unset,
+    }
+
+    #[repr(u8)]
+    enum ReturnTo {
+        SystemMenu,
+        Priiloader,
+        Autoboot,
+        File,
+        Unset,
+    }
+
+    #[repr(u8)]
+    enum ShutdownTo {
+        None,
+        Priiloader,
+        Autoboot,
+        Unset,
+    }
+
+    #[repr(u8)]
+    enum MountPoint {
+        Auto,
+        Sd,
+        Usb,
+        Unset,
+    }
+
+    struct PriiloaderSettings {
+        autoboot: Autoboot,
+        return_to: ReturnTo,
+        shutdown_to: ShutdownTo,
+        preferred_mount_point: MountPoint,
+        stop_disc: Toggle,
+        lid_slot_on_error: Toggle,
+        ignore_shutdown_mode: Toggle,
+        black_background: Toggle,
+        dump_gecko_text: Toggle,
+        show_rc_updates: Toggle,
+    }
+
+    #[repr(u8)]
+    enum Hack {
+        Fix480p,
+        BlockOnlineUpdates,
+        BlockDiscUpdates,
+        BlockDiscAutoboot,
+        AutoPressA,
+        RemoveDeflicker,
+        MoveDiscChannel,
+        RemoveNocopySaveProtection,
+        ReplaceHealthScreen,
+        NoBackgroundMusic,
+        Wiimmfi,
+        RegionFreeEverything,
+    }
+
+    struct HackOverride {
+        hack: Hack,
+        enabled: bool,
+    }
+
+    struct StockOptions {
+        menu: Menu,
+        boot_policy: BootPolicy,
+        cache_mode: CacheMode,
+    }
+
+    struct StockIdentity {
+        boot_area: [u8; 32],
+        original_footer: [u8; 32],
+    }
+
+    struct InstalledWad {
         title_id: u64,
-        version: u16,
+        region: u16,
     }
 
     unsafe extern "C++" {
         include!("ffi.hpp");
 
-        fn export_seed(nand: &str, seed: &str) -> Result<()>;
-        fn unpack_seed(seed: &str, directory: &str) -> Result<()>;
-        fn inventory(nand: &str) -> Result<String>;
-        fn preflight(
-            seed: &str,
-            reference: &str,
-            candidate: &str,
-            policy: BootPolicy,
-            settings: &[SettingOverride],
-        ) -> Result<String>;
-        fn inspect(nand: &str, scope: Inspection) -> Result<String>;
-        fn display_source(nand: &str) -> Result<DisplaySource>;
-        fn priiloader_app(nand: &str) -> Result<Vec<u8>>;
-        fn inspect_wad(wad: &str, digest: &str, policy: WadPolicy) -> Result<String>;
-        fn stock_titles(area: &str) -> Result<Vec<StockTitle>>;
-
-        fn create(
-            seed: &str,
-            output: &str,
-            policy: BootPolicy,
-            settings: &[SettingOverride],
-        ) -> Result<()>;
+        fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<String>;
+        fn create_stock(
+            keys: &[u8],
+            boot_blocks: &[u8],
+            bad_blocks: &[u16],
+            setting_txt: &[u8],
+            nand: &mut [u8],
+            nus_cache_dir: &str,
+            options: &StockOptions,
+        ) -> Result<StockIdentity>;
+        fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings) -> Result<()>;
         fn install_nus_title(
-            image: &str,
-            cache: &str,
-            title: u64,
+            nand: &mut [u8],
+            nus_cache_dir: &str,
+            title_id: u64,
             version: u16,
-            offline: bool,
+            cache_mode: CacheMode,
         ) -> Result<()>;
         fn install_wad(
-            image: &str,
-            package: &str,
-            digest: &str,
-            allow_unsigned: bool,
+            nand: &mut [u8],
+            wad_bytes: &[u8],
+            expected_sha256: &[u8; 32],
+            policy: WadPolicy,
+        ) -> Result<InstalledWad>;
+        fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
+        fn apply_priiloader(
+            nand: &mut [u8],
+            app_bytes: &[u8],
+            hacks_hash_ini: &[u8],
+            settings: &PriiloaderSettings,
+            hacks: &[HackOverride],
         ) -> Result<()>;
-        fn remove_title(image: &str, title: u64) -> Result<()>;
-        fn set_display(
-            image: &str,
-            source: &DisplaySource,
-            settings: &[SettingOverride],
-        ) -> Result<String>;
-        fn set_sysconf(
-            image: &str,
-            source: &DisplaySource,
-            settings: &[SettingOverride],
-        ) -> Result<String>;
-        fn install_priiloader(
-            image: &str,
-            app: &str,
-            output: &str,
-            settings: &[SettingOverride],
-        ) -> Result<String>;
-        fn set_priiloader_settings(
-            image: &str,
-            output: &str,
-            settings: &[SettingOverride],
-            definitions: &str,
-            hacks: &[SettingOverride],
-        ) -> Result<String>;
-        fn normalize_backupmii_footer(image: &str, expected_sha256: &str) -> Result<String>;
-        fn prepare_backupmii_keys(
-            image: &str,
-            output: &str,
-            expected_sha256: &str,
-        ) -> Result<String>;
+        fn prepare_backupmii(nand: &mut [u8], expected: &StockIdentity) -> Result<Vec<u8>>;
     }
 }

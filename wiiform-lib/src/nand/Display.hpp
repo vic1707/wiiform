@@ -2,11 +2,9 @@
 #pragma once
 
 #include <SysConf.hpp>
-#include <QString>
+#include <cstdint>
+#include <span>
 
 namespace sysconf {
-  auto set_display(const QString& image, const DisplayOverrides& overrides,
-                   const std::optional<Source>& source = std::nullopt) -> QJsonObject;
-  auto set_settings(const QString& image, const SettingsOverrides& overrides,
-                    const std::optional<Source>& source = std::nullopt) -> QJsonObject;
+  void initialize(std::span<std::uint8_t> image, const SettingsOverrides& overrides);
 }
