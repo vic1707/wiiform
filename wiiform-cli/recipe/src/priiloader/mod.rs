@@ -10,8 +10,6 @@ mod hacks;
 mod settings;
 
 pub use hacks::{HackSettings, PriiloaderHack};
-#[cfg(feature = "cli")]
-pub use settings::parse_on_off;
 pub use settings::{Autoboot, MountPoint, PriiloaderSettings, ReturnTo, ShutdownTo};
 
 /// Priiloader installation and configuration.

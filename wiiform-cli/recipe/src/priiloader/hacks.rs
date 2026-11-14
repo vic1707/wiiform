@@ -6,45 +6,28 @@ use serde::{Deserialize, Serialize};
 macro_rules! priiloader_hacks {
     ($(#[doc = $doc:literal] $variant:ident = $code:literal => $field:ident),+ $(,)?) => {
         /// A hack supported by the pinned Priiloader definitions.
-        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-        #[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         #[repr(u8)]
         pub enum PriiloaderHack {
             $(
                 #[doc = $doc]
-                #[cfg_attr(feature = "cli", value(name = stringify!($field)))]
                 $variant = $code,
             )+
         }
 
-        impl PriiloaderHack {
-            /// The stable recipe and CLI name.
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => stringify!($field)),+
-                }
-            }
-        }
-
         /// Complete supported System Menu hack state. Each hack defaults to off.
         #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+        #[cfg_attr(feature = "cli", derive(clap::Args))]
         #[serde(default, deny_unknown_fields)]
         pub struct HackSettings {
             $(
                 #[doc = $doc]
-                #[serde(default)]
+                #[cfg_attr(feature = "cli", arg(long))]
                 pub $field: bool,
             )+
         }
 
         impl HackSettings {
-            /// Set one hack in the complete desired state.
-            pub fn set(&mut self, hack: PriiloaderHack, enabled: bool) {
-                match hack {
-                    $(PriiloaderHack::$variant => self.$field = enabled),+
-                }
-            }
-
             /// Iterate over enabled hacks in native code order.
             pub fn enabled(&self) -> impl Iterator<Item = PriiloaderHack> {
                 [$(self.$field.then_some(PriiloaderHack::$variant)),+].into_iter().flatten()

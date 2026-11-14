@@ -111,7 +111,7 @@ impl Default for PriiloaderSettings {
 }
 
 #[cfg(feature = "cli")]
-pub fn parse_on_off(value: &str) -> Result<bool, String> {
+fn parse_on_off(value: &str) -> Result<bool, String> {
     match value {
         "on" => Ok(true),
         "off" => Ok(false),

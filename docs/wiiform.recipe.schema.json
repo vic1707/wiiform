@@ -30,7 +30,6 @@
     "titles": {
       "description": "Optional WAD titles. Every title requires a path and SHA-256.",
       "type": "array",
-      "default": [],
       "items": {
         "$ref": "#/$defs/TitleFile"
       }
@@ -544,30 +543,58 @@
       ]
     },
     "TitleFile": {
-      "description": "A WAD installation selected by a recipe.",
-      "type": "object",
-      "properties": {
-        "path": {
-          "description": "Local path, resolved relative to the recipe file.",
-          "type": "string"
+      "description": "A WAD supplied by exactly one local path or inline !!binary data, with a SHA-256 of the exact bytes.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "Local WAD path, relative to the recipe file.",
+              "type": "string"
+            },
+            "sha256": {
+              "description": "64-character hexadecimal SHA-256 digest; normalized to lowercase",
+              "type": "string",
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-fA-F]{64}$"
+            },
+            "signature_policy": {
+              "$ref": "#/$defs/SignaturePolicy"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ]
         },
-        "sha256": {
-          "description": "Required SHA-256 of the exact WAD file.",
-          "type": "string",
-          "maxLength": 64,
-          "minLength": 64,
-          "pattern": "^[0-9a-fA-F]{64}$"
-        },
-        "signature_policy": {
-          "description": "Signature policy; defaults to `nintendo`.",
-          "$ref": "#/$defs/SignaturePolicy",
-          "default": "nintendo"
+        {
+          "type": "object",
+          "properties": {
+            "inline": {
+              "description": "Exact WAD bytes encoded as a YAML !!binary scalar.",
+              "type": "string",
+              "contentEncoding": "base64",
+              "contentMediaType": "application/octet-stream"
+            },
+            "sha256": {
+              "description": "64-character hexadecimal SHA-256 digest; normalized to lowercase",
+              "type": "string",
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-fA-F]{64}$"
+            },
+            "signature_policy": {
+              "$ref": "#/$defs/SignaturePolicy"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "inline",
+            "sha256"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "sha256"
       ]
     }
   }

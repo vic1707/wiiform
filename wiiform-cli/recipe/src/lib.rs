@@ -7,15 +7,16 @@ pub mod priiloader;
 mod schema;
 pub mod system;
 pub mod titles;
+pub mod yaml;
 
 pub use model::{Recipe, RecipeFile};
-pub use parser::{MAX_BYTES, MAX_DEPTH, MAX_EVENTS, RecipeError, load_recipe, parse_recipe};
-#[cfg(feature = "cli")]
-pub use priiloader::parse_on_off;
+pub use parser::{RecipeError, load_recipe, open_regular_file, parse_recipe, resolve_regular_file};
 pub use priiloader::{
     Autoboot, HackSettings, MountPoint, Priiloader, PriiloaderFile, PriiloaderHack,
     PriiloaderSettings, ReturnTo, ShutdownTo,
 };
 pub use schema::json_schema;
 pub use system::{Aspect, CountryCode, Display, Language, Menu, Nickname, SensorBar, Setup};
-pub use titles::{RemovalInput, RemovalName, Sha256, SignaturePolicy, Title, TitleFile, TitleId};
+pub use titles::{
+    RemovalInput, RemovalName, Sha256, SignaturePolicy, Title, TitleFile, TitleId, WadSource,
+};

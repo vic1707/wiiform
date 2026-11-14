@@ -28,6 +28,10 @@ titles:
   - path: wads/example-pal-channel.wad
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     signature_policy: nintendo # or allow-unsigned for verified community WADs
+  # Or embed base64 of the raw WAD. Supply exactly one of path or inline per title.
+  # - inline: !!binary |
+  #     BASE64_OF_WAD
+  #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 priiloader:
   # Optional prebuilt installer app path:

@@ -2,18 +2,13 @@
 use std::{
     collections::HashSet,
     fs,
-    io::Read,
-    path::{Component, Path, PathBuf},
+    io::{Cursor, Read},
+    path::{Path, PathBuf},
 };
 
-use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
-
-use crate::{Menu, Priiloader, Recipe, RecipeFile, Setup, Title, titles::allowlisted_title_ids};
-
-pub const MAX_BYTES: usize = 256 * 1024;
-pub const MAX_EVENTS: usize = 20_000;
-pub const MAX_DEPTH: usize = 24;
-const MAX_NODES: usize = 8_192;
+use crate::{
+    Menu, Priiloader, Recipe, RecipeFile, Setup, Title, WadSource, titles::allowlisted_title_ids,
+};
 
 #[derive(Debug)]
 pub struct RecipeError(String);
@@ -37,31 +32,9 @@ pub fn load_recipe(path: &Path, menu_override: Option<Menu>) -> Result<Recipe, R
             path.display()
         ))
     })?;
-    let bytes = read_bounded(&recipe_path)?;
-    parse_recipe(&bytes, &recipe_path, menu_override)
-}
-
-fn recipe_yaml_options() -> Options {
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::Error;
-    options.merge_keys = MergeKeyPolicy::Error;
-    options.reject_unsupported_tags = true;
-    options.strict_booleans = true;
-    options.no_schema = true;
-    options.with_snippet = false;
-
-    let mut budget = serde_saphyr::Budget::default();
-    budget.max_reader_input_bytes = Some(MAX_BYTES);
-    budget.max_events = MAX_EVENTS;
-    budget.max_aliases = 0;
-    budget.max_anchors = 0;
-    budget.max_depth = MAX_DEPTH;
-    budget.max_documents = 1;
-    budget.max_nodes = MAX_NODES;
-    budget.max_total_scalar_bytes = MAX_BYTES;
-    budget.flow_nesting_limit = MAX_DEPTH;
-    options.budget = Some(budget);
-    options
+    let input = open_regular_file(&recipe_path)
+        .map_err(|e| error(format!("cannot read recipe {}: {e}", recipe_path.display())))?;
+    parse_recipe_reader(input, &recipe_path, menu_override)
 }
 
 pub fn parse_recipe(
@@ -69,12 +42,18 @@ pub fn parse_recipe(
     recipe_path: &Path,
     menu_override: Option<Menu>,
 ) -> Result<Recipe, RecipeError> {
-    if bytes.len() > MAX_BYTES {
-        return Err(error(format!("recipe exceeds {MAX_BYTES} bytes")));
-    }
-    let source =
-        std::str::from_utf8(bytes).map_err(|e| error(format!("recipe is not UTF-8: {e}")))?;
-    let file: RecipeFile = serde_saphyr::from_str_with_options(source, recipe_yaml_options())
+    parse_recipe_reader(Cursor::new(bytes), recipe_path, menu_override)
+}
+
+/// Parse one recipe document from any reader. `recipe_path` supplies the base
+/// directory for relative WAD and Priiloader paths (for stdin, use a path in
+/// the current directory).
+fn parse_recipe_reader<R: Read>(
+    reader: R,
+    recipe_path: &Path,
+    menu_override: Option<Menu>,
+) -> Result<Recipe, RecipeError> {
+    let file: RecipeFile = serde_saphyr::from_reader_with_options(reader, crate::yaml::options())
         .map_err(|e| error(format!("invalid recipe YAML: {e}")))?;
 
     let declared_menu = file.menu;
@@ -99,9 +78,24 @@ pub fn parse_recipe(
         .into_iter()
         .enumerate()
         .map(|(index, title)| {
-            let path = resolve_path(base_dir, title.path, &format!("titles[{index}].path"))?;
+            let source = match title.source {
+                WadSource::File(path) => {
+                    let label = format!("titles[{index}].path");
+                    let candidate = if path.is_absolute() {
+                        path
+                    } else {
+                        base_dir.join(path)
+                    };
+                    WadSource::File(resolve_regular_file(&candidate).map_err(|e| {
+                        error(format!(
+                            "{label} must resolve to an existing regular file: {e}"
+                        ))
+                    })?)
+                }
+                inline => inline,
+            };
             Ok(Title {
-                path,
+                source,
                 sha256: title.sha256,
                 signature_policy: title.signature_policy,
             })
@@ -120,15 +114,11 @@ pub fn parse_recipe(
                     } else {
                         base_dir.join(path)
                     };
-                    let metadata = fs::symlink_metadata(&candidate).map_err(|e| {
-                        error(format!("priiloader.app must be a regular file: {e}"))
-                    })?;
-                    if !metadata.file_type().is_file() {
-                        return Err(error(
-                            "priiloader.app must be a regular file, not a symlink",
-                        ));
-                    }
-                    resolve_path(base_dir, candidate, "priiloader.app")
+                    resolve_regular_file(&candidate).map_err(|e| {
+                        error(format!(
+                            "priiloader.app must resolve to an existing regular file: {e}"
+                        ))
+                    })
                 })
                 .transpose()?;
             Ok(Priiloader {
@@ -206,50 +196,41 @@ fn resolve_removals(
     Ok(remove)
 }
 
-fn read_bounded(path: &Path) -> Result<Vec<u8>, RecipeError> {
-    let file = fs::File::open(path).map_err(|e| error(format!("cannot read recipe: {e}")))?;
-    let mut bytes = Vec::with_capacity(MAX_BYTES.min(8192));
-    file.take((MAX_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|e| error(format!("cannot read recipe: {e}")))?;
-    if bytes.len() > MAX_BYTES {
-        return Err(error(format!("recipe exceeds {MAX_BYTES} bytes")));
-    }
-    Ok(bytes)
+/// Resolve a path to an existing regular file. Metadata follows symlinks, so a
+/// symlink is accepted when its target is a regular file.
+pub fn resolve_regular_file(path: &Path) -> anyhow::Result<PathBuf> {
+    let canonical = fs::canonicalize(path)
+        .map_err(|e| anyhow::anyhow!("cannot resolve {}: {e}", path.display()))?;
+    anyhow::ensure!(
+        canonical.is_file(),
+        "{} is not a regular file",
+        path.display()
+    );
+    Ok(canonical)
 }
 
-fn resolve_path(base: &Path, path: PathBuf, where_: &str) -> Result<PathBuf, RecipeError> {
-    let text = path
-        .to_str()
-        .ok_or_else(|| error(format!("{where_} must be a UTF-8 path")))?;
-    if text.is_empty() || text.contains('\0') {
-        return Err(error(format!(
-            "{where_} must be a nonempty path without NUL"
-        )));
+/// Open a path without blocking on a FIFO, then verify the opened object is a
+/// regular file. Symlinks to regular files are accepted.
+pub fn open_regular_file(path: &Path) -> anyhow::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
     }
-    let candidate = if path.is_absolute() {
-        path
-    } else {
-        base.join(path)
-    };
-    if let Ok(canonical) = fs::canonicalize(&candidate) {
-        return Ok(canonical);
-    }
-    Ok(lexical_absolute(&candidate))
-}
-
-fn lexical_absolute(path: &Path) -> PathBuf {
-    let mut result = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                result.pop();
-            }
-            other => result.push(other.as_os_str()),
-        }
-    }
-    result
+    let file = options
+        .open(path)
+        .map_err(|e| anyhow::anyhow!("cannot open {}: {e}", path.display()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|e| anyhow::anyhow!("cannot inspect {}: {e}", path.display()))?;
+    anyhow::ensure!(
+        metadata.is_file(),
+        "{} is not a regular file",
+        path.display()
+    );
+    Ok(file)
 }
 
 #[cfg(test)]
@@ -257,6 +238,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::yaml::MAX_DEPTH;
 
     fn parse(source: &str, menu_override: Option<Menu>) -> Result<Recipe, RecipeError> {
         parse_recipe(
@@ -311,6 +293,20 @@ mod tests {
         let schema: serde_json::Value =
             serde_json::from_str(&crate::json_schema().unwrap()).unwrap();
         assert_eq!(schema["required"], serde_json::json!(["menu"]));
+        let title_schema = &schema["$defs"]["TitleFile"];
+        assert_eq!(title_schema["oneOf"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            title_schema["oneOf"][0]["required"],
+            serde_json::json!(["path", "sha256"])
+        );
+        assert_eq!(
+            title_schema["oneOf"][1]["required"],
+            serde_json::json!(["inline", "sha256"])
+        );
+        assert_eq!(
+            title_schema["oneOf"][1]["properties"]["inline"]["contentEncoding"],
+            "base64"
+        );
         let setup_schema = &schema["$defs"]["Setup"];
         assert!(setup_schema.get("required").is_none());
         assert_eq!(setup_schema["properties"]["nickname"]["default"], "Wii");
@@ -361,9 +357,75 @@ mod tests {
     }
 
     #[test]
-    fn yaml_parser_rejects_oversized_input() {
-        let source = format!("menu: 4.3E\n#{}", "x".repeat(MAX_BYTES));
-        assert!(parse(&source, None).is_err());
+    fn yaml_parser_accepts_large_documents_but_keeps_structural_budgets() {
+        let source = format!("menu: 4.3E\n#{}", "x".repeat(2 * 1024 * 1024));
+        assert!(parse(&source, None).is_ok());
+    }
+
+    #[test]
+    fn title_source_requires_one_source_and_a_sha256() {
+        let sha = "0".repeat(64);
+        for source in [
+            format!("menu: 4.3E\ntitles: [{{sha256: \"{sha}\"}}]"),
+            format!(
+                "menu: 4.3E\ntitles: [{{path: x.wad, inline: !!binary YQ==, sha256: \"{sha}\"}}]"
+            ),
+            format!(
+                "menu: 4.3E\ntitles: [{{path: null, inline: !!binary YQ==, sha256: \"{sha}\"}}]"
+            ),
+            format!("menu: 4.3E\ntitles: [{{inline: null, sha256: \"{sha}\"}}]"),
+            format!(
+                "menu: 4.3E\ntitles: [{{path: x.wad, sha256: \"{sha}\", signature_policy: null}}]"
+            ),
+            "menu: 4.3E\ntitles: [{path: x.wad}]".to_owned(),
+            format!("menu: 4.3E\ntitles: [{{inline: YQ==, sha256: \"{sha}\"}}]"),
+        ] {
+            assert!(
+                parse(&source, None).is_err(),
+                "unexpectedly accepted {source:?}"
+            );
+        }
+
+        let recipe = parse(
+            &format!(
+                "menu: 4.3E\ntitles:\n  - inline: !!binary |\n      YWJj\n    sha256: \"{sha}\"\n"
+            ),
+            None,
+        )
+        .unwrap();
+        let title = &recipe.titles()[0];
+        assert_eq!(title.source, WadSource::Inline(b"abc".to_vec()));
+        assert_eq!(title.sha256.as_str(), sha);
+    }
+
+    #[test]
+    fn title_paths_resolve_relative_and_follow_regular_symlinks() {
+        let dir = std::env::temp_dir().join(format!(
+            "wiiform-recipe-path-test-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let wad = dir.join("payload.wad");
+        fs::write(&wad, b"fixture").unwrap();
+        let link = dir.join("linked.wad");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&wad, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&wad, &link).unwrap();
+
+        let sha = "0".repeat(64);
+        let source = format!("menu: 4.3E\ntitles: [{{path: linked.wad, sha256: \"{sha}\"}}]");
+        let recipe = parse_recipe(source.as_bytes(), &dir.join("recipe.yaml"), None).unwrap();
+        let expected = fs::canonicalize(&wad).unwrap();
+        assert_eq!(recipe.titles()[0].source, WadSource::File(expected));
+
+        let missing = format!("menu: 4.3E\ntitles: [{{path: missing.wad, sha256: \"{sha}\"}}]");
+        assert!(parse_recipe(missing.as_bytes(), &dir.join("recipe.yaml"), None).is_err());
+        let non_file = format!("menu: 4.3E\ntitles: [{{path: ., sha256: \"{sha}\"}}]");
+        assert!(parse_recipe(non_file.as_bytes(), &dir.join("recipe.yaml"), None).is_err());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -13,7 +13,7 @@ use tempfile::Builder;
 use crate::{
     native::{self, InstalledWad, StockIdentity, WadPolicy},
     priiloader_payload,
-    recipe::{self, Menu, SignaturePolicy},
+    recipe::{self, Menu, SignaturePolicy, open_regular_file},
     seed::StockSeed,
 };
 
@@ -52,22 +52,25 @@ pub fn nus_environment() -> Result<(PathBuf, bool)> {
 }
 
 pub fn build(options: &BuildOptions) -> Result<()> {
-    build_with(options, |options, recipe, nand| {
+    build_with(options, |options, recipe| {
         let seed = StockSeed::read(&options.seed)?;
-        native::create_stock(
+        prepare_nus_cache(&options.cache, options.offline)?;
+        let mut nand = allocate_nand()?;
+        let identity = native::create_stock(
             &seed,
-            nand,
+            &mut nand,
             &options.cache,
             recipe.menu(),
             options.boot_policy,
             options.offline,
-        )
+        )?;
+        Ok((nand, identity))
     })
 }
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&BuildOptions, &recipe::Recipe, &mut [u8]) -> Result<StockIdentity>,
+    create_stock: impl FnOnce(&BuildOptions, &recipe::Recipe) -> Result<(Vec<u8>, StockIdentity)>,
 ) -> Result<()> {
     validate_output(&options.output)?;
     let parent = output_parent(&options.output)?;
@@ -91,19 +94,15 @@ fn build_with(
     }
     let recipe =
         recipe::load_recipe(&options.recipe, options.menu).context("cannot parse recipe")?;
-    if !options.cache.as_os_str().is_empty() {
-        if !options.offline {
-            fs::create_dir_all(&options.cache).context("cannot create NUS cache")?;
-        }
-        ensure!(
-            options.cache.is_dir(),
-            "NUS cache must be an existing directory"
-        );
-    }
-
-    let mut nand = allocate_nand()?;
-    let identity =
-        create_stock(&options, &recipe, &mut nand).context("cannot create stock NAND")?;
+    let priiloader = recipe
+        .priiloader()
+        .map(|config| -> Result<_> {
+            let (app, definitions) = priiloader_payload::load(config.app.as_deref(), None)?;
+            Ok((config, app, definitions))
+        })
+        .transpose()?;
+    let (mut nand, identity) =
+        create_stock(&options, &recipe).context("cannot create stock NAND")?;
 
     let removals: Vec<_> = recipe
         .remove()
@@ -121,13 +120,17 @@ fn build_with(
     }
 
     for title in recipe.titles() {
-        let wad = read_bounded(&title.path, 0x40, native::WAD_MAX_BYTES)?;
+        let wad = title.source.resolve()?;
         let policy = match title.signature_policy {
             SignaturePolicy::Nintendo => WadPolicy::Standard,
             SignaturePolicy::AllowUnsigned => WadPolicy::LegacyChannel,
         };
-        let installed = native::install_wad(&mut nand, &wad, &title.sha256, policy)
-            .with_context(|| format!("cannot install WAD {}", title.path.display()))?;
+        let installed = native::install_wad(&mut nand, &wad, &title.sha256, policy).with_context(
+            || match title.source.file_path() {
+                Some(path) => format!("cannot install WAD {}", path.display()),
+                None => "cannot install inline WAD".to_owned(),
+            },
+        )?;
         ensure!(
             !removals.contains(&installed.title_id),
             "recipe both removes and installs title {:016x}",
@@ -136,8 +139,7 @@ fn build_with(
         warn_region(&installed, recipe.menu());
     }
 
-    if let Some(priiloader) = recipe.priiloader() {
-        let (app, definitions) = priiloader_payload::load(priiloader.app.as_deref(), None)?;
+    if let Some((priiloader, app, definitions)) = priiloader {
         native::apply_priiloader(
             &mut nand,
             &app,
@@ -150,10 +152,6 @@ fn build_with(
 
     let keys = native::prepare_backupmii(&mut nand, &identity)
         .context("cannot prepare BackupMii footer")?;
-    ensure!(
-        keys.len() == 0x400 && nand.ends_with(&keys),
-        "BackupMii sidecar does not match NAND"
-    );
     publish_bundle(&nand, &keys, &options.output)
 }
 
@@ -189,16 +187,11 @@ fn allocate_nand() -> Result<Vec<u8>> {
 }
 
 pub fn read_bounded(path: &Path, min: usize, max: usize) -> Result<Vec<u8>> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)
-        .with_context(|| format!("cannot open {}", path.display()))?;
-    let metadata = file.metadata()?;
-    let size = usize::try_from(metadata.len())?;
+    let mut file = open_regular_file(path)?;
+    let size = usize::try_from(file.metadata()?.len())?;
     ensure!(
-        metadata.is_file() && (min..=max).contains(&size),
-        "{} has an unsupported file size or type",
+        (min..=max).contains(&size),
+        "{} has an unsupported file size",
         path.display(),
     );
     let mut bytes = Vec::new();
@@ -214,6 +207,21 @@ pub fn read_bounded(path: &Path, min: usize, max: usize) -> Result<Vec<u8>> {
         path.display()
     );
     Ok(bytes)
+}
+
+pub fn prepare_nus_cache(cache: &Path, offline: bool) -> Result<()> {
+    if cache.as_os_str().is_empty() {
+        return Ok(());
+    }
+    if offline {
+        ensure!(
+            cache.is_dir(),
+            "offline NUS cache must be an existing directory"
+        );
+    } else {
+        fs::create_dir_all(cache).context("cannot create NUS cache")?;
+    }
+    Ok(())
 }
 
 fn resolve_cache(path: &Path) -> Result<PathBuf> {
@@ -267,7 +275,6 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn publish_edit(nand: &[u8], output: &Path) -> Result<()> {
-    validate_output(output)?;
     let staging = Builder::new()
         .prefix(".wii-nand-")
         .permissions(fs::Permissions::from_mode(0o700))
@@ -400,12 +407,15 @@ mod tests {
             boot_policy: BootPolicy::Stock,
             menu: None,
         };
-        let failure = build_with(&options, |_, _, nand| {
-            File::open(&image)?.read_exact(nand)?;
-            Ok(StockIdentity {
-                boot_area: [0; 32],
-                original_footer: [0; 32],
-            })
+        let failure = build_with(&options, |_, _| {
+            let nand = read_bounded(&image, native::NAND_BYTES, native::NAND_BYTES)?;
+            Ok((
+                nand,
+                StockIdentity {
+                    boot_area: [0; 32],
+                    original_footer: [0; 32],
+                },
+            ))
         })
         .expect_err("the WAD cannot fit the synthetic NAND");
         assert!(

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use anyhow::{Context, Result, ensure};
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use std::{collections::HashSet, path::PathBuf};
+use anyhow::Result;
+use clap::{
+    Args, Parser, Subcommand,
+    builder::{PathBufValueParser, TypedValueParser},
+};
+use std::path::PathBuf;
 use wiiform::{
     native::{self, WadPolicy},
     priiloader_payload,
-    recipe::{HackSettings, PriiloaderHack, PriiloaderSettings, Sha256, TitleId, parse_on_off},
-    workflow::{nus_environment, publish_edit, read_bounded, validate_output},
+    recipe::{HackSettings, PriiloaderSettings, Sha256, TitleId, WadSource, resolve_regular_file},
+    workflow::{nus_environment, prepare_nus_cache, publish_edit, read_bounded, validate_output},
 };
 
 #[derive(Parser)]
@@ -19,6 +22,7 @@ struct Cli {
 #[derive(Args)]
 struct ImagePaths {
     /// Existing footer-bearing NAND.
+    #[arg(value_parser = regular_file())]
     input: PathBuf,
     /// New path for the edited NAND.
     output: PathBuf,
@@ -47,6 +51,7 @@ enum Command {
     InstallWad {
         #[command(flatten)]
         image: ImagePaths,
+        #[arg(value_parser = regular_file())]
         wad: PathBuf,
         #[arg(long)]
         sha256: Sha256,
@@ -64,43 +69,20 @@ enum Command {
         #[command(flatten)]
         image: ImagePaths,
         /// Override the bundled Wii Priiloader 0.10.0 app.
-        #[arg(long)]
+        #[arg(long, value_parser = regular_file())]
         app: Option<PathBuf>,
         /// Override the bundled, pinned hacks_hash.ini.
-        #[arg(long)]
+        #[arg(long, value_parser = regular_file())]
         hack_definitions: Option<PathBuf>,
         #[command(flatten)]
         settings: PriiloaderSettings,
-        #[arg(long = "hack", value_parser = parse_hack, value_name = "KEY=on|off")]
-        hacks: Vec<HackOverride>,
+        #[command(flatten)]
+        hacks: HackSettings,
     },
 }
 
-#[derive(Clone)]
-struct HackOverride {
-    hack: PriiloaderHack,
-    enabled: bool,
-}
-
-fn parse_hack(value: &str) -> Result<HackOverride> {
-    let (key, state) = value.split_once('=').context("expected KEY=on|off")?;
-    let hack = PriiloaderHack::from_str(key, false).map_err(anyhow::Error::msg)?;
-    let enabled = parse_on_off(state).map_err(anyhow::Error::msg)?;
-    Ok(HackOverride { hack, enabled })
-}
-
-fn hack_settings(overrides: Vec<HackOverride>) -> Result<HackSettings> {
-    let mut hacks = HackSettings::default();
-    let mut seen = HashSet::new();
-    for HackOverride { hack, enabled } in overrides {
-        ensure!(
-            seen.insert(hack),
-            "repeated Priiloader hack {}",
-            hack.as_str()
-        );
-        hacks.set(hack, enabled);
-    }
-    Ok(hacks)
+fn regular_file() -> impl TypedValueParser<Value = PathBuf> {
+    PathBufValueParser::new().try_map(|path| resolve_regular_file(&path))
 }
 
 fn main() -> Result<()> {
@@ -111,14 +93,8 @@ fn main() -> Result<()> {
             version,
         } => {
             let (cache, offline) = nus_environment()?;
-            if !offline && !cache.as_os_str().is_empty() {
-                std::fs::create_dir_all(&cache).context("cannot create NUS cache")?;
-            }
-            ensure!(
-                cache.as_os_str().is_empty() || cache.is_dir(),
-                "NUS cache must be an existing directory"
-            );
             image.edit(|nand| {
+                prepare_nus_cache(&cache, offline)?;
                 native::install_nus_title(nand, &cache, title_id.as_u64(), version, offline)
             })
         }
@@ -133,8 +109,9 @@ fn main() -> Result<()> {
             } else {
                 WadPolicy::Standard
             };
+            let source = WadSource::File(wad);
             image.edit(|nand| {
-                let bytes = read_bounded(&wad, 0x40, native::WAD_MAX_BYTES)?;
+                let bytes = source.resolve()?;
                 native::install_wad(nand, &bytes, &sha256, policy)?;
                 Ok(())
             })
@@ -149,12 +126,9 @@ fn main() -> Result<()> {
             settings,
             hacks,
         } => {
-            let hacks = hack_settings(hacks)?;
-            image.edit(|nand| {
-                let (app, definitions) =
-                    priiloader_payload::load(app.as_deref(), hack_definitions.as_deref())?;
-                native::apply_priiloader(nand, &app, &definitions, &settings, &hacks)
-            })
+            let (app, definitions) =
+                priiloader_payload::load(app.as_deref(), hack_definitions.as_deref())?;
+            image.edit(|nand| native::apply_priiloader(nand, &app, &definitions, &settings, &hacks))
         }
     }
 }
@@ -164,20 +138,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn priiloader_cli_uses_pinned_defaults_and_accepts_off() {
-        let parse_settings = |args: &[&str]| {
+    fn priiloader_cli_uses_defaults_and_accepts_named_flags() {
+        let parse = |args: &[&str]| {
             let cli = Cli::try_parse_from(
-                ["wii-nand", "install-priiloader", "input", "output"]
-                    .into_iter()
-                    .chain(args.iter().copied()),
+                [
+                    "wii-nand",
+                    "install-priiloader",
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                    "output",
+                ]
+                .into_iter()
+                .chain(args.iter().copied()),
             )
             .unwrap();
-            let Command::InstallPriiloader { settings, .. } = cli.command else {
+            let Command::InstallPriiloader {
+                settings, hacks, ..
+            } = cli.command
+            else {
                 unreachable!()
             };
-            settings
+            (settings, hacks)
         };
-        assert_eq!(parse_settings(&[]), PriiloaderSettings::default());
-        assert!(!parse_settings(&["--black-background", "off"]).black_background);
+        let (settings, hacks) = parse(&[]);
+        assert_eq!(settings, PriiloaderSettings::default());
+        assert_eq!(hacks, HackSettings::default());
+
+        let (settings, hacks) = parse(&["--black-background", "off", "--fix-480p"]);
+        assert!(!settings.black_background);
+        assert_eq!(
+            hacks,
+            HackSettings {
+                fix_480p: true,
+                ..HackSettings::default()
+            }
+        );
     }
 }
