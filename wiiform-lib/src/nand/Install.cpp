@@ -82,10 +82,10 @@ namespace {
     return "/shared1/" + cid + ".app";
   }
 
-  void plan_and_install(NandBin& nand, int orphan_entries, NusJob job) {
+  void plan_and_install(NandBin& nand, int orphan_entries, ValidatedTitleJob validated) {
+    const auto& job = validated.get();
     require(job.tid != 0 && job.version != TITLE_LATEST_VERSION,
             "A concrete title ID/version is required");
-    require(decrypt_title(job), "Title metadata or content hash validation failed");
 
     Tmd tmd(job.data[0]);
     Ticket ticket(job.data[1], false);
@@ -188,7 +188,7 @@ namespace {
 
     // Existing UID/shared records are persisted in the same operation so the
     // next invocation can reopen the image and assign deterministic IDs.
-    require(install_title(nand, uid, shared, job), "WiiQt failed while writing title files");
+    require(install_title(nand, uid, shared, std::move(validated)), "WiiQt failed while writing title files");
     if (owner != old_owner)
       require(nand.SetData("/sys/uid.sys", uid.Data()), "Cannot persist NAND UID map");
     if (adds_shared) {
@@ -201,7 +201,7 @@ namespace {
     require(nand.WriteMetaData(), "Cannot persist NAND metadata");
   }
 
-  void install_job_to_image(std::span<std::uint8_t> image, NusJob job) {
+  void install_job_to_image(std::span<std::uint8_t> image, ValidatedTitleJob job) {
     working_image::Image working(image);
     plan_and_install(working.nand, working.layout.orphan_entries, std::move(job));
   }
@@ -216,7 +216,8 @@ namespace title_install {
   auto install_wad(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
                    const wiiform::Sha256& expected_sha256, wiiform::WadPolicy policy) -> std::pair<quint64, quint16> {
     auto job = wad_package::read(package, expected_sha256, policy);
-    const auto installed = std::pair{job.tid, qFromBigEndian<quint16>(job.data[0].constData() + 0x19c)};
+    const auto& parsed = job.get();
+    const auto installed = std::pair{parsed.tid, qFromBigEndian<quint16>(parsed.data[0].constData() + 0x19c)};
     install_job_to_image(image, std::move(job));
     return installed;
   }

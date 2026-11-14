@@ -67,6 +67,19 @@ namespace {
     check(settings.country == country, "Generated country did not round-trip");
     check(settings.sensor_bar_above == false, "Generated sensor-bar position did not round-trip");
 
+    const wiiform::SystemSettings alternate{"Alternate", language, country, true, false, false, false};
+    const auto alternate_bytes = sysconf::create(alternate, menu);
+    const auto alternate_settings = sysconf::read_settings(alternate_bytes);
+    const auto alternate_display = sysconf::read_display(alternate_bytes);
+    check(alternate_settings.setup_complete == true &&
+              alternate_settings.nickname == QStringLiteral("Alternate") &&
+              alternate_settings.language == language && alternate_settings.country == country &&
+              alternate_settings.sensor_bar_above == true,
+          "Alternate generated setup fields did not round-trip");
+    check(alternate_display.widescreen == false && alternate_display.progressive_scan == false &&
+              alternate_display.pal60 == false,
+          "Alternate generated display fields did not round-trip");
+
     const auto country_payload = entry_payload(bytes, "IPL.SADR");
     check(country_payload.size() == 0x1008, "Generated country payload has the wrong size");
     check(static_cast<std::uint8_t>(country_payload.at(0)) == country,

@@ -191,6 +191,20 @@ namespace {
               QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
                                       static_cast<int>(image.size())), QCryptographicHash::Sha256),
           "Invalid WAD digest changed the NAND buffer");
+    auto invalid_content = wad;
+    // WAD data begins after the aligned header, certificate, ticket, and TMD sections.
+    constexpr int content_offset = 0x40 + 0x40 + 0x2c0 + 0x240;
+    invalid_content[content_offset + 20] = char(invalid_content.at(content_offset + 20) ^ 1);
+    rejects([&] {
+      wiiform::core::install_wad(image,
+          std::span(reinterpret_cast<const std::uint8_t*>(invalid_content.constData()),
+                    static_cast<std::size_t>(invalid_content.size())),
+          wad_digest(invalid_content), wiiform::WadPolicy::legacy_channel);
+    }, "WAD content validation failed");
+    check(before == QCryptographicHash::hash(
+              QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
+                                      static_cast<int>(image.size())), QCryptographicHash::Sha256),
+          "Invalid WAD content changed the NAND buffer");
     rejects([&] {
       wiiform::core::install_wad(image,
           std::span(reinterpret_cast<const std::uint8_t*>(wad.constData()),

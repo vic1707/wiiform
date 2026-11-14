@@ -34,7 +34,7 @@ namespace {
 
 namespace wad_package {
   auto read(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
-            wiiform::WadPolicy policy) -> NusJob {
+            wiiform::WadPolicy policy) -> ValidatedTitleJob {
     using wiiform::WadPolicy;
     require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
     const bool legacy = policy == WadPolicy::legacy_channel;
@@ -123,9 +123,7 @@ namespace wad_package {
     // physical section still reaches the same aligned footer offset.
     require(consumed == padded_data_size && (data_size == consumed || data_size == last_content_end),
             "WAD content sizes do not match its data section");
-    require(decrypt_title(job), "WAD content validation failed");
-
-    return job;
+    return validate_title(std::move(job), QStringLiteral("WAD content validation failed"));
   }
 
 }

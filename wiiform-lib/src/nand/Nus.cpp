@@ -77,7 +77,7 @@ namespace factory {
     return data;
   }
 
-  auto read_title(const QString& cache, quint64 id, int version, bool offline) -> NusJob {
+  auto read_title(const QString& cache, quint64 id, int version, bool offline) -> ValidatedTitleJob {
     require(id && version >= 0 && version < 65535, "A concrete title ID/version is required; latest is forbidden");
     const auto text = QString("%1").arg(id, 16, 16, QChar('0'));
     // An empty cache path means fetch into memory only: do not inspect or create
@@ -125,7 +125,7 @@ namespace factory {
               "Truncated or unaligned encrypted content: " + text);
       job.data << bytes;
     }
-    require(decrypt_title(job), "Invalid title contents: " + text);
+    auto validated = validate_title(std::move(job), "Invalid title contents: " + text);
     // Only authenticated, fully checked titles may add files to the cache. Existing files are never replaced.
     if (use_cache && !pending.isEmpty()) {
       for (const auto& path : directories) directory(path, true);
@@ -137,6 +137,6 @@ namespace factory {
         staging.setAutoRemove(false);
       }
     }
-    return job;
+    return validated;
   }
 }

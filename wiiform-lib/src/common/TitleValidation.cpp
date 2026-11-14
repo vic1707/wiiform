@@ -2,6 +2,7 @@
 // Adapted from giantpune's WiiQt ohneschwanzenegger title handling code.
 #include <Titles.hpp>
 #include <tiktmd.h>
+#include <stdexcept>
 
 bool check_title_metadata(const QByteArray& tmd, const QByteArray& ticket) {
   // Validate signed headers before the legacy Tmd/Ticket constructors read them.
@@ -45,5 +46,10 @@ bool decrypt_title(NusJob& job) {
   }
   job.decrypt = true;
   return true;
+}
+
+auto validate_title(NusJob job, const QString& failure_message) -> ValidatedTitleJob {
+  if (!decrypt_title(job)) throw std::runtime_error(failure_message.toStdString());
+  return ValidatedTitleJob(std::move(job));
 }
 

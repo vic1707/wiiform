@@ -383,20 +383,7 @@ namespace sysconf {
   }
 
   auto create(const wiiform::SystemSettings& requested, const QString& menu_region) -> QByteArray {
-    const auto bytes = encode_new_sysconf(generated_entries(requested, menu_region));
-    const auto settings = read_settings(bytes);
-    const auto display = read_display(bytes);
-    require(settings.setup_complete == true, "Generated SYSCONF does not mark first-time setup complete");
-    require(settings.nickname == QString::fromStdString(requested.nickname),
-            "Generated SYSCONF nickname readback differs");
-    require(settings.language == requested.language, "Generated SYSCONF language readback differs");
-    require(settings.country == requested.country, "Generated SYSCONF country readback differs");
-    require(settings.sensor_bar_above == requested.sensor_bar_above,
-            "Generated SYSCONF sensor bar readback differs");
-    require(display.widescreen == requested.widescreen &&
-                display.progressive_scan == requested.progressive && display.pal60 == requested.pal60,
-            "Generated SYSCONF display readback differs");
-    return bytes;
+    return encode_new_sysconf(generated_entries(requested, menu_region));
   }
 
 } // namespace sysconf

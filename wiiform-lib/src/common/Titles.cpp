@@ -44,8 +44,9 @@ bool initialize_system(NandBin& nand, const QByteArray& uid_data) {
          nand.SetData(entry, uid_data) && nand.WriteMetaData();
 }
 
-bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, NusJob job) {
-  if (!decrypt_title(job) || (!shared.Data().isEmpty() && !shared.Check())) return false;
+bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, ValidatedTitleJob validated) {
+  if (!shared.Data().isEmpty() && !shared.Check()) return false;
+  auto job = std::move(validated).take();
   Tmd tmd(job.data.takeFirst());
   Ticket ticket(job.data.takeFirst(), false);
   const auto count = tmd.Count();

@@ -5,8 +5,7 @@
 #include <sharedcontentmap.h>
 #include <uidmap.h>
 #include <tools.h>
+#include <TitleValidation.hpp>
 
-bool check_title_metadata(const QByteArray& tmd, const QByteArray& ticket);
-bool decrypt_title(NusJob& job);
 bool initialize_system(NandBin& nand, const QByteArray& uid_data);
-bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, NusJob job);
+bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, ValidatedTitleJob job);
