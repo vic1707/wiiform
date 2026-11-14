@@ -42,6 +42,35 @@ pub mod bridge {
         original_footer: [u8; 32],
     }
 
+    struct ConsoleSettings {
+        area: String,
+        model: String,
+        dvd: String,
+        mpch: String,
+        code: String,
+        serial: String,
+        video: String,
+        game: String,
+    }
+
+    struct StockSeed<'a> {
+        keys: &'a [u8],
+        boot_blocks: &'a [u8],
+        bad_blocks: &'a [u16],
+        settings: ConsoleSettings,
+        settings_sha256: [u8; 32],
+    }
+
+    struct SeedParts {
+        keys: Vec<u8>,
+        boot_blocks: Vec<u8>,
+        bad_blocks: Vec<u16>,
+        settings: ConsoleSettings,
+        settings_sha256: [u8; 32],
+        bootmii: String,
+        footer_header: String,
+    }
+
     struct InstalledWad {
         title_id: u64,
         region: u16,
@@ -50,12 +79,9 @@ pub mod bridge {
     unsafe extern "C++" {
         include!("ffi.hpp");
 
-        fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<String>;
+        fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<SeedParts>;
         fn create_stock(
-            keys: &[u8],
-            boot_blocks: &[u8],
-            bad_blocks: &[u16],
-            setting_txt: &[u8],
+            seed: &StockSeed<'_>,
             nand: &mut [u8],
             nus_cache_dir: &str,
             options: &StockOptions,

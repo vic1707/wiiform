@@ -28,7 +28,7 @@ namespace sysconf {
     require(!working_image::find_path(tree.get(), path), "NAND already has SYSCONF");
     const auto raw = working_image::read_authenticated_file(working.nand,
         working_image::find_path(tree.get(), "/title/00000001/00000002/data/setting.txt"), 256);
-    const auto region = QString::fromStdString(seed::decode_settings(raw)["AREA"].as<std::string>());
+    const auto region = QString::fromStdString(seed::decode_settings(raw).area);
     const auto bytes = create(settings, region);
     const auto* parent = working_image::find_path(tree.get(), "/shared2/sys");
     require(parent && working_image::entry_kind(parent) == NAND_DIR, "Working image needs /shared2/sys");

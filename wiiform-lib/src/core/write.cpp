@@ -58,12 +58,13 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
   detail::ensure_qcore_application();
   const auto cache = qstring(nus_cache_dir, "Cache path must be UTF-8");
   require(nand.size() == nand_size && seed.keys.size() == 0x400 &&
-              seed.boot_blocks.size() == 0x108000 && seed.setting_txt.size() == 256,
+              seed.boot_blocks.size() == 0x108000,
           "Invalid NAND image or seed component size");
   const StockIdentity identity{digest(seed.boot_blocks), digest(seed.keys)};
   const auto keys = view(seed.keys);
   const auto boots = view(seed.boot_blocks);
-  const auto profile = nand_build::resolve_profile(keys, view(seed.setting_txt), seed.bad_blocks, menu);
+  const auto profile = nand_build::resolve_profile(keys, seed.settings, seed.settings_sha256,
+                                                     seed.bad_blocks, menu);
   nand_build::initialize_image(nand, keys, boots, profile, native_boot_policy(boot_policy));
   const auto titles = factory::stock_titles(profile.area);
   for (auto title = titles.cbegin(); title != titles.cend(); ++title)

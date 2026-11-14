@@ -17,11 +17,31 @@ namespace wiiform {
   using Sha256 = std::array<std::uint8_t, 32>;
 
   enum class Menu : std::uint16_t { e43 = 514, u43 = 513, j43 = 512 };
+  struct ConsoleSettings {
+    std::string area;
+    std::string model;
+    std::string dvd;
+    std::string mpch;
+    std::string code;
+    std::string serial;
+    std::string video;
+    std::string game;
+  };
+  struct SeedParts {
+    std::vector<std::uint8_t> keys;
+    std::vector<std::uint8_t> boot_blocks;
+    std::vector<std::uint16_t> bad_blocks;
+    ConsoleSettings settings;
+    Sha256 settings_sha256;
+    std::string bootmii;
+    std::string footer_header;
+  };
   struct StockSeed {
     std::span<const std::uint8_t> keys;
     std::span<const std::uint8_t> boot_blocks;
     std::span<const std::uint16_t> bad_blocks;
-    std::span<const std::uint8_t> setting_txt;
+    const ConsoleSettings& settings;
+    Sha256 settings_sha256;
   };
 
   struct StockIdentity {

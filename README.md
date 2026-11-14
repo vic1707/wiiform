@@ -36,7 +36,7 @@ mise run run:wii-seed -- --help
 | Provided by | Requirements |
 | --- | --- |
 | mise | Xmake, CMake, Rust and Cargo, rustfmt, and Clippy |
-| Xmake and Cargo | Pinned WiiQt, yaml-cpp, liblzma from xz, and locked Rust crates |
+| Xmake and Cargo | Pinned WiiQt and locked Rust crates |
 | Host | Git, a C++20 compiler and linker, make, and a Qt SDK with qmake, Qt Core, Gui, Widgets, and Network |
 | Archive creation | Python 3 and Xcode linker tools on macOS. patchelf and pax-utils on Linux |
 | Optional Priiloader source build | devkitPPC, libogc, and the pinned Priiloader submodule |
@@ -53,9 +53,11 @@ archive carries its Qt runtime.
 See the [example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
 regenerate the schema from the Rust recipe model. Local file paths resolve
-relative to the recipe. Every WAD entry has a required SHA-256. The recipe supports a 4.3E,
-4.3U, or 4.3J System Menu; allowlisted channel removal; initial setup and
-display settings; WAD installs; and Priiloader settings and named hacks.
+relative to the recipe. A WAD entry takes either a local `path` or an
+`inline: !!binary |` block containing base64. Both require the SHA-256 of the
+raw WAD bytes. The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
+channel removal, initial setup, display settings, and Priiloader settings and
+named hacks.
 
 ```sh
 wiiform --seed console.seed.yaml --recipe recipe.yaml \
@@ -80,12 +82,22 @@ using a Priiloader recipe. A `priiloader` section requires `settings`. Use
 and disables unspecified hacks.
 
 The seed contains plaintext console key material. Save the output privately.
-For a footerless backup, place its matching 1,024-byte `keys.bin` next to it
-or pass `--keys`.
+A footer-bearing backup supplies its own keys. For a footerless backup, pass
+its matching 1,024-byte sidecar explicitly.
 
 ```sh
 (umask 077; wii-seed BACKUP > console.seed.yaml)
+(umask 077; wii-seed FOOTERLESS_BACKUP --keys keys.bin > console.seed.yaml)
 ```
+
+Use `--seed -` to pipe plaintext YAML directly into the builder.
+
+```sh
+wii-seed BACKUP | wiiform --seed - --recipe recipe.yaml --output prepared-console
+```
+
+Earlier seeds from the unreleased format need to be regenerated from their
+backups. See the [seed format](docs/migration.md#what-a-seed-contributes).
 
 ## Direct commands
 
@@ -93,7 +105,7 @@ or pass `--keys`.
 wii-nand install-title INPUT OUTPUT TITLE_ID VERSION
 wii-nand install-wad INPUT OUTPUT PACKAGE.wad --sha256 SHA256
 wii-nand remove-title INPUT OUTPUT TITLE_ID
-wii-nand install-priiloader INPUT OUTPUT
+wii-nand install-priiloader INPUT OUTPUT --fix-480p --block-disc-updates
 ```
 
 `wii-nand install-title` uses the same `WIIFORM_NUS_CACHE` and
@@ -101,7 +113,8 @@ wii-nand install-priiloader INPUT OUTPUT
 
 Each edit requires a new output path. Run `wii-nand <command> --help` for
 settings, signature policy and Priiloader hack options. The Priiloader edit
-applies its defaults for unspecified settings and disables unspecified hacks.
+applies its defaults for unspecified settings. Named hack flags enable their
+respective hacks. Omitted flags leave those hacks off.
 An edit uses about 528 MiB of memory for the working NAND plus the payload.
 
 ## Release packaging

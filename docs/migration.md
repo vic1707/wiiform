@@ -60,15 +60,15 @@ The project-owned C++ library wraps the following areas:
   (`schemars`), hashing (`sha2`), temporary files (`tempfile`), C++ interop
   (`cxx`), and supporting crates. Exact versions are recorded in Cargo files.
 
-The external native build dependencies declared to Xmake include pinned
-`yaml-cpp` and `xz`. Xmake also builds the pinned WiiQt package. The host
-supplies its C++ toolchain, `make`, and Qt SDK with `qmake`. Release archives
-carry the Qt runtime. The [README](../README.md#host-dependencies) lists the
-prerequisites.
+Xmake builds the pinned WiiQt package. The host supplies its C++ toolchain,
+`make`, and Qt SDK with `qmake`. Release archives carry the Qt runtime.
+The [README](../README.md#host-dependencies) lists the prerequisites.
 
 ## Commands and supported operations
 
-Use `wii-seed BACKUP` to write the existing seed format to stdout. Use
+Use `wii-seed BACKUP` to extract from a backup with an embedded footer. For a
+footerless backup, add `--keys FILE` with its matching 1,024-byte sidecar.
+Both commands write plaintext seed YAML to stdout. Use
 `wiiform` for a new image and `wii-nand` for title installs, channel removal,
 and combined Priiloader installation and configuration on an existing image.
 Each editor command takes separate input and output paths.
@@ -90,9 +90,11 @@ CI generates the schema and checks it against the committed copy under
 
 Move keys under the old `system:` block up one indentation level. Keep
 `menu`, `remove`, `setup`, `display`, `titles`, and `priiloader` as top-level
-keys. WAD paths remain relative to the recipe and require SHA-256. For a WAD
-that the recipe deliberately permits without a Nintendo signature, use
-`signature_policy: allow-unsigned`. Existing decrypted seeds remain valid.
+keys. WAD paths remain relative to the recipe. For inline data, replace
+`path` with `inline: !!binary |` followed by indented base64. Either source
+requires a SHA-256 of the raw WAD bytes. For a WAD that the recipe deliberately
+permits without a Nintendo signature, use `signature_policy: allow-unsigned`.
+Regenerate earlier unreleased seeds with the current `wii-seed`.
 Remove `--reference` from scripts. Setup and display options now generate
 SYSCONF using recipe values and menu defaults. Use a two-letter country code
 such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
@@ -103,21 +105,21 @@ Use `WIIFORM_NUS_CACHE` for a persistent title cache and `WIIFORM_NUS_OFFLINE=1`
 to require cache hits. Without either variable, title downloads stay in memory.
 A Priiloader recipe requires a `settings` mapping. Use `settings: {}` to apply
 the pinned defaults. Priiloader edits replace previous settings and hack states.
+Use named flags such as `--fix-480p` in place of `--hack fix_480p=on`.
 
 ## What a seed contributes
 
-The rebuild uses the console key footer, the bad-block list, the boot blocks,
-and the original console settings. The footer, boot blocks, and settings each
-have a digest checked during reconstruction. Source backup SHA-256 and boot
-diagnostics describe the original image. The build validates the actual boot
-bytes separately.
+The seed stores the exact 1,024-byte key footer and the XZ-compressed boot area
+as YAML binary fields. It also stores bad-block numbers and the eight readable
+`setting.txt` fields. SHA-256 covers the footer, the decompressed boot area, and
+the encoded original settings. Wiiform verifies these before retargeting the
+settings to the requested menu. Optional `info` shows the recognized BootMii
+status and readable footer header.
 
-The footer header is part of the original 1,024 bytes and their digest.
-BackupMii preparation rewrites the recognized NAND Dumper header after
-checking its console ID against OTP. It preserves other headers.
-The optional `settings.original` records source bytes when the exporter
-cannot reconstruct them from the readable settings. The stock builder
-currently requires canonical `setting.txt`, even when supplied those bytes.
+The footer digest covers the original padding and header bytes. BackupMii
+preparation normalizes a recognized NAND Dumper header after matching its
+console ID against OTP. The build publishes the resulting footer as `keys.bin`.
+Use `wiiform --seed -` to read plaintext YAML from stdin.
 
 ## Release archive and mise
 

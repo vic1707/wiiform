@@ -6,7 +6,6 @@ add_rules("mode.release", "mode.debug")
 
 includes("xmake/wiiqt-nand.lua")
 includes("xmake/priiloader.lua")
-add_requires("yaml-cpp 0.8.0", "xz 5.8.4")
 add_requires("wiiqt-nand 0.1.5")
 
 local private_headers = {
@@ -18,7 +17,7 @@ local private_headers = {
 target("wiiform-core")
     add_rules("qt.shared")
     add_frameworks("QtGui", "QtWidgets", "QtNetwork")
-    add_packages("wiiqt-nand", "yaml-cpp", "xz")
+    add_packages("wiiqt-nand")
     add_includedirs("wiiform-lib/include", {public = true})
     add_headerfiles("wiiform-lib/include/(wiiform/*.hpp)")
     add_includedirs(private_headers)
@@ -41,7 +40,7 @@ for name, source in pairs({
         add_rules("qt.console")
         add_deps("wiiform-core")
         add_frameworks("QtGui", "QtWidgets", "QtNetwork")
-        add_packages("wiiqt-nand", "yaml-cpp", "xz")
+        add_packages("wiiqt-nand")
         add_includedirs(private_headers)
         add_files(source)
         set_targetdir("build/bin")

@@ -12,13 +12,15 @@ namespace wiiform::ffi {
   struct StockOptions;
   struct StockIdentity;
   struct InstalledWad;
+  struct StockSeed;
+  struct SeedParts;
 
   using Bytes = rust::Slice<const std::uint8_t>;
   using Nand = rust::Slice<std::uint8_t>;
 
-  auto extract_seed(Bytes nand, Bytes sidecar_keys) -> rust::String;
-  auto create_stock(Bytes keys, Bytes boot_blocks, rust::Slice<const std::uint16_t> bad_blocks,
-                    Bytes setting_txt, Nand nand, rust::Str cache, const StockOptions& options) -> StockIdentity;
+  auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts;
+  auto create_stock(const StockSeed& seed, Nand nand, rust::Str cache,
+                    const StockOptions& options) -> StockIdentity;
   void apply_system_settings(Nand nand, const SystemSettings& settings);
   void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
                          std::uint16_t version, bool offline);

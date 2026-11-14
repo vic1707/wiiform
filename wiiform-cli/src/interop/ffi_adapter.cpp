@@ -11,13 +11,35 @@ namespace {
 
 }
 
-auto extract_seed(Bytes nand, Bytes sidecar_keys) -> rust::String {
-  return rust::String(read::extract_seed(span(nand), span(sidecar_keys)));
+auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts {
+  const auto source = read::extract_seed(span(nand), span(sidecar_keys));
+  SeedParts result;
+  result.keys.reserve(source.keys.size());
+  for (const auto byte : source.keys) result.keys.push_back(byte);
+  result.boot_blocks.reserve(source.boot_blocks.size());
+  for (const auto byte : source.boot_blocks) result.boot_blocks.push_back(byte);
+  result.bad_blocks.reserve(source.bad_blocks.size());
+  for (const auto block : source.bad_blocks) result.bad_blocks.push_back(block);
+  result.settings = ConsoleSettings{
+      rust::String(source.settings.area), rust::String(source.settings.model),
+      rust::String(source.settings.dvd), rust::String(source.settings.mpch),
+      rust::String(source.settings.code), rust::String(source.settings.serial),
+      rust::String(source.settings.video), rust::String(source.settings.game)};
+  result.settings_sha256 = source.settings_sha256;
+  result.bootmii = rust::String(source.bootmii);
+  result.footer_header = rust::String(source.footer_header);
+  return result;
 }
 
-auto create_stock(Bytes keys, Bytes boot_blocks, rust::Slice<const std::uint16_t> bad_blocks,
-                  Bytes setting_txt, Nand nand, rust::Str cache, const StockOptions& options) -> StockIdentity {
-  const wiiform::StockSeed seed{span(keys), span(boot_blocks), span(bad_blocks), span(setting_txt)};
+auto create_stock(const StockSeed& source, Nand nand, rust::Str cache,
+                  const StockOptions& options) -> StockIdentity {
+  const auto& settings = source.settings;
+  const wiiform::ConsoleSettings native_settings{
+      std::string(settings.area), std::string(settings.model), std::string(settings.dvd),
+      std::string(settings.mpch), std::string(settings.code), std::string(settings.serial),
+      std::string(settings.video), std::string(settings.game)};
+  const wiiform::StockSeed seed{span(source.keys), span(source.boot_blocks), span(source.bad_blocks),
+                                native_settings, source.settings_sha256};
   const auto result = core::create_stock(seed, span(nand), std::string(cache),
       static_cast<wiiform::Menu>(options.menu), static_cast<wiiform::BootPolicy>(options.boot_policy),
       options.offline);

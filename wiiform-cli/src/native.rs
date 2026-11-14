@@ -7,7 +7,7 @@ use crate::ffi::bridge as ffi;
 use crate::recipe::{
     Aspect, Display, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, Sha256,
 };
-use crate::seed::StockSeed;
+use crate::seed::{ConsoleSettingValue, ConsoleSettings, StockSeed};
 
 pub use ffi::{InstalledWad, StockIdentity, WadPolicy};
 
@@ -21,7 +21,6 @@ pub enum BootPolicy {
 
 pub const RAW_NAND_BYTES: usize = 0x2100_0000;
 pub const NAND_BYTES: usize = RAW_NAND_BYTES + 0x400;
-pub const WAD_MAX_BYTES: usize = RAW_NAND_BYTES;
 
 fn cache_dir(path: &Path) -> Result<&str> {
     path.to_str()
@@ -29,7 +28,26 @@ fn cache_dir(path: &Path) -> Result<&str> {
 }
 
 pub fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<String> {
-    Ok(ffi::extract_seed(nand, sidecar_keys)?)
+    let parts = ffi::extract_seed(nand, sidecar_keys)?;
+    let settings = ConsoleSettings {
+        area: ConsoleSettingValue::try_from(parts.settings.area)?,
+        model: ConsoleSettingValue::try_from(parts.settings.model)?,
+        dvd: ConsoleSettingValue::try_from(parts.settings.dvd)?,
+        mpch: ConsoleSettingValue::try_from(parts.settings.mpch)?,
+        code: ConsoleSettingValue::try_from(parts.settings.code)?,
+        serial: ConsoleSettingValue::try_from(parts.settings.serial)?,
+        video: ConsoleSettingValue::try_from(parts.settings.video)?,
+        game: ConsoleSettingValue::try_from(parts.settings.game)?,
+    };
+    crate::seed::serialize_seed(
+        parts.keys,
+        parts.boot_blocks,
+        parts.bad_blocks,
+        settings,
+        parts.settings_sha256,
+        &parts.bootmii,
+        &parts.footer_header,
+    )
 }
 
 pub fn create_stock(
@@ -40,11 +58,24 @@ pub fn create_stock(
     policy: BootPolicy,
     offline: bool,
 ) -> Result<StockIdentity> {
+    let settings = ffi::ConsoleSettings {
+        area: seed.settings().area.as_str().to_owned(),
+        model: seed.settings().model.as_str().to_owned(),
+        dvd: seed.settings().dvd.as_str().to_owned(),
+        mpch: seed.settings().mpch.as_str().to_owned(),
+        code: seed.settings().code.as_str().to_owned(),
+        serial: seed.settings().serial.as_str().to_owned(),
+        video: seed.settings().video.as_str().to_owned(),
+        game: seed.settings().game.as_str().to_owned(),
+    };
     Ok(ffi::create_stock(
-        seed.keys(),
-        seed.boot_blocks(),
-        seed.bad_blocks(),
-        seed.setting_txt(),
+        &ffi::StockSeed {
+            keys: seed.keys(),
+            boot_blocks: seed.boot_blocks(),
+            bad_blocks: seed.bad_blocks(),
+            settings,
+            settings_sha256: *seed.settings_sha256(),
+        },
         nand,
         cache_dir(cache)?,
         &ffi::StockOptions {
@@ -106,13 +137,7 @@ pub fn install_wad(
     sha256: &Sha256,
     policy: WadPolicy,
 ) -> Result<InstalledWad> {
-    let mut digest = [0; 32];
-    for (byte, pair) in digest
-        .iter_mut()
-        .zip(sha256.as_str().as_bytes().as_chunks::<2>().0)
-    {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair)?, 16)?;
-    }
+    let digest = sha256.to_bytes();
     Ok(ffi::install_wad(nand, wad, &digest, policy)?)
 }
 

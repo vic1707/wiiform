@@ -9,9 +9,7 @@ the applicable upstream license notices and corresponding license texts.
 | WiiQt NAND tools | NAND filesystem, title and console-format operations | [vic1707/wiiqt-tools](https://github.com/vic1707/wiiqt-tools), pinned commit `42536a2c3becf384687a64a3d9ddadad435dc22b` with local [read-only access](xmake/patches/wiiqt-read-only.patch) and [buffer device](xmake/patches/wiiqt-buffer-device.patch) patches | GPL-2.0-only; preserve its `COPYING` and notices in source/release bundles |
 | Priiloader | Wii-side installer project, source reference and submodule | [DacoTaco/priiloader](https://github.com/DacoTaco/priiloader), vendored submodule | Preserve the submodule's upstream license files/notices; Wiiform host integration remains separately identified as project code |
 | Qt | Native runtime and GUI/Widgets/Network libraries used by WiiQt | Host Qt SDK during build; exact detected SDK recorded by xmake package configuration | Follow the license notices shipped with the Qt distribution and include applicable notices in binary archives |
-| yaml-cpp | YAML support in the native dependency graph | Xmake package pinned to 0.8.0 | Include upstream license notice in source and binary attribution bundle |
-| xz / liblzma | Compression support in the native dependency graph | Xmake package pinned to 5.8.4 | The linked [liblzma](https://tukaani.org/xz/liblzma-api/) component is 0BSD |
-| Rust crates | CLI, parsing, schema, hashing, CXX bridge and supporting functions | Exact resolved graph in `Cargo.lock` | Preserve each crate's license metadata/notices; generate a complete notice list before publishing binaries |
+| Rust crates | CLI, parsing, schema, hashing, XZ compression, CXX bridge and supporting functions | Exact resolved graph in `Cargo.lock` | Preserve each crate's license metadata/notices; generate a complete notice list before publishing binaries |
 
 ## Build tools and packaging tools
 
@@ -29,7 +27,7 @@ Before a public release:
 - Include Wiiform's GPL-2.0-only `LICENSE` and preserve all source notices.
 - Include WiiQt and Priiloader upstream license texts and attribution.
 - Generate a complete license/notice inventory for the locked Rust graph,
-  yaml-cpp, xz, and the shipped Qt runtime.
+  and the shipped Qt runtime.
 - Verify that the Linux and macOS archives contain every required runtime
   license notice and checksum file.
 - Publish corresponding source and build/packaging scripts with each binary

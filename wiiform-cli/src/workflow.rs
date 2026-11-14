@@ -2,7 +2,7 @@
 use std::{
     ffi::CString,
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{self, Read, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -53,7 +53,11 @@ pub fn nus_environment() -> Result<(PathBuf, bool)> {
 
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |options, recipe| {
-        let seed = StockSeed::read(&options.seed)?;
+        let seed = if options.seed.as_os_str() == "-" {
+            StockSeed::from_reader(io::stdin().lock())
+        } else {
+            StockSeed::from_reader(open_regular_file(&options.seed)?)
+        }?;
         prepare_nus_cache(&options.cache, options.offline)?;
         let mut nand = allocate_nand()?;
         let identity = native::create_stock(

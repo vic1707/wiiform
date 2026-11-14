@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{
+    Parser,
+    builder::{PathBufValueParser, TypedValueParser},
+};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    recipe::Menu,
+    recipe::{Menu, resolve_regular_file},
     workflow::{self, BootPolicy, BuildOptions},
 };
 
@@ -14,12 +17,12 @@ use wiiform::{
     about = "Build and verify a Wii NAND restore bundle from a seed and recipe"
 )]
 struct Cli {
-    /// Decrypted console seed YAML.
-    #[arg(long)]
+    /// Plaintext console seed YAML, or - to read from stdin.
+    #[arg(long, value_parser = PathBufValueParser::new().try_map(seed_path))]
     seed: PathBuf,
 
     /// Declarative Wiiform recipe YAML.
-    #[arg(long)]
+    #[arg(long, value_parser = PathBufValueParser::new().try_map(|path| resolve_regular_file(&path)))]
     recipe: PathBuf,
 
     /// New output directory for nand.bin and its matching keys.bin.
@@ -33,6 +36,14 @@ struct Cli {
     /// Override the recipe menu with 4.3E, 4.3U, or 4.3J.
     #[arg(long)]
     menu: Option<Menu>,
+}
+
+fn seed_path(path: PathBuf) -> Result<PathBuf> {
+    if path.as_os_str() == "-" {
+        Ok(path)
+    } else {
+        resolve_regular_file(&path)
+    }
 }
 
 fn run(cli: Cli) -> Result<()> {

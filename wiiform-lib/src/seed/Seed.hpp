@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #pragma once
 
+#include <wiiform/types.hpp>
+
 #include <QByteArray>
-#include <cstdint>
 #include <span>
-#include <string>
-#include <yaml-cpp/yaml.h>
+#include <cstdint>
 
 namespace seed {
-  auto extract(std::span<const std::uint8_t> backup, std::span<const std::uint8_t> sidecar) -> std::string;
-  auto decode_settings(const QByteArray& raw) -> YAML::Node;
-  auto encode_settings(const YAML::Node& settings) -> QByteArray;
+  auto extract(std::span<const std::uint8_t> backup, std::span<const std::uint8_t> sidecar)
+      -> wiiform::SeedParts;
+  auto decode_settings(const QByteArray& raw) -> wiiform::ConsoleSettings;
+  auto encode_settings(const wiiform::ConsoleSettings& settings) -> QByteArray;
 }
