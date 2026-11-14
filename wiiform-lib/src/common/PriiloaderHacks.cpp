@@ -4,6 +4,8 @@
 #include <QCryptographicHash>
 #include <QMap>
 #include <QRegularExpression>
+#include <QSet>
+#include <array>
 #include <stdexcept>
 
 namespace {
@@ -115,8 +117,7 @@ namespace priiloader {
   }
 
   auto prepare_hacks(std::span<const std::uint8_t> input, int menu_version,
-                     const QMap<QString, bool>& overrides,
-                     const QByteArray& previous_states) -> HackFiles {
+                     std::span<const wiiform::Hack> enabled_hacks) -> HackFiles {
     require(!input.empty() && input.size() <= definitions_limit,
             "Expected a bounded Priiloader 0.10.0 hacks_hash.ini file");
     auto view = QByteArray::fromRawData(reinterpret_cast<const char*>(input.data()),
@@ -124,22 +125,27 @@ namespace priiloader {
     const auto definitions_bytes = validate_definitions(view);
     const auto definitions = parse_definitions(definitions_bytes, menu_version);
     require(!definitions.isEmpty(), "Pinned Priiloader definitions contain no valid hacks");
-    auto states = QByteArray(definitions.size(), char(0));
-    if (!previous_states.isEmpty()) {
-      require(previous_states.size() == states.size(), "Existing Priiloader hack state has the wrong size");
-      for (const char state : previous_states)
-        require(state == 0 || state == 1, "Invalid Priiloader hack state");
-      states = previous_states;
-    }
-    HackFiles result{definitions_bytes, states};
-    for (auto it = overrides.cbegin(); it != overrides.cend(); ++it) {
+    HackFiles result{definitions_bytes, QByteArray(definitions.size(), '\0')};
+    constexpr std::array names{
+        "480p graphics fix in system menu", "Block Online Updates", "Block Disc Updates",
+        "Block Disc Autoboot", "Auto-Press A at Health Screen", "Remove Deflicker",
+        "Move Disc Channel", "Remove NoCopy Save File Protection", "Replace Health Screen with Backmenu",
+        "No System Menu Background Music", "Wiimmfi Patch v4", "Region Free EVERYTHING"};
+    QSet<QString> requested;
+    for (const auto hack : enabled_hacks) {
+      const auto option = static_cast<std::size_t>(hack);
+      require(option < names.size(), "Unsupported Priiloader hack");
+      auto name = QString::fromLatin1(names[option]);
+      if (hack == wiiform::Hack::region_free_everything && menu_version == 512) name += " JP";
+      require(!requested.contains(name), "Duplicate Priiloader hack");
+      requested.insert(name);
       bool found = false;
       for (int index = 0; index < definitions.size(); ++index) {
         const auto& definition = definitions.at(index);
-        if (definition.name != it.key() || !definition.master.isEmpty() ||
+        if (definition.name != name || !definition.master.isEmpty() ||
             definition.minimum > menu_version || menu_version > definition.maximum)
           continue;
-        result.states[index] = it.value() ? char(1) : char(0);
+        result.states[index] = char(1);
         found = true;
       }
       require(found, "Requested Priiloader hack title is unavailable for this System Menu version");

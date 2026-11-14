@@ -52,27 +52,22 @@ namespace wiiform {
   enum class MountPoint : std::uint8_t { automatic = 0, sd = 1, usb = 2 };
 
   struct PriiloaderSettings {
-    std::optional<Autoboot> autoboot;
-    std::optional<ReturnTo> return_to;
-    std::optional<ShutdownTo> shutdown_to;
-    std::optional<MountPoint> preferred_mount_point;
-    std::optional<bool> stop_disc;
-    std::optional<bool> lid_slot_on_error;
-    std::optional<bool> ignore_shutdown_mode;
-    std::optional<bool> black_background;
-    std::optional<bool> dump_gecko_text;
-    std::optional<bool> show_rc_updates;
+    Autoboot autoboot = Autoboot::system_menu;
+    ReturnTo return_to = ReturnTo::system_menu;
+    ShutdownTo shutdown_to = ShutdownTo::none;
+    MountPoint preferred_mount_point = MountPoint::automatic;
+    bool stop_disc = false;
+    bool lid_slot_on_error = false;
+    bool ignore_shutdown_mode = false;
+    bool black_background = true;
+    bool dump_gecko_text = false;
+    bool show_rc_updates = false;
   };
 
   enum class Hack : std::uint8_t {
     fix_480p = 0, block_online_updates = 1, block_disc_updates = 2, block_disc_autoboot = 3,
     auto_press_a = 4, remove_deflicker = 5, move_disc_channel = 6, remove_nocopy_save_protection = 7,
     replace_health_screen = 8, no_background_music = 9, wiimmfi = 10, region_free_everything = 11
-  };
-
-  struct HackOverride {
-    Hack hack;
-    bool enabled;
   };
 
 }

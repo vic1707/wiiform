@@ -63,20 +63,19 @@ namespace {
     return ticket;
   }
 
-  void check_destinations(NandBin& nand, QTreeWidgetItem* tree, const priiloader::Settings& settings) {
-    const auto autoboot = settings.autoboot;
-    const auto return_to = settings.return_to;
-    if (autoboot == "file" || return_to == "file") {
+  void check_destinations(NandBin& nand, QTreeWidgetItem* tree, const wiiform::PriiloaderSettings& settings) {
+    using wiiform::Autoboot;
+    if (settings.autoboot == Autoboot::file || settings.return_to == wiiform::ReturnTo::file) {
       require(!read_authenticated_file(nand, find_path(tree, menu + "/data/main.bin"), menu_app_limit).isEmpty(),
               "Priiloader file boot needs an installed executable");
     }
-    if (autoboot == "homebrew_channel") {
+    if (settings.autoboot == Autoboot::homebrew_channel) {
       bool present = false;
       for (const auto* tid : {"48415858", "4a4f4449", "af1bf516", "4c554c5a", "4f484243"})
         present |= find_path(tree, QString("/title/00010001/") + tid + "/content/title.tmd") != nullptr;
       require(present, "Priiloader Homebrew Channel autoboot needs an installed Homebrew Channel");
     }
-    if (autoboot == "bootmii_ios") {
+    if (settings.autoboot == Autoboot::bootmii_ios) {
       const auto bootmii = read_authenticated_file(
           nand, find_path(tree, "/title/00000001/000000fe/content/title.tmd"), tmd_limit);
       require(bootmii.size() >= 0x1e4 && qFromBigEndian<quint16>(bootmii.constData() + 0x1dc) == 31338,
@@ -126,9 +125,8 @@ namespace {
 
   void plan_hacks(NandBin& nand, QTreeWidgetItem* tree, int version,
                   std::span<const std::uint8_t> definitions,
-                  const QMap<QString, bool>& requested,
+                  std::span<const wiiform::Hack> enabled_hacks,
                   QMap<QString, PendingFile>& files) {
-    if (requested.isEmpty()) return;
     const auto* definition_entry = find_path(tree, priiloader::hack_definitions_path);
     const auto* state_entry = find_path(tree, priiloader::hack_states_path);
     require(bool(definition_entry) == bool(state_entry),
@@ -151,11 +149,9 @@ namespace {
     }
 
     require(!definitions.empty(), "Priiloader hacks need pinned hacks_hash.ini bytes");
-    auto overrides = requested;
-    if (recognized_legacy && !overrides.contains("480p graphics fix in system menu"))
-      overrides["480p graphics fix in system menu"] = previous_states.at(0) == 1;
-    auto desired = priiloader::prepare_hacks(definitions, version, overrides,
-                                             !definition_entry || recognized_legacy ? QByteArray{} : previous_states);
+    // The request is the complete desired state; existing hack toggles are
+    // never inherited. Any supported hack not requested is written off.
+    const auto desired = priiloader::prepare_hacks(definitions, version, enabled_hacks);
     if (definition_entry) {
       require(previous_definitions == desired.definitions || recognized_legacy,
               "Existing Priiloader hack definitions differ from the pinned 0.10.0 release");
@@ -222,8 +218,8 @@ namespace {
 namespace priiloader {
   void apply(std::span<std::uint8_t> image, std::span<const std::uint8_t> app_bytes,
              std::span<const std::uint8_t> definition_bytes,
-             const QMap<QString, QString>& setting_overrides,
-             const QMap<QString, bool>& hack_overrides) {
+             const wiiform::PriiloaderSettings& settings,
+             std::span<const wiiform::Hack> enabled_hacks) {
     require(app_bytes.empty() || app_bytes.size() == release_app_size,
             "Expected the extracted Priiloader 0.10.0 Wii app");
     const auto app = QByteArray::fromRawData(reinterpret_cast<const char*>(app_bytes.data()),
@@ -263,25 +259,19 @@ namespace priiloader {
       files["tmd"] = {tmd_path, patched_tmd(tmd, app), 0, true};
     } else {
       require_installed_menu(nand, tree.get(), evidence);
-      require(app.isEmpty(), "Priiloader is already installed, so no installer app is needed");
     }
 
     const auto* settings_entry = find_path(tree.get(), settings_path);
-    const auto settings_before = settings_entry
-        ? read_authenticated_file(nand, settings_entry, 32)
-        : default_settings();
-    const auto settings_bytes = patch_settings(settings_before, setting_overrides);
-    const auto settings = read_settings(settings_bytes);
+    // Start from pinned 0.10.0 defaults on every application, replacing prior
+    // settings deterministically, including fields hidden by the recipe API.
+    const auto settings_bytes = encode_settings(settings);
     check_destinations(nand, tree.get(), settings);
-    if ((!installing || !setting_overrides.isEmpty()) &&
-        (!settings_entry || settings_bytes != settings_before)) {
+    if (!settings_entry || read_authenticated_file(nand, settings_entry, 32) != settings_bytes) {
       files["settings"] = {settings_path, settings_bytes, NAND_RW, false,
                             settings_entry ? entry_id(settings_entry) : quint16(0)};
     }
 
-    if (!hack_overrides.isEmpty()) {
-      plan_hacks(nand, tree.get(), version, definition_bytes, hack_overrides, files);
-    }
+    plan_hacks(nand, tree.get(), version, definition_bytes, enabled_hacks, files);
 
     check_buffer_capacity(nand, tree.get(), working.layout.orphan_entries, files);
     if (files.isEmpty()) return;

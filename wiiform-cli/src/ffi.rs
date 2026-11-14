@@ -8,13 +8,6 @@ pub mod bridge {
         LegacyChannel,
     }
 
-    #[repr(u8)]
-    enum BoolOverride {
-        Keep,
-        Off,
-        On,
-    }
-
     struct SystemSettings<'a> {
         nickname: &'a str,
         language: u8,
@@ -30,17 +23,12 @@ pub mod bridge {
         return_to: u8,
         shutdown_to: u8,
         preferred_mount_point: u8,
-        stop_disc: BoolOverride,
-        lid_slot_on_error: BoolOverride,
-        ignore_shutdown_mode: BoolOverride,
-        black_background: BoolOverride,
-        dump_gecko_text: BoolOverride,
-        show_rc_updates: BoolOverride,
-    }
-
-    struct HackOverride {
-        hack: u8,
-        enabled: bool,
+        stop_disc: bool,
+        lid_slot_on_error: bool,
+        ignore_shutdown_mode: bool,
+        black_background: bool,
+        dump_gecko_text: bool,
+        show_rc_updates: bool,
     }
 
     struct StockOptions {
@@ -92,7 +80,7 @@ pub mod bridge {
             app_bytes: &[u8],
             hacks_hash_ini: &[u8],
             settings: &PriiloaderSettings,
-            hacks: &[HackOverride],
+            enabled_hacks: &[u8],
         ) -> Result<()>;
         fn prepare_backupmii(nand: &mut [u8], expected: &StockIdentity) -> Result<Vec<u8>>;
     }

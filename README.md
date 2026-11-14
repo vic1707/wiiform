@@ -73,7 +73,11 @@ The output must be a new directory. A successful build publishes `nand.bin`
 and its matching BootMii `keys.bin` together. Setup or display settings generate
 a fresh SYSCONF and mark first-run setup complete. Pair Wii Remotes again after
 restoring a prepared image. A stock recipe without either section uses the
-console's first-run setup.
+console's first-run setup. The release archive includes the pinned Priiloader
+assets. When running from a checkout, run `mise run assets:priiloader` once before
+using a Priiloader recipe. A `priiloader` section requires `settings`. Use
+`settings: {}` for the pinned defaults. Each application replaces the settings
+and disables unspecified hacks.
 
 The seed contains plaintext console key material. Save the output privately.
 For a footerless backup, place its matching 1,024-byte `keys.bin` next to it
@@ -89,26 +93,30 @@ or pass `--keys`.
 wii-nand install-title INPUT OUTPUT TITLE_ID VERSION
 wii-nand install-wad INPUT OUTPUT PACKAGE.wad --sha256 SHA256
 wii-nand remove-title INPUT OUTPUT TITLE_ID
-wii-nand install-priiloader INPUT OUTPUT --app PRIILOADER.app
+wii-nand install-priiloader INPUT OUTPUT
 ```
 
-Each edit requires a new output path. Run `wii-nand <command> --help` for
-settings, signature policy and Priiloader hack options. An edit uses about
-528 MiB of memory for the working NAND plus the payload being installed.
 `wii-nand install-title` uses the same `WIIFORM_NUS_CACHE` and
 `WIIFORM_NUS_OFFLINE` environment variables as `wiiform`.
 
+Each edit requires a new output path. Run `wii-nand <command> --help` for
+settings, signature policy and Priiloader hack options. The Priiloader edit
+applies its defaults for unspecified settings and disables unspecified hacks.
+An edit uses about 528 MiB of memory for the working NAND plus the payload.
 
 ## Release packaging
 
 Run `mise run package` on macOS arm64 or Linux x86_64. The task builds the
 commands and writes an archive and its SHA-256 file to `dist/`. Set
-`WIIFORM_DIST_DIR` to choose a different output directory.
+`WIIFORM_DIST_DIR` to choose a different output directory. The package task
+prepares the pinned Priiloader assets from the upstream release ZIP. Set
+`WIIFORM_PRIILOADER_ARCHIVE` to a local copy to package without fetching it.
 
 The archive includes the three commands under `bin/`, runtime libraries under
-`lib/`, and public C++ headers under `include/`. Keep the extracted directory
-layout together. See the [migration guide](docs/migration.md) for the old recipe
-mapping and the mise configuration for GitHub releases.
+`lib/`, Priiloader assets under `share/wiiform/`, and public C++ headers under
+`include/`. Keep the extracted directory layout together. See the
+[migration guide](docs/migration.md) for the old recipe mapping and the mise
+configuration for GitHub releases.
 
 ## License and attribution
 

@@ -9,7 +9,6 @@ namespace wiiform::ffi {
   enum class WadPolicy : std::uint8_t;
   struct SystemSettings;
   struct PriiloaderSettings;
-  struct HackOverride;
   struct StockOptions;
   struct StockIdentity;
   struct InstalledWad;
@@ -27,6 +26,6 @@ namespace wiiform::ffi {
                    WadPolicy policy) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);
   void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
-                       const PriiloaderSettings& settings, rust::Slice<const HackOverride> hacks);
+                       const PriiloaderSettings& settings, Bytes enabled_hacks);
   auto prepare_backupmii(Nand nand, const StockIdentity& expected) -> rust::Vec<std::uint8_t>;
 }

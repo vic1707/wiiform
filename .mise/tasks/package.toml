@@ -1,6 +1,6 @@
 [package]
 description = "Build a relocatable archive for this platform"
-depends = ["build", "schema:check"]
+depends = ["build", "schema:check", "assets:priiloader"]
 run = '''
 set -eu
 case "$(uname -s)-$(uname -m)" in
@@ -32,6 +32,8 @@ case "$platform" in
 esac
 
 cp LICENSE THIRD_PARTY.md README.md "$stage/"
+mkdir -p "$stage/share/wiiform"
+cp -R build/share/wiiform/priiloader "$stage/share/wiiform/"
 cp -R docs "$stage/"
 mkdir "$stage/include"
 cp -R wiiform-lib/include/wiiform "$stage/include/"
@@ -40,3 +42,9 @@ tar -C "$scratch" -czf "$scratch/$archive" "$bundle"
 mv "$scratch/$archive" "$scratch/$archive.sha256" "$output/"
 printf '%s\n' "$output/$archive" "$output/$archive.sha256"
 '''
+
+["assets:priiloader"]
+description = "Prepare the pinned Priiloader app and definitions for checkout or release use"
+sources = [".mise/tasks/.package/priiloader.py"]
+outputs = ["build/share/wiiform/priiloader/priiloader.app", "build/share/wiiform/priiloader/hacks_hash.ini", "build/share/wiiform/priiloader/LICENSE"]
+run = "python3 .mise/tasks/.package/priiloader.py build/share/wiiform/priiloader"

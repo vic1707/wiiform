@@ -80,6 +80,9 @@ jobs:
           unpacked="$RUNNER_TEMP/relocated Wiiform"
           mkdir "$unpacked"
           tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
+          test -s "$unpacked/share/wiiform/priiloader/priiloader.app"
+          test -s "$unpacked/share/wiiform/priiloader/hacks_hash.ini"
+          test -s "$unpacked/share/wiiform/priiloader/LICENSE"
           fixture="$RUNNER_TEMP/synthetic"
           build/bin/nand-buffer-regressions --make-fixtures "$fixture"
           docker run --rm --network none -v "$unpacked:/opt/wiiform:ro" \
@@ -98,6 +101,9 @@ jobs:
           unpacked="$RUNNER_TEMP/relocated Wiiform"
           mkdir "$unpacked"
           tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
+          test -s "$unpacked/share/wiiform/priiloader/priiloader.app"
+          test -s "$unpacked/share/wiiform/priiloader/hacks_hash.ini"
+          test -s "$unpacked/share/wiiform/priiloader/LICENSE"
           env -i PATH=/usr/bin:/bin "$unpacked/bin/wiiform" --version
           env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-seed" --version
           fixture="$RUNNER_TEMP/synthetic"

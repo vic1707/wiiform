@@ -15,7 +15,7 @@ pub use settings::parse_on_off;
 pub use settings::{Autoboot, MountPoint, PriiloaderSettings, ReturnTo, ShutdownTo};
 
 /// Priiloader installation and configuration.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PriiloaderFile {
     /// Optional prebuilt Priiloader installer app, relative to the recipe file.
@@ -26,17 +26,11 @@ pub struct PriiloaderFile {
     )]
     #[schemars(with = "crate::schema::NonNull<std::path::PathBuf>")]
     pub app: Option<PathBuf>,
-    /// Optional settings overrides.
-    #[serde(default)]
+    /// Complete settings. This section is required; omitted fields use pinned Priiloader defaults.
     pub settings: PriiloaderSettings,
-    /// Optional exact-name hack toggles.
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<HackSettings>")]
-    pub hacks: Option<HackSettings>,
+    /// Complete state for supported hacks. Unlisted hacks default to off.
+    #[serde(default)]
+    pub hacks: HackSettings,
 }
 
 /// Resolved Priiloader file, settings and hack values.
@@ -44,5 +38,5 @@ pub struct PriiloaderFile {
 pub struct Priiloader {
     pub app: Option<PathBuf>,
     pub settings: PriiloaderSettings,
-    pub hacks: Option<HackSettings>,
+    pub hacks: HackSettings,
 }

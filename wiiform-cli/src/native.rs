@@ -55,18 +55,6 @@ pub fn create_stock(
     )?)
 }
 
-impl From<bool> for ffi::BoolOverride {
-    fn from(value: bool) -> Self {
-        if value { Self::On } else { Self::Off }
-    }
-}
-
-impl From<Option<bool>> for ffi::BoolOverride {
-    fn from(value: Option<bool>) -> Self {
-        value.map_or(Self::Keep, Self::from)
-    }
-}
-
 pub fn apply_system_settings(
     nand: &mut [u8],
     menu: Menu,
@@ -137,37 +125,27 @@ pub fn apply_priiloader(
     app: &[u8],
     definitions: &[u8],
     settings: &PriiloaderSettings,
-    hacks: Option<&HackSettings>,
+    hacks: &HackSettings,
 ) -> Result<()> {
-    const KEEP: u8 = u8::MAX;
     let settings = ffi::PriiloaderSettings {
-        autoboot: settings.autoboot.map_or(KEEP, |value| value as u8),
-        return_to: settings.return_to.map_or(KEEP, |value| value as u8),
-        shutdown_to: settings.shutdown_to.map_or(KEEP, |value| value as u8),
-        preferred_mount_point: settings
-            .preferred_mount_point
-            .map_or(KEEP, |value| value as u8),
-        stop_disc: settings.stop_disc.into(),
-        lid_slot_on_error: settings.lid_slot_on_error.into(),
-        ignore_shutdown_mode: settings.ignore_shutdown_mode.into(),
-        black_background: settings.black_background.into(),
-        dump_gecko_text: settings.dump_gecko_text.into(),
-        show_rc_updates: settings.show_rc_updates.into(),
+        autoboot: settings.autoboot as u8,
+        return_to: settings.return_to as u8,
+        shutdown_to: settings.shutdown_to as u8,
+        preferred_mount_point: settings.preferred_mount_point as u8,
+        stop_disc: settings.stop_disc,
+        lid_slot_on_error: settings.lid_slot_on_error,
+        ignore_shutdown_mode: settings.ignore_shutdown_mode,
+        black_background: settings.black_background,
+        dump_gecko_text: settings.dump_gecko_text,
+        show_rc_updates: settings.show_rc_updates,
     };
-    let overrides: Vec<_> = hacks
-        .into_iter()
-        .flat_map(HackSettings::overrides)
-        .map(|(hack, enabled)| ffi::HackOverride {
-            hack: hack as u8,
-            enabled,
-        })
-        .collect();
+    let enabled_hacks: Vec<_> = hacks.enabled().map(|hack| hack as u8).collect();
     Ok(ffi::apply_priiloader(
         nand,
         app,
         definitions,
         &settings,
-        &overrides,
+        &enabled_hacks,
     )?)
 }
 

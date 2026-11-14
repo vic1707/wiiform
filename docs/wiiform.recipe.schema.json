@@ -83,56 +83,68 @@
       "additionalProperties": false
     },
     "HackSettings": {
-      "description": "Explicit System Menu hack overrides.",
+      "description": "Complete supported System Menu hack state. Each hack defaults to off.",
       "type": "object",
       "properties": {
         "auto_press_a": {
           "description": "Auto-press A at the health screen.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "block_disc_autoboot": {
           "description": "Block disc autoboot.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "block_disc_updates": {
           "description": "Block disc updates.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "block_online_updates": {
           "description": "Block online updates.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "fix_480p": {
           "description": "Fix 480p graphics in the System Menu.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "move_disc_channel": {
           "description": "Move the Disc Channel.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "no_background_music": {
           "description": "Disable System Menu background music.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "region_free_everything": {
           "description": "Enable Region Free EVERYTHING (Japanese menu uses the JP hack name).",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "remove_deflicker": {
           "description": "Remove deflicker.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "remove_nocopy_save_protection": {
           "description": "Remove NoCopy save protection.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "replace_health_screen": {
           "description": "Replace the health screen with Backmenu.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "wiimmfi": {
           "description": "Apply the Wiimmfi patch.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false
@@ -188,50 +200,86 @@
           "type": "string"
         },
         "hacks": {
-          "description": "Optional exact-name hack toggles.",
-          "$ref": "#/$defs/HackSettings"
+          "description": "Complete state for supported hacks. Unlisted hacks default to off.",
+          "$ref": "#/$defs/HackSettings",
+          "default": {
+            "auto_press_a": false,
+            "block_disc_autoboot": false,
+            "block_disc_updates": false,
+            "block_online_updates": false,
+            "fix_480p": false,
+            "move_disc_channel": false,
+            "no_background_music": false,
+            "region_free_everything": false,
+            "remove_deflicker": false,
+            "remove_nocopy_save_protection": false,
+            "replace_health_screen": false,
+            "wiimmfi": false
+          }
         },
         "settings": {
-          "description": "Optional settings overrides.",
-          "$ref": "#/$defs/PriiloaderSettings",
-          "default": {}
+          "description": "Complete settings. This section is required; omitted fields use pinned Priiloader defaults.",
+          "$ref": "#/$defs/PriiloaderSettings"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "required": [
+        "settings"
+      ]
     },
     "PriiloaderSettings": {
-      "description": "Priiloader settings written to its settings file.",
+      "description": "Complete Priiloader settings written to its settings file.\n\nMissing recipe values use the pinned 0.10.0 defaults. Applying this type\nwrites every configurable setting, replacing values already present in NAND.",
       "type": "object",
       "properties": {
         "autoboot": {
-          "$ref": "#/$defs/Autoboot"
+          "description": "Autoboot destination. Defaults to the System Menu.",
+          "$ref": "#/$defs/Autoboot",
+          "default": "system_menu"
         },
         "black_background": {
-          "type": "boolean"
+          "description": "Use a black background. The pinned default is on.",
+          "type": "boolean",
+          "default": true
         },
         "dump_gecko_text": {
-          "type": "boolean"
+          "description": "Dump Gecko output. Defaults to off.",
+          "type": "boolean",
+          "default": false
         },
         "ignore_shutdown_mode": {
-          "type": "boolean"
+          "description": "Ignore standby mode. Defaults to off.",
+          "type": "boolean",
+          "default": false
         },
         "lid_slot_on_error": {
-          "type": "boolean"
+          "description": "Light the drive slot when an error occurs. Defaults to off.",
+          "type": "boolean",
+          "default": false
         },
         "preferred_mount_point": {
-          "$ref": "#/$defs/MountPoint"
+          "description": "Preferred storage device. Defaults to automatic.",
+          "$ref": "#/$defs/MountPoint",
+          "default": "auto"
         },
         "return_to": {
-          "$ref": "#/$defs/ReturnTo"
+          "description": "Destination used by Priiloader's Return to option.",
+          "$ref": "#/$defs/ReturnTo",
+          "default": "system_menu"
         },
         "show_rc_updates": {
-          "type": "boolean"
+          "description": "Show Priiloader update notices. Defaults to off.",
+          "type": "boolean",
+          "default": false
         },
         "shutdown_to": {
-          "$ref": "#/$defs/ShutdownTo"
+          "description": "Shutdown destination. Defaults to none.",
+          "$ref": "#/$defs/ShutdownTo",
+          "default": "none"
         },
         "stop_disc": {
-          "type": "boolean"
+          "description": "Stop the disc drive at startup. Defaults to off.",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false

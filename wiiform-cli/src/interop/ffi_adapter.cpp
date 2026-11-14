@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "wiiform/src/ffi.rs.h"
 #include <wiiform/core.hpp>
-#include <stdexcept>
 
 namespace wiiform::ffi {
 namespace {
@@ -10,21 +9,6 @@ namespace {
     return {bytes.data(), bytes.size()};
   }
 
-  auto toggle(BoolOverride value) -> std::optional<bool> {
-    switch (value) {
-      case BoolOverride::Keep: return std::nullopt;
-      case BoolOverride::Off: return false;
-      case BoolOverride::On: return true;
-    }
-    throw std::runtime_error("Unsupported toggle");
-  }
-
-  template<class Enum>
-  auto option(std::uint8_t value) -> std::optional<Enum> {
-    // All current Priiloader choice codes are smaller than this reserved value.
-    if (value == 0xff) return std::nullopt;
-    return static_cast<Enum>(value);
-  }
 }
 
 auto extract_seed(Bytes nand, Bytes sidecar_keys) -> rust::String {
@@ -64,15 +48,17 @@ void remove_title(Nand nand, std::uint64_t title_id) {
 }
 
 void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
-                     const PriiloaderSettings& settings, rust::Slice<const HackOverride> hacks) {
+                     const PriiloaderSettings& settings, Bytes enabled_hacks) {
   const wiiform::PriiloaderSettings overrides{
-      option<wiiform::Autoboot>(settings.autoboot), option<wiiform::ReturnTo>(settings.return_to),
-      option<wiiform::ShutdownTo>(settings.shutdown_to), option<wiiform::MountPoint>(settings.preferred_mount_point),
-      toggle(settings.stop_disc), toggle(settings.lid_slot_on_error), toggle(settings.ignore_shutdown_mode),
-      toggle(settings.black_background), toggle(settings.dump_gecko_text), toggle(settings.show_rc_updates)};
-  std::vector<wiiform::HackOverride> requested;
-  requested.reserve(hacks.size());
-  for (const auto& hack : hacks) requested.push_back({static_cast<wiiform::Hack>(hack.hack), hack.enabled});
+      static_cast<wiiform::Autoboot>(settings.autoboot),
+      static_cast<wiiform::ReturnTo>(settings.return_to),
+      static_cast<wiiform::ShutdownTo>(settings.shutdown_to),
+      static_cast<wiiform::MountPoint>(settings.preferred_mount_point),
+      settings.stop_disc, settings.lid_slot_on_error, settings.ignore_shutdown_mode,
+      settings.black_background, settings.dump_gecko_text, settings.show_rc_updates};
+  std::vector<wiiform::Hack> requested;
+  requested.reserve(enabled_hacks.size());
+  for (const auto hack : enabled_hacks) requested.push_back(static_cast<wiiform::Hack>(hack));
   core::apply_priiloader(span(nand), span(app), span(definitions), overrides, requested);
 }
 

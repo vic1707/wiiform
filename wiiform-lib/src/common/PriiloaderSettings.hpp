@@ -2,17 +2,9 @@
 #pragma once
 
 #include <QByteArray>
-#include <QMap>
-#include <QString>
+#include <wiiform/types.hpp>
 
 namespace priiloader {
-  struct Settings {
-    QString autoboot;
-    QString return_to;
-  };
-
-  // Decodes only the pinned Priiloader 0.10.0 loader.ini layout.
-  auto read_settings(const QByteArray& bytes) -> Settings;
-  auto default_settings() -> QByteArray;
-  auto patch_settings(QByteArray bytes, const QMap<QString, QString>& overrides) -> QByteArray;
-} // namespace priiloader
+  // Encodes the pinned Priiloader 0.10.0 loader.ini layout.
+  auto encode_settings(const wiiform::PriiloaderSettings& settings) -> QByteArray;
+}

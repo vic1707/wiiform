@@ -2,8 +2,7 @@
 #pragma once
 
 #include <QByteArray>
-#include <QMap>
-#include <QString>
+#include <wiiform/types.hpp>
 #include <cstdint>
 #include <span>
 
@@ -17,7 +16,6 @@ namespace priiloader {
   };
 
   auto prepare_hacks(std::span<const std::uint8_t> definitions, int menu_version,
-                     const QMap<QString, bool>& overrides,
-                     const QByteArray& previous_states = {}) -> HackFiles;
+                     std::span<const wiiform::Hack> enabled_hacks) -> HackFiles;
   auto legacy_fix_480p_definitions() -> QByteArray;
 }

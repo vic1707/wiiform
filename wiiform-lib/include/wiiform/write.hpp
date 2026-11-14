@@ -10,6 +10,8 @@
 namespace wiiform::core {
   // The caller owns the buffers. Validation rejections precede writes; discard
   // the working buffer if an exception occurs after a write has started.
+  // An empty NUS cache path keeps downloads in memory. Offline requests
+  // require a populated cache.
   auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
                     const std::string& nus_cache_dir, Menu menu, BootPolicy boot_policy,
                     bool offline) -> StockIdentity;
@@ -21,7 +23,7 @@ namespace wiiform::core {
   void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id);
   void apply_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app,
                          std::span<const std::uint8_t> hacks_hash_ini, const PriiloaderSettings& settings,
-                         std::span<const HackOverride> hacks);
+                         std::span<const Hack> enabled_hacks);
   auto prepare_backupmii(std::span<std::uint8_t> nand, const StockIdentity& expected)
       -> std::vector<std::uint8_t>;
 

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! priiloader_hacks {
     ($(#[doc = $doc:literal] $variant:ident = $code:literal => $field:ident),+ $(,)?) => {
         /// A hack supported by the pinned Priiloader definitions.
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
         #[repr(u8)]
         pub enum PriiloaderHack {
@@ -26,40 +26,28 @@ macro_rules! priiloader_hacks {
             }
         }
 
-        /// Explicit System Menu hack overrides.
+        /// Complete supported System Menu hack state. Each hack defaults to off.
         #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
-        #[serde(deny_unknown_fields)]
+        #[serde(default, deny_unknown_fields)]
         pub struct HackSettings {
             $(
                 #[doc = $doc]
-                #[serde(
-                    default,
-                    deserialize_with = "crate::schema::non_null_option",
-                    skip_serializing_if = "Option::is_none"
-                )]
-                #[schemars(with = "crate::schema::NonNull<bool>")]
-                pub $field: Option<bool>,
+                #[serde(default)]
+                pub $field: bool,
             )+
         }
 
         impl HackSettings {
-            /// Set a hack once. Return false if the caller already specified it.
-            pub fn set(&mut self, hack: PriiloaderHack, enabled: bool) -> bool {
-                let field = match hack {
-                    $(PriiloaderHack::$variant => &mut self.$field),+
-                };
-                if field.is_some() {
-                    return false;
+            /// Set one hack in the complete desired state.
+            pub fn set(&mut self, hack: PriiloaderHack, enabled: bool) {
+                match hack {
+                    $(PriiloaderHack::$variant => self.$field = enabled),+
                 }
-                *field = Some(enabled);
-                true
             }
 
-            /// Iterate over the requested overrides in native code order.
-            pub fn overrides(&self) -> impl Iterator<Item = (PriiloaderHack, bool)> {
-                [$(self.$field.map(|enabled| (PriiloaderHack::$variant, enabled))),+]
-                    .into_iter()
-                    .flatten()
+            /// Iterate over enabled hacks in native code order.
+            pub fn enabled(&self) -> impl Iterator<Item = PriiloaderHack> {
+                [$(self.$field.then_some(PriiloaderHack::$variant)),+].into_iter().flatten()
             }
         }
     };

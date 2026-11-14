@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use std::path::{Path, PathBuf};
+use std::{collections::HashSet, path::PathBuf};
 use wiiform::{
-    native::{self, CacheMode, WadPolicy},
+    native::{self, WadPolicy},
+    priiloader_payload,
     recipe::{HackSettings, PriiloaderHack, PriiloaderSettings, Sha256, TitleId, parse_on_off},
     workflow::{nus_environment, publish_edit, read_bounded, validate_output},
 };
@@ -62,10 +63,10 @@ enum Command {
     InstallPriiloader {
         #[command(flatten)]
         image: ImagePaths,
-        /// Extracted Wii Priiloader 0.10.0 app, required for a fresh install.
+        /// Override the bundled Wii Priiloader 0.10.0 app.
         #[arg(long)]
         app: Option<PathBuf>,
-        /// Pinned release hacks_hash.ini.
+        /// Override the bundled, pinned hacks_hash.ini.
         #[arg(long)]
         hack_definitions: Option<PathBuf>,
         #[command(flatten)]
@@ -90,20 +91,16 @@ fn parse_hack(value: &str) -> Result<HackOverride> {
 
 fn hack_settings(overrides: Vec<HackOverride>) -> Result<HackSettings> {
     let mut hacks = HackSettings::default();
+    let mut seen = HashSet::new();
     for HackOverride { hack, enabled } in overrides {
         ensure!(
-            hacks.set(hack, enabled),
+            seen.insert(hack),
             "repeated Priiloader hack {}",
             hack.as_str()
         );
+        hacks.set(hack, enabled);
     }
     Ok(hacks)
-}
-
-fn optional_bytes(path: Option<&Path>, limit: usize) -> Result<Vec<u8>> {
-    path.map(|path| read_bounded(path, 1, limit))
-        .transpose()
-        .map(Option::unwrap_or_default)
 }
 
 fn main() -> Result<()> {
@@ -114,13 +111,13 @@ fn main() -> Result<()> {
             version,
         } => {
             let (cache, offline) = nus_environment()?;
-            anyhow::ensure!(
-                cache.as_os_str().is_empty() || cache.is_dir(),
-                "NUS cache must be an existing directory"
-            );
             if !offline && !cache.as_os_str().is_empty() {
                 std::fs::create_dir_all(&cache).context("cannot create NUS cache")?;
             }
+            ensure!(
+                cache.as_os_str().is_empty() || cache.is_dir(),
+                "NUS cache must be an existing directory"
+            );
             image.edit(|nand| {
                 native::install_nus_title(nand, &cache, title_id.as_u64(), version, offline)
             })
@@ -152,16 +149,35 @@ fn main() -> Result<()> {
             settings,
             hacks,
         } => {
-            let hacks = if hacks.is_empty() {
-                None
-            } else {
-                Some(hack_settings(hacks)?)
-            };
+            let hacks = hack_settings(hacks)?;
             image.edit(|nand| {
-                let app = optional_bytes(app.as_deref(), 747_968)?;
-                let definitions = optional_bytes(hack_definitions.as_deref(), 64 * 1024)?;
-                native::apply_priiloader(nand, &app, &definitions, &settings, hacks.as_ref())
+                let (app, definitions) =
+                    priiloader_payload::load(app.as_deref(), hack_definitions.as_deref())?;
+                native::apply_priiloader(nand, &app, &definitions, &settings, &hacks)
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn priiloader_cli_uses_pinned_defaults_and_accepts_off() {
+        let parse_settings = |args: &[&str]| {
+            let cli = Cli::try_parse_from(
+                ["wii-nand", "install-priiloader", "input", "output"]
+                    .into_iter()
+                    .chain(args.iter().copied()),
+            )
+            .unwrap();
+            let Command::InstallPriiloader { settings, .. } = cli.command else {
+                unreachable!()
+            };
+            settings
+        };
+        assert_eq!(parse_settings(&[]), PriiloaderSettings::default());
+        assert!(!parse_settings(&["--black-background", "off"]).black_background);
     }
 }

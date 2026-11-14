@@ -33,6 +33,8 @@ priiloader:
   # Optional prebuilt installer app path:
   # app: priiloader.app
   settings:
+    # Every configurable Priiloader setting is written. Omitted keys use the
+    # pinned 0.10.0 defaults; prior NAND values are not preserved.
     autoboot: system_menu # disabled/homebrew_channel/bootmii_ios/system_menu/file
     return_to: system_menu # system_menu/priiloader/autoboot/file
     shutdown_to: none # none/priiloader/autoboot
@@ -40,10 +42,11 @@ priiloader:
     stop_disc: false
     lid_slot_on_error: false
     ignore_shutdown_mode: false
-    black_background: false
+    black_background: true
     dump_gecko_text: false
     show_rc_updates: false
   hacks:
+    # Hacks default to off. This is the complete desired state for supported hacks.
     fix_480p: true
     block_online_updates: false
     block_disc_updates: false

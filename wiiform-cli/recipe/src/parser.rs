@@ -274,7 +274,7 @@ mod tests {
         assert!(minimal.priiloader().is_none());
 
         let prepared = parse(
-            "menu: 4.3E\nsetup: {}\ndisplay: {}\npriiloader: {}",
+            "menu: 4.3E\nsetup: {}\ndisplay: {}\npriiloader: {settings: {}}",
             Some(Menu::J43),
         )
         .unwrap();
@@ -284,12 +284,17 @@ mod tests {
         assert_eq!(setup.language_for(Menu::J43), crate::Language::Ja);
         assert_eq!(setup.sensor_bar, crate::SensorBar::Above);
         assert_eq!(prepared.display(), Some(&crate::Display::default()));
-        assert_eq!(prepared.priiloader().unwrap().settings.stop_disc, None);
+        let priiloader = prepared.priiloader().unwrap();
+        assert!(!priiloader.settings.stop_disc);
+        assert!(priiloader.settings.black_background);
+        assert_eq!(priiloader.hacks.enabled().next(), None);
 
         for fields in [
             "setup: null",
             "display: null",
             "priiloader: null",
+            "priiloader: {}",
+            "priiloader: {settings: null}",
             "setup: {nickname: null}",
             "setup: {nickname: ''}",
             "setup: {language: null}",
@@ -314,6 +319,10 @@ mod tests {
             setup_schema["properties"]["language"]
                 .get("default")
                 .is_none()
+        );
+        assert_eq!(
+            schema["$defs"]["PriiloaderFile"]["required"],
+            serde_json::json!(["settings"])
         );
         assert!(
             schema["$defs"]["PriiloaderSettings"]

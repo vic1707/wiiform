@@ -50,13 +50,13 @@ The project-owned C++ library wraps the following areas:
 - **Priiloader** is included as an upstream git submodule for source access and
   the Wii-side installer reference, pinned to commit
   `2b70b3693e9dc3e144db1a73224921d405081663` (0.10.0). Wiiform's host-side
-  NAND installation and settings support are project code. Runtime installer
-  app and hack-definition assets are verified against pinned hashes before
-  use. Building that app from the submodule is an optional development task
-  and additionally requires devkitPPC, libogc, and their environment setup;
-  normal host builds use the pinned release payload.
+  NAND installation and settings support are project code. Release packaging
+  extracts the installer app, hack definitions, and license from the pinned
+  upstream ZIP. The native writer verifies the payload hashes. Building the app
+  from the submodule is an optional development task and requires devkitPPC,
+  libogc, and their environment setup.
 - **Rust dependencies** provide CLI parsing (`clap`), serialization and JSON
-  (`serde`, `serde_json`), recipe YAML parsing (`yaml-rust2`), schema generation
+  (`serde`, `serde_json`), YAML parsing (`serde-saphyr`), schema generation
   (`schemars`), hashing (`sha2`), temporary files (`tempfile`), C++ interop
   (`cxx`), and supporting crates. Exact versions are recorded in Cargo files.
 
@@ -98,6 +98,11 @@ SYSCONF using recipe values and menu defaults. Use a two-letter country code
 such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
 parsers interpret it as a boolean. Existing quoted Wii codes such as "110"
 still work. Pair Wii Remotes after restore.
+
+Use `WIIFORM_NUS_CACHE` for a persistent title cache and `WIIFORM_NUS_OFFLINE=1`
+to require cache hits. Without either variable, title downloads stay in memory.
+A Priiloader recipe requires a `settings` mapping. Use `settings: {}` to apply
+the pinned defaults. Priiloader edits replace previous settings and hack states.
 
 ## Release archive and mise
 

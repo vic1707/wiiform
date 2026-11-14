@@ -6,17 +6,15 @@
 #include <Display.hpp>
 #include <Factory.hpp>
 #include <Install.hpp>
+#include <Inspection.hpp>
+#include <Layout.hpp>
+#include <NandBuffer.hpp>
 #include <Priiloader.hpp>
 #include <Remove.hpp>
-#include <Seed.hpp>
-#include <WorkingImage.hpp>
 
 #include <QCryptographicHash>
-#include <QMap>
-#include <QTreeWidgetItem>
 #include <cstring>
 #include <limits>
-#include <memory>
 #include <stdexcept>
 
 namespace wiiform::core {
@@ -51,59 +49,6 @@ namespace {
       case BootPolicy::preserve_source: return inspect::BootPolicy::PreserveSource;
     }
     throw std::runtime_error("Unsupported boot policy");
-  }
-
-  template<class Enum, std::size_t N>
-  auto option_name(Enum value, const std::array<const char*, N>& names) -> QString {
-    const auto index = static_cast<std::size_t>(value);
-    require(index < names.size(), "Unsupported setting value");
-    return QString::fromLatin1(names[index]);
-  }
-
-  auto priiloader_settings(const PriiloaderSettings& value) -> QMap<QString, QString> {
-    QMap<QString, QString> result;
-    const auto toggle = [&](const QString& key, std::optional<bool> state) {
-      if (state) result.insert(key, *state ? "on" : "off");
-    };
-    if (value.autoboot)
-      result["autoboot"] = option_name(*value.autoboot,
-          std::array{"disabled", "homebrew_channel", "bootmii_ios", "system_menu", "file"});
-    if (value.return_to)
-      result["return_to"] = option_name(*value.return_to, std::array{"system_menu", "priiloader", "autoboot", "file"});
-    if (value.shutdown_to)
-      result["shutdown_to"] = option_name(*value.shutdown_to, std::array{"none", "priiloader", "autoboot"});
-    if (value.preferred_mount_point)
-      result["preferred_mount_point"] = option_name(*value.preferred_mount_point, std::array{"auto", "sd", "usb"});
-    toggle("stop_disc", value.stop_disc);
-    toggle("lid_slot_on_error", value.lid_slot_on_error);
-    toggle("ignore_shutdown_mode", value.ignore_shutdown_mode);
-    toggle("black_background", value.black_background);
-    toggle("dump_gecko_text", value.dump_gecko_text);
-    toggle("show_rc_updates", value.show_rc_updates);
-    return result;
-  }
-
-  auto priiloader_hacks(std::span<std::uint8_t> image, std::span<const HackOverride> overrides)
-      -> QMap<QString, bool> {
-    constexpr std::array names{
-        "480p graphics fix in system menu", "Block Online Updates", "Block Disc Updates",
-        "Block Disc Autoboot", "Auto-Press A at Health Screen", "Remove Deflicker",
-        "Move Disc Channel", "Remove NoCopy Save File Protection", "Replace Health Screen with Backmenu",
-        "No System Menu Background Music", "Wiimmfi Patch v4", "Region Free EVERYTHING"};
-    QMap<QString, bool> result;
-    for (const auto& option : overrides) {
-      auto name = option_name(option.hack, names);
-      if (option.hack == Hack::region_free_everything) {
-        working_image::Image working(image);
-        const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
-        const auto data = working_image::read_authenticated_file(working.nand,
-            working_image::find_path(tree.get(), "/title/00000001/00000002/data/setting.txt"), 256);
-        if (seed::decode_settings(data)["AREA"].as<std::string>() == "JPN") name += " JP";
-      }
-      require(!result.contains(name), "Duplicate Priiloader hack override");
-      result.insert(name, option.enabled);
-    }
-    return result;
   }
 }
 
@@ -161,10 +106,9 @@ void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
 
 void apply_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app,
                      std::span<const std::uint8_t> hacks_hash_ini, const PriiloaderSettings& settings,
-                     std::span<const HackOverride> hacks) {
+                     std::span<const Hack> enabled_hacks) {
   detail::ensure_qcore_application();
-  priiloader::apply(nand, app, hacks_hash_ini, priiloader_settings(settings),
-                    priiloader_hacks(nand, hacks));
+  priiloader::apply(nand, app, hacks_hash_ini, settings, enabled_hacks);
 }
 
 }

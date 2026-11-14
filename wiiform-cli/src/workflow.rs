@@ -137,26 +137,13 @@ fn build_with(
     }
 
     if let Some(priiloader) = recipe.priiloader() {
-        let temporary_cache;
-        let cache = if options.cache.as_os_str().is_empty() {
-            temporary_cache = Builder::new().tempdir()?;
-            temporary_cache.path()
-        } else {
-            &options.cache
-        };
-        let assets = priiloader_payload::prepare(
-            cache,
-            options.offline,
-            priiloader.app.as_deref(),
-            priiloader.hacks.is_some(),
-        )
-        .context("cannot prepare pinned Priiloader assets")?;
+        let (app, definitions) = priiloader_payload::load(priiloader.app.as_deref(), None)?;
         native::apply_priiloader(
             &mut nand,
-            &assets.app,
-            assets.definitions.as_deref().unwrap_or_default(),
+            &app,
+            &definitions,
             &priiloader.settings,
-            priiloader.hacks.as_ref(),
+            &priiloader.hacks,
         )
         .context("cannot install or configure Priiloader")?;
     }

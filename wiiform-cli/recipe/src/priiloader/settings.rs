@@ -53,91 +53,61 @@ pub enum MountPoint {
     Usb = 2,
 }
 
-/// Priiloader settings written to its settings file.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// Complete Priiloader settings written to its settings file.
+///
+/// Missing recipe values use the pinned 0.10.0 defaults. Applying this type
+/// writes every configurable setting, replacing values already present in NAND.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "cli", derive(clap::Args))]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct PriiloaderSettings {
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<Autoboot>")]
-    #[cfg_attr(feature = "cli", arg(long, value_enum))]
-    pub autoboot: Option<Autoboot>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<ReturnTo>")]
-    #[cfg_attr(feature = "cli", arg(long, value_enum))]
-    pub return_to: Option<ReturnTo>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<ShutdownTo>")]
-    #[cfg_attr(feature = "cli", arg(long, value_enum))]
-    pub shutdown_to: Option<ShutdownTo>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<MountPoint>")]
-    #[cfg_attr(feature = "cli", arg(long, value_enum))]
-    pub preferred_mount_point: Option<MountPoint>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<bool>")]
-    #[cfg_attr(feature = "cli", arg(long, value_parser = parse_on_off, value_name = "on|off"))]
-    pub stop_disc: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<bool>")]
-    #[cfg_attr(feature = "cli", arg(long, value_parser = parse_on_off, value_name = "on|off"))]
-    pub lid_slot_on_error: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<bool>")]
-    #[cfg_attr(feature = "cli", arg(long, value_parser = parse_on_off, value_name = "on|off"))]
-    pub ignore_shutdown_mode: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<bool>")]
-    #[cfg_attr(feature = "cli", arg(long, value_parser = parse_on_off, value_name = "on|off"))]
-    pub black_background: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<bool>")]
-    #[cfg_attr(feature = "cli", arg(long, value_parser = parse_on_off, value_name = "on|off"))]
-    pub dump_gecko_text: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<bool>")]
-    #[cfg_attr(feature = "cli", arg(long, value_parser = parse_on_off, value_name = "on|off"))]
-    pub show_rc_updates: Option<bool>,
+    /// Autoboot destination. Defaults to the System Menu.
+    #[cfg_attr(feature = "cli", arg(long, value_enum, default_value = "system_menu"))]
+    pub autoboot: Autoboot,
+    /// Destination used by Priiloader's Return to option.
+    #[cfg_attr(feature = "cli", arg(long, value_enum, default_value = "system_menu"))]
+    pub return_to: ReturnTo,
+    /// Shutdown destination. Defaults to none.
+    #[cfg_attr(feature = "cli", arg(long, value_enum, default_value = "none"))]
+    pub shutdown_to: ShutdownTo,
+    /// Preferred storage device. Defaults to automatic.
+    #[cfg_attr(feature = "cli", arg(long, value_enum, default_value = "auto"))]
+    pub preferred_mount_point: MountPoint,
+    /// Stop the disc drive at startup. Defaults to off.
+    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    pub stop_disc: bool,
+    /// Light the drive slot when an error occurs. Defaults to off.
+    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    pub lid_slot_on_error: bool,
+    /// Ignore standby mode. Defaults to off.
+    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    pub ignore_shutdown_mode: bool,
+    /// Use a black background. The pinned default is on.
+    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "on", value_name = "on|off"))]
+    pub black_background: bool,
+    /// Dump Gecko output. Defaults to off.
+    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    pub dump_gecko_text: bool,
+    /// Show Priiloader update notices. Defaults to off.
+    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    pub show_rc_updates: bool,
+}
+
+impl Default for PriiloaderSettings {
+    fn default() -> Self {
+        Self {
+            autoboot: Autoboot::SystemMenu,
+            return_to: ReturnTo::SystemMenu,
+            shutdown_to: ShutdownTo::None,
+            preferred_mount_point: MountPoint::Auto,
+            stop_disc: false,
+            lid_slot_on_error: false,
+            ignore_shutdown_mode: false,
+            black_background: true,
+            dump_gecko_text: false,
+            show_rc_updates: false,
+        }
+    }
 }
 
 #[cfg(feature = "cli")]
