@@ -7,7 +7,7 @@
 #include <QCryptographicHash>
 #include <QtEndian>
 #include <stdexcept>
-#include <utility>
+#include <cstring>
 
 namespace {
   constexpr quint64 wad_header_size = 0x20;
@@ -33,20 +33,20 @@ namespace {
 }
 
 namespace wad_package {
-  auto read(std::span<const std::uint8_t> input, const QByteArray& expected_sha256, Policy policy) -> Package {
-    const bool legacy = policy == Policy::LegacyChannel;
+  auto read(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
+            wiiform::WadPolicy policy) -> NusJob {
+    using wiiform::WadPolicy;
+    require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
+    const bool legacy = policy == WadPolicy::legacy_channel;
     require(input.size() >= wad_header_size && input.size() <= max_wad_size,
             "WAD file size is outside supported bounds");
-    require(!expected_sha256.isEmpty(), "WADs require an expected SHA-256");
-    const auto expected = expected_sha256.toLower();
-    require(expected.isEmpty() || (expected.size() == 64 && QByteArray::fromHex(expected).toHex() == expected),
-            "Expected WAD SHA-256 must have 64 hexadecimal digits");
     // QByteArray::fromRawData is a view whose lifetime is bounded by this call.
     // Content buffers copied into NusJob remain owned by the job.
     const auto bytes = QByteArray::fromRawData(reinterpret_cast<const char*>(input.data()),
                                                static_cast<int>(input.size()));
-    const auto sha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex();
-    require(expected.isEmpty() || sha256 == expected, "WAD SHA-256 does not match the expected package digest");
+    const auto sha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+    require(std::memcmp(sha256.constData(), expected_sha256.data(), expected_sha256.size()) == 0,
+            "WAD SHA-256 does not match the expected package digest");
     require(u32(bytes, 0) == wad_header_size && u32(bytes, 4) == 0x49730000,
             "Expected a standard installable Wii WAD header");
     require(u32(bytes, 0x0c) == 0, "Unsupported WAD reserved header field");
@@ -83,14 +83,17 @@ namespace wad_package {
     require(u32(ticket_bytes, 0x1d8) == 0, "Console-bound WAD tickets are unsupported");
 
     Tmd tmd(tmd_bytes);
-    require(!legacy || (tmd.Tid() >> 32) == 0x00010001, "Legacy WAD policy supports downloadable channels");
+    const auto type = tmd.Tid() >> 32;
+    require(type == 0x00010001 || (!legacy && type == 0x00010002),
+            legacy ? "Legacy WAD policy supports downloadable channels"
+                   : "WAD install supports downloadable and system channels");
     const int key_index = static_cast<uchar>(ticket_bytes[0x1f1]);
     require(key_index == 0 || (legacy && key_index > 2), "Unsupported WAD ticket common-key index");
-    const auto source_ticket_sha256 = QCryptographicHash::hash(ticket_bytes, QCryptographicHash::Sha256).toHex();
-    const bool tmd_signed = check_cert_chain(tmd_bytes) == ERROR_SUCCESS;
-    const bool ticket_signed = check_cert_chain(ticket_bytes) == ERROR_SUCCESS;
+    if (!legacy)
+      require(check_cert_chain(tmd_bytes) == ERROR_SUCCESS && check_cert_chain(ticket_bytes) == ERROR_SUCCESS,
+              "WAD ticket and TMD must be genuinely Nintendo-signed");
     if (key_index != 0) {
-      require(!ticket_signed, "Cannot normalize a Nintendo-signed WAD ticket");
+      require(check_cert_chain(ticket_bytes) != ERROR_SUCCESS, "Cannot normalize a Nintendo-signed WAD ticket");
       // Some legacy packages encrypt with the Wii common key despite an
       // invalid selector. Change the selector in the working ticket only.
       // Every content hash below must verify with that key.
@@ -122,7 +125,7 @@ namespace wad_package {
             "WAD content sizes do not match its data section");
     require(decrypt_title(job), "WAD content validation failed");
 
-    return {std::move(job), sha256, source_ticket_sha256, key_index, tmd_signed, ticket_signed};
+    return job;
   }
 
 }

@@ -214,14 +214,10 @@ namespace title_install {
   }
 
   auto install_wad(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
-                   const QByteArray& expected_sha256, bool legacy) -> std::pair<quint64, quint16> {
-    auto wad = wad_package::read(package, expected_sha256, legacy ? wad_package::Policy::LegacyChannel :
-                                                                   wad_package::Policy::Standard);
-    require(legacy || wad.nintendo_signed(), "WAD ticket and TMD must be genuinely Nintendo-signed");
-    const auto type = wad.job.tid >> 32;
-    require(type == 0x00010001 || type == 0x00010002, "WAD install supports downloadable and system channels");
-    const auto installed = std::pair{wad.job.tid, qFromBigEndian<quint16>(wad.job.data[0].constData() + 0x19c)};
-    install_job_to_image(image, std::move(wad.job));
+                   const wiiform::Sha256& expected_sha256, wiiform::WadPolicy policy) -> std::pair<quint64, quint16> {
+    auto job = wad_package::read(package, expected_sha256, policy);
+    const auto installed = std::pair{job.tid, qFromBigEndian<quint16>(job.data[0].constData() + 0x19c)};
+    install_job_to_image(image, std::move(job));
     return installed;
   }
 

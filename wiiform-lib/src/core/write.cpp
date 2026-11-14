@@ -140,7 +140,6 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
           "Cannot authenticate the stock NAND");
   inspect::verify_filesystem(reopened, true, layout.active_metadata);
   inspect::verify_stock(reopened, profile.area);
-  inspect::verify_metadata(reopened, profile.area);
   return identity;
 }
 
@@ -160,9 +159,7 @@ void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cach
 auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                  const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad {
   detail::ensure_qcore_application();
-  require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
-  const auto [id, region] = title_install::install_wad(nand, wad, view(expected_sha256).toHex(),
-                                                      policy == WadPolicy::legacy_channel);
+  const auto [id, region] = title_install::install_wad(nand, wad, expected_sha256, policy);
   return {id, region};
 }
 

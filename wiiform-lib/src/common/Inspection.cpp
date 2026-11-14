@@ -323,119 +323,11 @@ namespace {
     expected.insert(path, value);
   }
 
-  auto verify_expected_metadata(ImageIndex& index, const QString& area) -> inspect::MetadataSummary {
-    const auto profile = factory::stock_titles(area);
-    QSet<quint64> expected_titles;
-    UIDmap expected_uid;
-    QMap<quint64, quint32> title_uids;
-    for (auto it = profile.cbegin(); it != profile.cend(); ++it) {
-      expected_titles.insert(it.key());
-      const auto uid = expected_uid.GetUid(it.key());
-      require(uid != 0, "Cannot construct expected stock UID map");
-      title_uids.insert(it.key(), uid);
-    }
-    require(expected_uid.Check(), "Cannot construct expected stock UID map");
-    require(collect_title_ids(index) == expected_titles && collect_ticket_ids(index) == expected_titles,
-            "Installed title or ticket set does not match the pinned stock profile");
-    require(index.read("/sys/uid.sys", 1024 * 1024) == expected_uid.Data(),
-            "UID map does not exactly match stock title assignments");
-
-    QMap<QString, ExpectedMetadata> expected;
-    add_expected(expected, "/sys", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
-    add_expected(expected, "/ticket", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
-    add_expected(expected, "/title", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
-    add_expected(expected, "/shared1", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
-    add_expected(expected, "/shared2", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
-    add_expected(expected, "/shared2/sys", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
-    add_expected(expected, "/import", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
-    add_expected(expected, "/meta", 0x1000, 1, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
-    add_expected(expected, "/tmp", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
-    add_expected(expected, "/sys/cert.sys", 0, 0, NAND_FILE, NAND_RW, NAND_RW, NAND_READ);
-    add_expected(expected, "/sys/uid.sys", 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
-    add_expected(expected, "/shared1/content.map", 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
-    add_expected(expected, "/title/00000001/00000002/data/setting.txt", 0x1000, 1,
-                 NAND_FILE, NAND_READ, NAND_READ, NAND_READ);
-
-    QSet<QByteArray> expected_shared_hashes;
-    QSet<QString> expected_shared_paths;
-    SharedContentMap shared(index.read("/shared1/content.map", 1024 * 1024));
-    require(shared.Data().isEmpty() || shared.Check(), "Invalid shared content map");
-
-    for (auto it = profile.cbegin(); it != profile.cend(); ++it) {
-      const auto id = it.key();
-      const auto id_text = title_path(id);
-      const auto high = id_text.left(8);
-      const auto low = id_text.mid(8);
-      const auto base = "/title/" + high + "/" + low;
-      const auto ticket_dir = "/ticket/" + high;
-      const auto content_dir = base + "/content";
-      add_expected(expected, ticket_dir, 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
-      add_expected(expected, "/title/" + high, 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
-      add_expected(expected, base, 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
-      add_expected(expected, content_dir, 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
-      add_expected(expected, ticket_dir + "/" + low + ".tik", 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
-      add_expected(expected, content_dir + "/title.tmd", 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
-
-      const auto tmd_data = index.read(content_dir + "/title.tmd", 2 * 1024 * 1024);
-      const auto ticket_data = index.read(ticket_dir + "/" + low + ".tik", 64 * 1024);
-      require(check_title_metadata(tmd_data, ticket_data), "Malformed stock title metadata");
-      Tmd tmd(tmd_data);
-      require(tmd.Tid() == id && tmd.Version() == it.value(), "Stock title ID or version mismatch");
-      add_expected(expected, base + "/data", title_uids.value(id), tmd.Gid(), NAND_DIR, NAND_RW, 0, 0);
-      quint64 total_size = 0;
-      for (int content_index = 0; content_index < tmd.Count(); ++content_index) {
-        const auto size = tmd.Size(content_index);
-        require(size <= maximum_title_size && total_size + size <= maximum_title_size,
-                "Stock title exceeds inspection limits");
-        total_size += size;
-        QString content_path;
-        if (tmd.Type(content_index) == 0x8001) {
-          const auto hash = tmd.Hash(content_index);
-          const auto cid = shared.GetAppFromHash(hash);
-          require(is_hex_id(cid), "Shared title content is absent from its map");
-          content_path = "/shared1/" + cid + ".app";
-          expected_shared_paths.insert(content_path);
-          expected_shared_hashes.insert(hash);
-        } else {
-          require(tmd.Type(content_index) == 1, "Unsupported stock content type");
-          const auto cid = tmd.Cid(content_index);
-          require(is_hex_id(cid), "Invalid stock content ID");
-          content_path = content_dir + "/" + cid + ".app";
-        }
-        add_expected(expected, content_path, 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
-        const auto* file = index.entry(content_path);
-        require(file && !file->directory && file->size == size, "Stock content size mismatch");
-      }
-    }
-    require(shared.Count() == expected_shared_hashes.size(), "Shared content map contains unused entries");
-    for (const auto& shared_path : expected_shared_paths)
-      require(index.contains(shared_path), "Shared content file is missing");
-
-    const auto root = index.root_metadata();
-    require(root.uid == 0 && root.gid == 0 && root.x3 == 0 && root.mode == 0 && root.attr == 0x16,
-            "NAND root metadata does not match the generated stock layout");
-
-    QSet<QString> actual_paths;
-    for (auto it = index.files().cbegin(); it != index.files().cend(); ++it) actual_paths.insert(it.key());
-    QSet<QString> expected_paths;
-    for (auto it = expected.cbegin(); it != expected.cend(); ++it) expected_paths.insert(it.key());
-    require(actual_paths == expected_paths, "NAND paths do not match the generated stock layout");
-    for (auto it = expected.cbegin(); it != expected.cend(); ++it) {
-      const auto* entry = index.entry(it.key());
-      const auto& want = it.value();
-      require(entry && entry->metadata.uid == want.uid && entry->metadata.gid == want.gid &&
-                  entry->metadata.x3 == want.x3 && entry->metadata.mode == want.mode &&
-                  entry->metadata.attr == want.attr,
-              "NAND entry metadata differs from the generated stock layout");
-    }
-    return {expected.size() + 1, profile.size()};
-  }
-
   struct VerifiedTitle {
     QSet<QString> local_names{"title.tmd"};
     QMap<QString, QByteArray> shared_apps;
     quint64 ios = 0;
-    int content_count = 0;
+    quint16 gid = 0;
   };
 
   auto read_shared_map(ImageIndex& index) -> SharedContentMap {
@@ -458,7 +350,7 @@ namespace {
 
     VerifiedTitle result;
     result.ios = tmd.IOS();
-    result.content_count = tmd.Count();
+    result.gid = tmd.Gid();
     NusJob job;
     job.tid = id;
     job.version = version;
@@ -539,11 +431,6 @@ namespace inspect {
     return evidence;
   }
 
-  auto verify_metadata(NandBin& nand, const QString& area) -> MetadataSummary {
-    ImageIndex index(nand);
-    return verify_expected_metadata(index, area);
-  }
-
   void verify_stock_titles(NandBin& nand, const QMap<quint64, quint16>& titles) {
     ImageIndex index(nand);
     auto shared = read_shared_map(index);
@@ -553,15 +440,13 @@ namespace inspect {
     }
   }
 
-  auto verify_filesystem(NandBin& nand, bool generated, quint16 active_metadata) -> FilesystemSummary {
+  void verify_filesystem(NandBin& nand, bool generated, quint16 active_metadata) {
     const auto fats = nand.GetFats();
     require(fats.size() == 0x8000, "Invalid NAND allocation table");
-    FilesystemSummary result;
     for (int cluster = 0x40; cluster < 0x7f00; ++cluster) {
       if (fats[cluster] == 0xfffd || fats[cluster] == 0xfffe) continue;
       for (int page = 0; page < 8; ++page)
         require(nand.CheckEcc(cluster * 8 + page), "Filesystem ECC check failed");
-      ++result.checked_clusters;
     }
     require(active_metadata >= 0x7f00 && active_metadata <= 0x7ff0 && active_metadata % 16 == 0,
             "Invalid active metadata address");
@@ -569,83 +454,100 @@ namespace inspect {
       for (int cluster = 0x7f00; cluster < 0x8000; cluster += 16) {
         for (int page = 0; page < 16 * 8; ++page)
           require(nand.CheckEcc(cluster * 8 + page), "Generated metadata ECC check failed");
-        result.checked_clusters += 16;
         require(nand.CheckHmacMeta(cluster), "Generated metadata authentication failed");
-        ++result.authenticated_metadata_copies;
       }
     } else {
       for (int page = 0; page < 16 * 8; ++page)
         require(nand.CheckEcc(active_metadata * 8 + page), "Active metadata ECC check failed");
-      result.checked_clusters += 16;
-      for (int cluster = 0x7f00; cluster < 0x8000; cluster += 16)
-        if (nand.CheckHmacMeta(cluster)) ++result.authenticated_metadata_copies;
       require(nand.CheckHmacMeta(active_metadata), "Active metadata authentication failed");
     }
-    require(result.authenticated_metadata_copies > 0, "No filesystem metadata authenticated");
+    bool authenticated = false;
+    for (int cluster = 0x7f00; cluster < 0x8000; cluster += 16)
+      authenticated |= nand.CheckHmacMeta(cluster);
+    require(authenticated, "No filesystem metadata authenticated");
 
     ImageIndex index(nand);
     for (auto it = index.files().cbegin(); it != index.files().cend(); ++it) {
       const auto& entry = it.value();
       if (entry.directory) continue;
       require(nand.CheckHmacData(entry.id), "Filesystem file authentication failed");
-      ++result.checked_files;
     }
-    return result;
   }
 
-  auto verify_stock(NandBin& nand, const QString& area) -> StockSummary {
+  void verify_stock(NandBin& nand, const QString& area) {
     ImageIndex index(nand);
     const auto profile = factory::stock_titles(area);
-    QSet<quint64> expected;
-    for (auto it = profile.cbegin(); it != profile.cend(); ++it) expected.insert(it.key());
-    require(!expected.isEmpty() && collect_title_ids(index) == expected,
-            "Installed title set does not match the pinned stock profile");
-    require(collect_ticket_ids(index) == expected,
-            "Ticket set does not match the pinned stock profile");
-
-    const auto uid_data = index.read("/sys/uid.sys", 1024 * 1024);
-    UIDmap uid(uid_data);
-    require(!uid_data.isEmpty() && uid.Check(), "Invalid UID map");
+    QSet<quint64> expected_titles;
     UIDmap expected_uid;
+    QMap<quint64, quint32> title_uids;
     for (auto it = profile.cbegin(); it != profile.cend(); ++it) {
-      require(expected_uid.GetUid(it.key()) != 0, "Cannot construct expected stock UID map");
+      expected_titles.insert(it.key());
+      const auto uid = expected_uid.GetUid(it.key());
+      require(uid != 0, "Cannot construct expected stock UID map");
+      title_uids.insert(it.key(), uid);
     }
-    require(expected_uid.Check() && uid.Data() == expected_uid.Data(),
+    require(!expected_titles.isEmpty() && expected_uid.Check(),
+            "Cannot construct expected stock UID map");
+    require(collect_title_ids(index) == expected_titles &&
+                collect_ticket_ids(index) == expected_titles,
+            "Installed title or ticket set does not match the pinned stock profile");
+    require(index.read("/sys/uid.sys", 1024 * 1024) == expected_uid.Data(),
             "UID map does not exactly match stock title assignments");
     require(index.read("/sys/cert.sys", CERTS_DAT_SIZE) ==
                 QByteArray(reinterpret_cast<const char*>(certs_dat), CERTS_DAT_SIZE),
             "System certificate file differs from the generated stock layout");
 
+    QMap<QString, ExpectedMetadata> expected_metadata;
+    add_expected(expected_metadata, "/sys", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
+    add_expected(expected_metadata, "/ticket", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
+    add_expected(expected_metadata, "/title", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
+    add_expected(expected_metadata, "/shared1", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
+    add_expected(expected_metadata, "/shared2", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
+    add_expected(expected_metadata, "/shared2/sys", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
+    add_expected(expected_metadata, "/import", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
+    add_expected(expected_metadata, "/meta", 0x1000, 1, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
+    add_expected(expected_metadata, "/tmp", 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_RW);
+    add_expected(expected_metadata, "/sys/cert.sys", 0, 0, NAND_FILE, NAND_RW, NAND_RW, NAND_READ);
+    add_expected(expected_metadata, "/sys/uid.sys", 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
+    add_expected(expected_metadata, "/shared1/content.map", 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
+    add_expected(expected_metadata, "/title/00000001/00000002/data/setting.txt", 0x1000, 1,
+                 NAND_FILE, NAND_READ, NAND_READ, NAND_READ);
+
     auto shared = read_shared_map(index);
-    QSet<QString> expected_shared_files;
     QSet<QByteArray> expected_shared_hashes;
-    QSet<QString> expected_directories{"/sys", "/ticket", "/title", "/shared1", "/shared2",
-                                       "/shared2/sys", "/import", "/meta", "/tmp"};
-    QSet<QString> expected_files{"/sys/cert.sys", "/sys/uid.sys", "/shared1/content.map",
-                                 "/title/00000001/00000002/data/setting.txt"};
-    StockSummary result;
-    for (auto profile_item = profile.cbegin(); profile_item != profile.cend(); ++profile_item) {
-      const auto id = profile_item.key();
+    QSet<QString> expected_shared_files{"content.map"};
+    for (auto title = profile.cbegin(); title != profile.cend(); ++title) {
+      const auto id = title.key();
       const auto id_text = title_path(id);
-      const auto base = "/title/" + id_text.left(8) + "/" + id_text.mid(8);
-      const auto ticket_dir = "/ticket/" + id_text.left(8);
+      const auto high = id_text.left(8);
+      const auto low = id_text.mid(8);
+      const auto base = "/title/" + high + "/" + low;
+      const auto ticket_dir = "/ticket/" + high;
       const auto content_dir = base + "/content";
-      expected_directories.insert(ticket_dir);
-      expected_directories.insert("/title/" + id_text.left(8));
-      expected_directories.insert(base);
-      expected_directories.insert(base + "/data");
-      expected_directories.insert(content_dir);
-      expected_files.insert(ticket_dir + "/" + id_text.mid(8) + ".tik");
-      const auto verified = verify_stock_title(index, shared, id, profile_item.value());
-      if (verified.ios) require(expected.contains(verified.ios), "Stock title dependency is missing");
-      for (const auto& name : verified.local_names) expected_files.insert(content_dir + "/" + name);
-      for (auto shared_app = verified.shared_apps.cbegin(); shared_app != verified.shared_apps.cend(); ++shared_app) {
-        expected_shared_files.insert(shared_app.key());
-        expected_shared_hashes.insert(shared_app.value());
-        expected_files.insert("/shared1/" + shared_app.key());
+
+      add_expected(expected_metadata, ticket_dir, 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
+      add_expected(expected_metadata, "/title/" + high, 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
+      add_expected(expected_metadata, base, 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
+      add_expected(expected_metadata, content_dir, 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
+      add_expected(expected_metadata, ticket_dir + "/" + low + ".tik", 0, 0,
+                   NAND_FILE, NAND_RW, NAND_RW, 0);
+      add_expected(expected_metadata, content_dir + "/title.tmd", 0, 0,
+                   NAND_FILE, NAND_RW, NAND_RW, 0);
+
+      const auto verified = verify_stock_title(index, shared, id, title.value());
+      add_expected(expected_metadata, base + "/data", title_uids.value(id), verified.gid,
+                   NAND_DIR, NAND_RW, 0, 0);
+      if (verified.ios)
+        require(expected_titles.contains(verified.ios), "Stock title dependency is missing");
+      for (const auto& name : verified.local_names)
+        add_expected(expected_metadata, content_dir + "/" + name, 0, 0,
+                     NAND_FILE, NAND_RW, NAND_RW, 0);
+      for (auto app = verified.shared_apps.cbegin(); app != verified.shared_apps.cend(); ++app) {
+        expected_shared_files.insert(app.key());
+        expected_shared_hashes.insert(app.value());
+        add_expected(expected_metadata, "/shared1/" + app.key(), 0, 0,
+                     NAND_FILE, NAND_RW, NAND_RW, 0);
       }
-      result.checked_contents += verified.content_count;
-      ++result.checked_titles;
     }
 
     QSet<QString> actual_shared_files;
@@ -654,23 +556,32 @@ namespace inspect {
       require(entry && !entry->directory, "Unexpected shared content directory");
       actual_shared_files.insert(path.mid(QString("/shared1/").size()));
     }
-    expected_shared_files.insert("content.map");
     require(actual_shared_files == expected_shared_files,
             "Shared content files do not match installed stock titles");
-
     require(shared.Count() == expected_shared_hashes.size(),
             "Shared content map contains unused entries");
-    QSet<QString> expected_paths = expected_directories;
-    expected_paths.unite(expected_files);
+
+    const auto root = index.root_metadata();
+    require(root.uid == 0 && root.gid == 0 && root.x3 == 0 && root.mode == 0 && root.attr == 0x16,
+            "NAND root metadata does not match the generated stock layout");
+
     QSet<QString> actual_paths;
     for (auto it = index.files().cbegin(); it != index.files().cend(); ++it)
       actual_paths.insert(it.key());
+    QSet<QString> expected_paths;
+    for (auto it = expected_metadata.cbegin(); it != expected_metadata.cend(); ++it)
+      expected_paths.insert(it.key());
     require(actual_paths == expected_paths,
             "NAND paths do not match the generated stock layout");
-    for (const auto& path : expected_directories)
-      require(index.entry(path)->directory, "Expected stock directory has a file entry");
-    for (const auto& path : expected_files)
-      require(!index.entry(path)->directory, "Expected stock file has a directory entry");
-    return result;
+    for (auto it = expected_metadata.cbegin(); it != expected_metadata.cend(); ++it) {
+      const auto* entry = index.entry(it.key());
+      const auto& want = it.value();
+      require(entry && entry->directory == ((want.attr & 3) == NAND_DIR),
+              "NAND entry type differs from the generated stock layout");
+      require(entry && entry->metadata.uid == want.uid && entry->metadata.gid == want.gid &&
+                  entry->metadata.x3 == want.x3 && entry->metadata.mode == want.mode &&
+                  entry->metadata.attr == want.attr,
+              "NAND entry metadata differs from the generated stock layout");
+    }
   }
 } // namespace inspect
