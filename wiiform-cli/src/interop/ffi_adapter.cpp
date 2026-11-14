@@ -36,7 +36,7 @@ auto create_stock(Bytes keys, Bytes boot_blocks, rust::Slice<const std::uint16_t
   const wiiform::StockSeed seed{span(keys), span(boot_blocks), span(bad_blocks), span(setting_txt)};
   const auto result = core::create_stock(seed, span(nand), std::string(cache),
       static_cast<wiiform::Menu>(options.menu), static_cast<wiiform::BootPolicy>(options.boot_policy),
-      static_cast<wiiform::CacheMode>(options.cache_mode));
+      options.offline);
   return {result.boot_area, result.original_footer};
 }
 
@@ -48,9 +48,8 @@ void apply_system_settings(Nand nand, const SystemSettings& settings) {
 }
 
 void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
-                       std::uint16_t version, CacheMode mode) {
-  core::install_nus_title(span(nand), std::string(cache), title_id, version,
-                          static_cast<wiiform::CacheMode>(mode));
+                       std::uint16_t version, bool offline) {
+  core::install_nus_title(span(nand), std::string(cache), title_id, version, offline);
 }
 
 auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,

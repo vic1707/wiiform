@@ -12,10 +12,10 @@ namespace wiiform::core {
   // the working buffer if an exception occurs after a write has started.
   auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
                     const std::string& nus_cache_dir, Menu menu, BootPolicy boot_policy,
-                    CacheMode cache_mode) -> StockIdentity;
+                    bool offline) -> StockIdentity;
   void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings);
   void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,
-                         std::uint64_t title_id, std::uint16_t version, CacheMode cache_mode);
+                         std::uint64_t title_id, std::uint16_t version, bool offline);
   auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                    const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad;
   void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id);

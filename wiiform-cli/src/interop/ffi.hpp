@@ -6,7 +6,6 @@
 #include <cstdint>
 
 namespace wiiform::ffi {
-  enum class CacheMode : std::uint8_t;
   enum class WadPolicy : std::uint8_t;
   struct SystemSettings;
   struct PriiloaderSettings;
@@ -23,7 +22,7 @@ namespace wiiform::ffi {
                     Bytes setting_txt, Nand nand, rust::Str cache, const StockOptions& options) -> StockIdentity;
   void apply_system_settings(Nand nand, const SystemSettings& settings);
   void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
-                         std::uint16_t version, CacheMode mode);
+                         std::uint16_t version, bool offline);
   auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
                    WadPolicy policy) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);

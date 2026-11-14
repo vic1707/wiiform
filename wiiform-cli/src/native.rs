@@ -9,7 +9,7 @@ use crate::recipe::{
 };
 use crate::seed::StockSeed;
 
-pub use ffi::{CacheMode, InstalledWad, StockIdentity, WadPolicy};
+pub use ffi::{InstalledWad, StockIdentity, WadPolicy};
 
 /// Boot-area validation policy for stock NAND creation.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -38,7 +38,7 @@ pub fn create_stock(
     cache: &Path,
     menu: Menu,
     policy: BootPolicy,
-    cache_mode: CacheMode,
+    offline: bool,
 ) -> Result<StockIdentity> {
     Ok(ffi::create_stock(
         seed.keys(),
@@ -50,7 +50,7 @@ pub fn create_stock(
         &ffi::StockOptions {
             menu: menu.version(),
             boot_policy: policy as u8,
-            cache_mode,
+            offline,
         },
     )?)
 }
@@ -101,14 +101,14 @@ pub fn install_nus_title(
     cache: &Path,
     title_id: u64,
     version: u16,
-    mode: CacheMode,
+    offline: bool,
 ) -> Result<()> {
     Ok(ffi::install_nus_title(
         nand,
         cache_dir(cache)?,
         title_id,
         version,
-        mode,
+        offline,
     )?)
 }
 

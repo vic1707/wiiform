@@ -3,13 +3,6 @@
 pub mod bridge {
     #[repr(u8)]
     #[derive(Clone, Copy, Debug)]
-    enum CacheMode {
-        Offline,
-        DownloadMissing,
-    }
-
-    #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
     enum WadPolicy {
         Standard,
         LegacyChannel,
@@ -53,7 +46,7 @@ pub mod bridge {
     struct StockOptions {
         menu: u16,
         boot_policy: u8,
-        cache_mode: CacheMode,
+        offline: bool,
     }
 
     struct StockIdentity {
@@ -85,7 +78,7 @@ pub mod bridge {
             nus_cache_dir: &str,
             title_id: u64,
             version: u16,
-            cache_mode: CacheMode,
+            offline: bool,
         ) -> Result<()>;
         fn install_wad(
             nand: &mut [u8],

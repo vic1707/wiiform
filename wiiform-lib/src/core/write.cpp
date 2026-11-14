@@ -45,14 +45,6 @@ namespace {
     return result;
   }
 
-  auto offline(CacheMode mode) -> bool {
-    switch (mode) {
-      case CacheMode::offline: return true;
-      case CacheMode::download_missing: return false;
-    }
-    throw std::runtime_error("Unsupported cache mode");
-  }
-
   auto native_boot_policy(BootPolicy value) -> inspect::BootPolicy {
     switch (value) {
       case BootPolicy::stock: return inspect::BootPolicy::Stock;
@@ -117,10 +109,9 @@ namespace {
 
 auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
                   const std::string& nus_cache_dir, Menu menu, BootPolicy boot_policy,
-                  CacheMode cache_mode) -> StockIdentity {
+                  bool offline) -> StockIdentity {
   detail::ensure_qcore_application();
   const auto cache = qstring(nus_cache_dir, "Cache path must be UTF-8");
-  const auto cache_only = offline(cache_mode);
   require(nand.size() == nand_size && seed.keys.size() == 0x400 &&
               seed.boot_blocks.size() == 0x108000 && seed.setting_txt.size() == 256,
           "Invalid NAND image or seed component size");
@@ -131,7 +122,7 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
   nand_build::initialize_image(nand, keys, boots, profile, native_boot_policy(boot_policy));
   const auto titles = factory::stock_titles(profile.area);
   for (auto title = titles.cbegin(); title != titles.cend(); ++title)
-    title_install::install_nus_title(nand, cache, title.key(), title.value(), cache_only);
+    title_install::install_nus_title(nand, cache, title.key(), title.value(), offline);
 
   const auto layout = inspect::validate_layout(nand, true);
   nand_buffer::Device device{std::span<const std::uint8_t>(nand)};
@@ -149,11 +140,11 @@ void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& s
 }
 
 void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,
-                       std::uint64_t title_id, std::uint16_t version, CacheMode cache_mode) {
+                       std::uint64_t title_id, std::uint16_t version, bool offline) {
   detail::ensure_qcore_application();
   require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
   title_install::install_nus_title(nand, qstring(nus_cache_dir, "Cache path must be UTF-8"),
-                                   title_id, version, offline(cache_mode));
+                                   title_id, version, offline);
 }
 
 auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,

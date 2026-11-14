@@ -8,5 +8,7 @@
 namespace factory {
   auto stock_titles(const QString& area) -> QMap<quint64, quint16>;
   auto fetch(const QUrl& url, qint64 limit) -> QByteArray;
+  // Empty cache path disables disk reads and writes; offline mode then fails
+  // on the first requested title file.
   auto read_title(const QString& cache, quint64 id, int version, bool offline = false) -> NusJob;
 }

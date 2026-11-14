@@ -78,22 +78,28 @@ namespace factory {
   }
 
   auto read_title(const QString& cache, quint64 id, int version, bool offline) -> NusJob {
-    require(!cache.trimmed().isEmpty(), "Cache directory must not be empty");
     require(id && version >= 0 && version < 65535, "A concrete title ID/version is required; latest is forbidden");
     const auto text = QString("%1").arg(id, 16, 16, QChar('0'));
-    const auto root = QDir(cache).absolutePath();
-    const QStringList directories{root, root + "/" + text.left(8), root + "/" + text.left(8) + "/" + text.mid(8),
-                                  root + "/" + text.left(8) + "/" + text.mid(8) + "/v" + QString::number(version)};
+    // An empty cache path means fetch into memory only: do not inspect or create
+    // any filesystem paths. An explicit path opts into the authenticated cache.
+    const bool use_cache = !cache.isEmpty();
+    const auto root = use_cache ? QDir(cache).absolutePath() : QString{};
+    const QStringList directories = use_cache
+                                        ? QStringList{root, root + "/" + text.left(8),
+                                                      root + "/" + text.left(8) + "/" + text.mid(8),
+                                                      root + "/" + text.left(8) + "/" + text.mid(8) + "/v" +
+                                                          QString::number(version)}
+                                        : QStringList{};
     for (const auto& path : directories) directory(path, false);
-    const auto base = directories.back() + "/";
+    const auto base = use_cache ? directories.back() + "/" : QString{};
     QMap<QString, QByteArray> pending;
     auto load = [&](const QString& name, qint64 limit) {
       const auto path = base + name;
-      if (QFileInfo::exists(path) || QFileInfo(path).isSymLink()) return read(path, limit);
+      if (use_cache && (QFileInfo::exists(path) || QFileInfo(path).isSymLink())) return read(path, limit);
       if (offline) throw std::runtime_error("Offline mode: required title content missing from cache");
       // NUS uses HTTP. Trust comes from Nintendo signatures and signed content hashes, never transport alone.
       const auto bytes = fetch(QUrl("http://nus.cdn.shop.wii.com/ccs/download/" + text + "/" + name), limit);
-      pending[name] = bytes;
+      if (use_cache) pending[name] = bytes;
       return bytes;
     };
     const auto metadata = load("tmd." + QString::number(version), 2 * 1024 * 1024);
@@ -121,7 +127,7 @@ namespace factory {
     }
     require(decrypt_title(job), "Invalid title contents: " + text);
     // Only authenticated, fully checked titles may add files to the cache. Existing files are never replaced.
-    if (!pending.isEmpty()) {
+    if (use_cache && !pending.isEmpty()) {
       for (const auto& path : directories) directory(path, true);
       for (auto item = pending.cbegin(); item != pending.cend(); ++item) {
         QTemporaryFile staging(base + ".download-XXXXXX");

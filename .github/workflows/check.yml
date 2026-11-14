@@ -84,11 +84,12 @@ jobs:
           build/bin/nand-buffer-regressions --make-fixtures "$fixture"
           docker run --rm --network none -v "$unpacked:/opt/wiiform:ro" \
             -v "$fixture:/fixtures:ro" ubuntu:24.04 \
-            sh -ec '/opt/wiiform/bin/wiiform --version
+            sh -ec 'export WIIFORM_NUS_CACHE=/tmp/cache WIIFORM_NUS_OFFLINE=1
+              /opt/wiiform/bin/wiiform --version
               /opt/wiiform/bin/wii-seed --version
               mkdir /tmp/cache
-              if /opt/wiiform/bin/wii-nand install-title --offline \
-                /fixtures/nand.bin /tmp/new.nand /tmp/cache 0000000100000002 514 >/tmp/error 2>&1; then exit 1; fi
+              if /opt/wiiform/bin/wii-nand install-title \
+                /fixtures/nand.bin /tmp/new.nand 0000000100000002 514 >/tmp/error 2>&1; then exit 1; fi
               grep -F "Offline mode" /tmp/error'
 
       - name: Test relocated macOS bundle
@@ -102,8 +103,9 @@ jobs:
           fixture="$RUNNER_TEMP/synthetic"
           build/bin/nand-buffer-regressions --make-fixtures "$fixture"
           mkdir "$fixture/cache"
-          if env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-nand" install-title --offline \
-            "$fixture/nand.bin" "$fixture/new.nand" "$fixture/cache" 0000000100000002 514 \
+          if env -i PATH=/usr/bin:/bin WIIFORM_NUS_CACHE="$fixture/cache" WIIFORM_NUS_OFFLINE=1 \
+            "$unpacked/bin/wii-nand" install-title \
+            "$fixture/nand.bin" "$fixture/new.nand" 0000000100000002 514 \
             >"$fixture/error" 2>&1; then
             exit 1
           fi

@@ -17,8 +17,6 @@ namespace wiiform {
   using Sha256 = std::array<std::uint8_t, 32>;
 
   enum class Menu : std::uint16_t { e43 = 514, u43 = 513, j43 = 512 };
-  enum class CacheMode { offline, download_missing };
-
   struct StockSeed {
     std::span<const std::uint8_t> keys;
     std::span<const std::uint8_t> boot_blocks;

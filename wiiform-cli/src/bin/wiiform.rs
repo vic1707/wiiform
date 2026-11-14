@@ -26,14 +26,6 @@ struct Cli {
     #[arg(long, value_name = "DIR")]
     output: PathBuf,
 
-    /// NUS and Priiloader cache directory.
-    #[arg(long, default_value = "build/nus-cache")]
-    cache: PathBuf,
-
-    /// Use only local cache entries.
-    #[arg(long)]
-    offline: bool,
-
     /// Boot-area validation policy.
     #[arg(long, value_enum, default_value = "stock")]
     boot_policy: BootPolicy,
@@ -44,12 +36,13 @@ struct Cli {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    let (cache, offline) = workflow::nus_environment()?;
     let options = BuildOptions {
         seed: cli.seed,
         recipe: cli.recipe,
         output: cli.output,
-        cache: cli.cache,
-        offline: cli.offline,
+        cache,
+        offline,
         boot_policy: cli.boot_policy,
         menu: cli.menu,
     };

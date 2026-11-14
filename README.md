@@ -59,16 +59,21 @@ display settings; WAD installs; and Priiloader settings and named hacks.
 
 ```sh
 wiiform --seed console.seed.yaml --recipe recipe.yaml \
-  --output prepared-console [--cache ./cache] [--offline] \
+  --output prepared-console \
   [--boot-policy stock|preserve-source] [--menu 4.3E|4.3U|4.3J]
 ```
+
+NUS downloads are authenticated and kept in memory by default; no cache files
+are read or written. To reuse verified downloads, set `WIIFORM_NUS_CACHE` to a
+directory. For repeatable offline builds (including CI), set both
+`WIIFORM_NUS_CACHE` and `WIIFORM_NUS_OFFLINE=1`. An offline cache miss fails.
+The cache stores only files that pass Wii title signature and content checks.
 
 The output must be a new directory. A successful build publishes `nand.bin`
 and its matching BootMii `keys.bin` together. Setup or display settings generate
 a fresh SYSCONF and mark first-run setup complete. Pair Wii Remotes again after
 restoring a prepared image. A stock recipe without either section uses the
-console's first-run setup. `--offline` requires the requested NUS and
-Priiloader assets in the cache.
+console's first-run setup.
 
 The seed contains plaintext console key material. Save the output privately.
 For a footerless backup, place its matching 1,024-byte `keys.bin` next to it
@@ -81,7 +86,7 @@ or pass `--keys`.
 ## Direct commands
 
 ```sh
-wii-nand install-title INPUT OUTPUT CACHE TITLE_ID VERSION --offline
+wii-nand install-title INPUT OUTPUT TITLE_ID VERSION
 wii-nand install-wad INPUT OUTPUT PACKAGE.wad --sha256 SHA256
 wii-nand remove-title INPUT OUTPUT TITLE_ID
 wii-nand install-priiloader INPUT OUTPUT --app PRIILOADER.app
@@ -90,6 +95,9 @@ wii-nand install-priiloader INPUT OUTPUT --app PRIILOADER.app
 Each edit requires a new output path. Run `wii-nand <command> --help` for
 settings, signature policy and Priiloader hack options. An edit uses about
 528 MiB of memory for the working NAND plus the payload being installed.
+`wii-nand install-title` uses the same `WIIFORM_NUS_CACHE` and
+`WIIFORM_NUS_OFFLINE` environment variables as `wiiform`.
+
 
 ## Release packaging
 

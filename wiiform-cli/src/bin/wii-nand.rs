@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use wiiform::{
     native::{self, CacheMode, WadPolicy},
     recipe::{HackSettings, PriiloaderHack, PriiloaderSettings, Sha256, TitleId, parse_on_off},
-    workflow::{publish_edit, read_bounded, validate_output},
+    workflow::{nus_environment, publish_edit, read_bounded, validate_output},
 };
 
 #[derive(Parser)]
@@ -38,12 +38,9 @@ enum Command {
     InstallTitle {
         #[command(flatten)]
         image: ImagePaths,
-        cache: PathBuf,
         title_id: TitleId,
         #[arg(value_parser = clap::value_parser!(u16).range(..65535))]
         version: u16,
-        #[arg(long)]
-        offline: bool,
     },
     /// Install a WAD after verifying its SHA-256.
     InstallWad {
@@ -113,21 +110,19 @@ fn main() -> Result<()> {
     match Cli::parse().command {
         Command::InstallTitle {
             image,
-            cache,
             title_id,
             version,
-            offline,
         } => {
-            let mode = if offline {
-                CacheMode::Offline
-            } else {
-                CacheMode::DownloadMissing
-            };
-            if !offline {
-                std::fs::create_dir_all(&cache).context("cannot create title cache")?;
+            let (cache, offline) = nus_environment()?;
+            anyhow::ensure!(
+                cache.as_os_str().is_empty() || cache.is_dir(),
+                "NUS cache must be an existing directory"
+            );
+            if !offline && !cache.as_os_str().is_empty() {
+                std::fs::create_dir_all(&cache).context("cannot create NUS cache")?;
             }
             image.edit(|nand| {
-                native::install_nus_title(nand, &cache, title_id.as_u64(), version, mode)
+                native::install_nus_title(nand, &cache, title_id.as_u64(), version, offline)
             })
         }
         Command::InstallWad {

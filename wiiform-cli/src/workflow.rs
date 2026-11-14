@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail, ensure};
 use tempfile::Builder;
 
 use crate::{
-    native::{self, CacheMode, InstalledWad, StockIdentity, WadPolicy},
+    native::{self, InstalledWad, StockIdentity, WadPolicy},
     priiloader_payload,
     recipe::{self, Menu, SignaturePolicy},
     seed::StockSeed,
@@ -30,21 +30,37 @@ pub struct BuildOptions {
     pub menu: Option<Menu>,
 }
 
+/// NUS uses memory-only downloads by default. Set `WIIFORM_NUS_CACHE` to reuse
+/// authenticated files across builds, and `WIIFORM_NUS_OFFLINE=1` to require
+/// that cache to contain every requested file.
+pub fn nus_environment() -> Result<(PathBuf, bool)> {
+    let cache = std::env::var_os("WIIFORM_NUS_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let offline = match std::env::var("WIIFORM_NUS_OFFLINE") {
+        Ok(value) if value == "1" || value.eq_ignore_ascii_case("true") => true,
+        Ok(value) if value == "0" || value.eq_ignore_ascii_case("false") => false,
+        Ok(_) => bail!("WIIFORM_NUS_OFFLINE must be 1, 0, true, or false"),
+        Err(std::env::VarError::NotPresent) => false,
+        Err(error) => return Err(error.into()),
+    };
+    ensure!(
+        !offline || !cache.as_os_str().is_empty(),
+        "WIIFORM_NUS_OFFLINE requires WIIFORM_NUS_CACHE"
+    );
+    Ok((cache, offline))
+}
+
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |options, recipe, nand| {
         let seed = StockSeed::read(&options.seed)?;
-        let mode = if options.offline {
-            CacheMode::Offline
-        } else {
-            CacheMode::DownloadMissing
-        };
         native::create_stock(
             &seed,
             nand,
             &options.cache,
             recipe.menu(),
             options.boot_policy,
-            mode,
+            options.offline,
         )
     })
 }
@@ -58,24 +74,32 @@ fn build_with(
     let output = parent
         .canonicalize()?
         .join(options.output.file_name().context("output needs a name")?);
-    let cache = resolve_cache(&options.cache)?;
+    let cache = if options.cache.as_os_str().is_empty() {
+        PathBuf::new()
+    } else {
+        resolve_cache(&options.cache)?
+    };
     let options = BuildOptions {
         cache,
         ..options.clone()
     };
-    ensure!(
-        !options.cache.starts_with(&output),
-        "cache cannot be inside the output bundle"
-    );
+    if !options.cache.as_os_str().is_empty() {
+        ensure!(
+            !options.cache.starts_with(&output),
+            "cache cannot be inside the output bundle"
+        );
+    }
     let recipe =
         recipe::load_recipe(&options.recipe, options.menu).context("cannot parse recipe")?;
-    if !options.offline {
-        fs::create_dir_all(&options.cache).context("cannot create title cache")?;
+    if !options.cache.as_os_str().is_empty() {
+        if !options.offline {
+            fs::create_dir_all(&options.cache).context("cannot create NUS cache")?;
+        }
+        ensure!(
+            options.cache.is_dir(),
+            "NUS cache must be an existing directory"
+        );
     }
-    ensure!(
-        options.cache.is_dir(),
-        "cache must be an existing directory"
-    );
 
     let mut nand = allocate_nand()?;
     let identity =
@@ -113,8 +137,15 @@ fn build_with(
     }
 
     if let Some(priiloader) = recipe.priiloader() {
+        let temporary_cache;
+        let cache = if options.cache.as_os_str().is_empty() {
+            temporary_cache = Builder::new().tempdir()?;
+            temporary_cache.path()
+        } else {
+            &options.cache
+        };
         let assets = priiloader_payload::prepare(
-            &options.cache,
+            cache,
             options.offline,
             priiloader.app.as_deref(),
             priiloader.hacks.is_some(),
