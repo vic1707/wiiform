@@ -6,17 +6,14 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use serde_json::{Map, Value};
-use yaml_rust2::{
-    parser::{Event, Parser},
-    scanner::TScalarStyle,
-};
+use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
 
 use crate::{Menu, Priiloader, Recipe, RecipeFile, Setup, Title, titles::allowlisted_title_ids};
 
 pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_EVENTS: usize = 20_000;
 pub const MAX_DEPTH: usize = 24;
+const MAX_NODES: usize = 8_192;
 
 #[derive(Debug)]
 pub struct RecipeError(String);
@@ -44,6 +41,29 @@ pub fn load_recipe(path: &Path, menu_override: Option<Menu>) -> Result<Recipe, R
     parse_recipe(&bytes, &recipe_path, menu_override)
 }
 
+fn recipe_yaml_options() -> Options {
+    let mut options = Options::default();
+    options.duplicate_keys = DuplicateKeyPolicy::Error;
+    options.merge_keys = MergeKeyPolicy::Error;
+    options.reject_unsupported_tags = true;
+    options.strict_booleans = true;
+    options.no_schema = true;
+    options.with_snippet = false;
+
+    let mut budget = serde_saphyr::Budget::default();
+    budget.max_reader_input_bytes = Some(MAX_BYTES);
+    budget.max_events = MAX_EVENTS;
+    budget.max_aliases = 0;
+    budget.max_anchors = 0;
+    budget.max_depth = MAX_DEPTH;
+    budget.max_documents = 1;
+    budget.max_nodes = MAX_NODES;
+    budget.max_total_scalar_bytes = MAX_BYTES;
+    budget.flow_nesting_limit = MAX_DEPTH;
+    options.budget = Some(budget);
+    options
+}
+
 pub fn parse_recipe(
     bytes: &[u8],
     recipe_path: &Path,
@@ -54,9 +74,8 @@ pub fn parse_recipe(
     }
     let source =
         std::str::from_utf8(bytes).map_err(|e| error(format!("recipe is not UTF-8: {e}")))?;
-    let value = parse_json_subset(source)?;
-    let file: RecipeFile =
-        serde_json::from_value(value).map_err(|e| error(format!("invalid recipe: {e}")))?;
+    let file: RecipeFile = serde_saphyr::from_str_with_options(source, recipe_yaml_options())
+        .map_err(|e| error(format!("invalid recipe YAML: {e}")))?;
 
     let declared_menu = file.menu;
     validate_setup_for(file.setup.as_ref(), declared_menu)?;
@@ -233,242 +252,6 @@ fn lexical_absolute(path: &Path) -> PathBuf {
     result
 }
 
-fn parse_json_subset(source: &str) -> Result<Value, RecipeError> {
-    let mut parser = Parser::new_from_str(source);
-    let mut events = Vec::new();
-    let mut depth = 0usize;
-    loop {
-        let (event, _) = parser
-            .next_token()
-            .map_err(|e| error(format!("invalid YAML: {e}")))?;
-        if events.len() >= MAX_EVENTS {
-            return Err(error(format!(
-                "recipe contains more than {MAX_EVENTS} YAML events"
-            )));
-        }
-        match event {
-            Event::SequenceStart(..) | Event::MappingStart(..) => {
-                depth += 1;
-                if depth > MAX_DEPTH {
-                    return Err(error(format!("recipe nesting exceeds {MAX_DEPTH} levels")));
-                }
-            }
-            Event::SequenceEnd | Event::MappingEnd => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-        let done = event == Event::StreamEnd;
-        events.push(event);
-        if done {
-            break;
-        }
-    }
-    let mut decoder = EventDecoder { events, offset: 0 };
-    decoder.expect(Event::StreamStart, "missing YAML stream start")?;
-    decoder.expect(Event::DocumentStart, "missing YAML document start")?;
-    let value = decoder.value(0)?;
-    decoder.expect(Event::DocumentEnd, "unexpected YAML document structure")?;
-    if decoder.peek() != Some(&Event::StreamEnd) {
-        return Err(error("recipe must contain exactly one YAML document"));
-    }
-    decoder.expect(Event::StreamEnd, "unexpected YAML stream structure")?;
-    if decoder.offset != decoder.events.len() {
-        return Err(error("unexpected YAML events after document"));
-    }
-    Ok(value)
-}
-
-struct EventDecoder {
-    events: Vec<Event>,
-    offset: usize,
-}
-
-impl EventDecoder {
-    fn peek(&self) -> Option<&Event> {
-        self.events.get(self.offset)
-    }
-
-    fn take(&mut self) -> Result<Event, RecipeError> {
-        let event = self
-            .events
-            .get(self.offset)
-            .cloned()
-            .ok_or_else(|| error("unexpected end of YAML events"))?;
-        self.offset += 1;
-        match event {
-            Event::Alias(_) => Err(error("YAML aliases are forbidden")),
-            Event::Nothing => Err(error("unsupported YAML event")),
-            _ => Ok(event),
-        }
-    }
-
-    fn expect(&mut self, expected: Event, message: &str) -> Result<(), RecipeError> {
-        if self.take()? == expected {
-            Ok(())
-        } else {
-            Err(error(message))
-        }
-    }
-
-    fn value(&mut self, depth: usize) -> Result<Value, RecipeError> {
-        match self.take()? {
-            Event::Scalar(value, style, anchor, tag) => {
-                check_metadata(anchor, tag)?;
-                scalar_to_json(&value, style)
-            }
-            Event::SequenceStart(anchor, tag) => {
-                check_metadata(anchor, tag)?;
-                let nested = depth + 1;
-                if nested > MAX_DEPTH {
-                    return Err(error(format!("recipe nesting exceeds {MAX_DEPTH} levels")));
-                }
-                let mut items = Vec::new();
-                loop {
-                    match self.peek() {
-                        Some(Event::SequenceEnd) => {
-                            self.offset += 1;
-                            break;
-                        }
-                        Some(_) => items.push(self.value(nested)?),
-                        None => return Err(error("unterminated YAML sequence")),
-                    }
-                }
-                Ok(Value::Array(items))
-            }
-            Event::MappingStart(anchor, tag) => {
-                check_metadata(anchor, tag)?;
-                let nested = depth + 1;
-                if nested > MAX_DEPTH {
-                    return Err(error(format!("recipe nesting exceeds {MAX_DEPTH} levels")));
-                }
-                let mut object = Map::new();
-                loop {
-                    match self.peek() {
-                        Some(Event::MappingEnd) => {
-                            self.offset += 1;
-                            break;
-                        }
-                        Some(_) => {
-                            let key = self.map_key()?;
-                            if object.contains_key(&key) {
-                                return Err(error(format!(
-                                    "duplicate key {key:?} in YAML mapping"
-                                )));
-                            }
-                            let value = self.value(nested)?;
-                            object.insert(key, value);
-                        }
-                        None => return Err(error("unterminated YAML mapping")),
-                    }
-                }
-                Ok(Value::Object(object))
-            }
-            Event::Alias(_) => Err(error("YAML aliases are forbidden")),
-            _ => Err(error(
-                "recipe root and values must be YAML scalars, sequences or mappings",
-            )),
-        }
-    }
-
-    fn map_key(&mut self) -> Result<String, RecipeError> {
-        match self.take()? {
-            Event::Scalar(value, style, anchor, tag) => {
-                check_metadata(anchor, tag)?;
-                match scalar_to_json(&value, style)? {
-                    Value::String(key) => Ok(key),
-                    _ => Err(error("YAML mapping keys must be strings")),
-                }
-            }
-            _ => Err(error("YAML mapping keys must be scalar strings")),
-        }
-    }
-}
-
-fn check_metadata(anchor: usize, tag: Option<yaml_rust2::parser::Tag>) -> Result<(), RecipeError> {
-    if anchor != 0 {
-        return Err(error("YAML anchors are forbidden"));
-    }
-    if tag.is_some() {
-        return Err(error("explicit YAML tags are forbidden"));
-    }
-    Ok(())
-}
-
-fn scalar_to_json(value: &str, style: TScalarStyle) -> Result<Value, RecipeError> {
-    if style != TScalarStyle::Plain {
-        return Ok(Value::String(value.to_owned()));
-    }
-    if value == "true" {
-        return Ok(Value::Bool(true));
-    }
-    if value == "false" {
-        return Ok(Value::Bool(false));
-    }
-    if looks_like_implicit_typed_scalar(value) {
-        return Err(error(
-            "unsupported YAML scalar; quote numeric, null, and non-lowercase boolean strings",
-        ));
-    }
-    Ok(Value::String(value.to_owned()))
-}
-
-fn looks_like_implicit_typed_scalar(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    if value.is_empty()
-        || matches!(
-            lower.as_str(),
-            "~" | "null" | "yes" | "no" | "on" | "off" | "true" | "false"
-        )
-    {
-        return true;
-    }
-    if matches!(lower.as_str(), ".inf" | "+.inf" | "-.inf" | ".nan") {
-        return true;
-    }
-    is_yaml_number(value) || looks_like_timestamp(value)
-}
-
-fn is_yaml_number(value: &str) -> bool {
-    let cleaned = value.replace('_', "");
-    let unsigned = cleaned
-        .strip_prefix('+')
-        .or_else(|| cleaned.strip_prefix('-'))
-        .unwrap_or(&cleaned);
-    for prefix in ["0x", "0X", "0o", "0O", "0b", "0B"] {
-        if let Some(digits) = unsigned.strip_prefix(prefix)
-            && !digits.is_empty()
-            && digits.chars().all(|c| c.is_ascii_hexdigit())
-        {
-            return true;
-        }
-    }
-    if cleaned.parse::<i64>().is_ok()
-        || cleaned.parse::<u64>().is_ok()
-        || cleaned.parse::<f64>().is_ok()
-    {
-        return true;
-    }
-    let parts: Vec<_> = cleaned.split(':').collect();
-    parts.len() > 1
-        && parts.iter().all(|part| {
-            let part = part
-                .strip_prefix('+')
-                .or_else(|| part.strip_prefix('-'))
-                .unwrap_or(part);
-            !part.is_empty() && part.parse::<f64>().is_ok()
-        })
-}
-
-fn looks_like_timestamp(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() >= 10
-        && bytes[0..4].iter().all(u8::is_ascii_digit)
-        && bytes[4] == b'-'
-        && bytes[5..7].iter().all(u8::is_ascii_digit)
-        && bytes[7] == b'-'
-        && bytes[8..10].iter().all(u8::is_ascii_digit)
-        && (bytes.len() == 10 || matches!(bytes.get(10), Some(b't' | b'T' | b' ')))
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -537,6 +320,41 @@ mod tests {
                 .get("required")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn yaml_parser_rejects_ambiguous_or_expanded_input() {
+        for source in [
+            "menu: 4.3E\nmenu: 4.3U",
+            "menu: 4.3E\n---\nmenu: 4.3U",
+            "menu: 4.3E\nremove: &items [forecast-channel]\nremove: *items",
+            "menu: 4.3E\nsetup: {nickname: !local value}",
+            "menu: 4.3E\nsetup: {nickname: 123}",
+            "menu: 4.3E\nremove: [yes]",
+            "menu: 4.3E\nsetup: {country: true}",
+        ] {
+            assert!(
+                parse(source, None).is_err(),
+                "unexpectedly accepted YAML {source:?}"
+            );
+        }
+
+        // YAML 1.2 treats `NO` as a string; it is Norway's valid ISO country code.
+        assert!(parse("menu: 4.3E\nsetup: {country: NO}", None).is_ok());
+        assert!(parse("menu: 4.3E\nsetup: {nickname: true}", None).is_err());
+        assert!(parse("menu: 4.3E\nsetup: {nickname: '123'}", None).is_ok());
+
+        let nested = format!(
+            "menu: 4.3E\nsetup: {}",
+            "[".repeat(MAX_DEPTH + 1) + &"]".repeat(MAX_DEPTH + 1)
+        );
+        assert!(parse(&nested, None).is_err());
+    }
+
+    #[test]
+    fn yaml_parser_rejects_oversized_input() {
+        let source = format!("menu: 4.3E\n#{}", "x".repeat(MAX_BYTES));
+        assert!(parse(&source, None).is_err());
     }
 
     #[test]
