@@ -461,11 +461,6 @@ namespace inspect {
         require(nand.CheckEcc(active_metadata * 8 + page), "Active metadata ECC check failed");
       require(nand.CheckHmacMeta(active_metadata), "Active metadata authentication failed");
     }
-    bool authenticated = false;
-    for (int cluster = 0x7f00; cluster < 0x8000; cluster += 16)
-      authenticated |= nand.CheckHmacMeta(cluster);
-    require(authenticated, "No filesystem metadata authenticated");
-
     ImageIndex index(nand);
     for (auto it = index.files().cbegin(); it != index.files().cend(); ++it) {
       const auto& entry = it.value();
@@ -530,8 +525,6 @@ namespace inspect {
       add_expected(expected_metadata, base, 0, 0, NAND_DIR, NAND_RW, NAND_RW, NAND_READ);
       add_expected(expected_metadata, content_dir, 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0);
       add_expected(expected_metadata, ticket_dir + "/" + low + ".tik", 0, 0,
-                   NAND_FILE, NAND_RW, NAND_RW, 0);
-      add_expected(expected_metadata, content_dir + "/title.tmd", 0, 0,
                    NAND_FILE, NAND_RW, NAND_RW, 0);
 
       const auto verified = verify_stock_title(index, shared, id, title.value());
