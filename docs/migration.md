@@ -104,6 +104,21 @@ to require cache hits. Without either variable, title downloads stay in memory.
 A Priiloader recipe requires a `settings` mapping. Use `settings: {}` to apply
 the pinned defaults. Priiloader edits replace previous settings and hack states.
 
+## What a seed contributes
+
+The rebuild uses the console key footer, the bad-block list, the boot blocks,
+and the original console settings. The footer, boot blocks, and settings each
+have a digest checked during reconstruction. Source backup SHA-256 and boot
+diagnostics describe the original image. The build validates the actual boot
+bytes separately.
+
+The footer header is part of the original 1,024 bytes and their digest.
+BackupMii preparation rewrites the recognized NAND Dumper header after
+checking its console ID against OTP. It preserves other headers.
+The optional `settings.original` records source bytes when the exporter
+cannot reconstruct them from the readable settings. The stock builder
+currently requires canonical `setting.txt`, even when supplied those bytes.
+
 ## Release archive and mise
 
 Run `mise run package` on macOS arm64 or Linux x86_64 to build the archive.
