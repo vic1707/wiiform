@@ -9,6 +9,26 @@ pub const MAX_DEPTH: usize = 24;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Binary(pub Vec<u8>);
 
+impl AsRef<[u8]> for Binary {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl schemars::JsonSchema for Binary {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Binary".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "contentEncoding": "base64",
+            "description": "Bytes encoded as a YAML !!binary scalar."
+        })
+    }
+}
+
 impl Serialize for Binary {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where

@@ -90,8 +90,9 @@ CI generates the schema and checks it against the committed copy under
 
 Move keys under the old `system:` block up one indentation level. Keep
 `menu`, `remove`, `setup`, `display`, `titles`, and `priiloader` as top-level
-keys. WAD paths remain relative to the recipe. For inline data, replace
-`path` with `inline: !!binary |` followed by indented base64. Either source
+keys. Move each WAD's `path` or `inline` under `source`. Keep `sha256` and
+`signature_policy` beside `source`. WAD paths resolve relative to the recipe.
+For inline data, use `inline: !!binary |` followed by indented base64. Either source
 requires a SHA-256 of the raw WAD bytes. For a WAD that the recipe deliberately
 permits without a Nintendo signature, use `signature_policy: allow-unsigned`.
 Regenerate earlier unreleased seeds with the current `wii-seed`.
@@ -104,8 +105,10 @@ still work. Pair Wii Remotes after restore.
 Use `WIIFORM_NUS_CACHE` for a persistent title cache and `WIIFORM_NUS_OFFLINE=1`
 to require cache hits. Without either variable, title downloads stay in memory.
 A Priiloader recipe requires a `settings` mapping. Use `settings: {}` to apply
-the pinned defaults. Priiloader edits replace previous settings and hack states.
-Use named flags such as `--fix-480p` in place of `--hack fix_480p=on`.
+the pinned defaults. Remove old `app` fields and the `--app` and
+`--hack-definitions` flags. The commands use the bundled installer and definitions.
+Pass `--stop-disc` to enable the setting or omit it for the default. Use
+`--white-background` for a white background and `--fix-480p` to enable that hack.
 
 ## What a seed contributes
 

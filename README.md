@@ -53,9 +53,9 @@ archive carries its Qt runtime.
 See the [example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
 regenerate the schema from the Rust recipe model. Local file paths resolve
-relative to the recipe. A WAD entry takes either a local `path` or an
-`inline: !!binary |` block containing base64. Both require the SHA-256 of the
-raw WAD bytes. The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
+relative to the recipe. A WAD entry has a `source` with either a local `path`
+or an `inline: !!binary |` block containing base64. Both require the SHA-256
+of the raw WAD bytes. The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
 channel removal, initial setup, display settings, and Priiloader settings and
 named hacks.
 
@@ -75,8 +75,7 @@ The output must be a new directory. A successful build publishes `nand.bin`
 and its matching BootMii `keys.bin` together. Setup or display settings generate
 a fresh SYSCONF and mark first-run setup complete. Pair Wii Remotes again after
 restoring a prepared image. A stock recipe without either section uses the
-console's first-run setup. The release archive includes the pinned Priiloader
-assets. When running from a checkout, run `mise run assets:priiloader` once before
+console's first-run setup. Wiiform uses the pinned Priiloader assets included in the release archive. When running from a checkout, run `mise run assets:priiloader` once before
 using a Priiloader recipe. A `priiloader` section requires `settings`. Use
 `settings: {}` for the pinned defaults. Each application replaces the settings
 and disables unspecified hacks.
@@ -113,8 +112,8 @@ wii-nand install-priiloader INPUT OUTPUT --fix-480p --block-disc-updates
 
 Each edit requires a new output path. Run `wii-nand <command> --help` for
 settings, signature policy and Priiloader hack options. The Priiloader edit
-applies its defaults for unspecified settings. Named hack flags enable their
-respective hacks. Omitted flags leave those hacks off.
+uses the pinned defaults. Pass a switch such as `--stop-disc` or `--fix-480p`
+to enable it, or `--white-background` to choose a white background.
 An edit uses about 528 MiB of memory for the working NAND plus the payload.
 
 ## Release packaging

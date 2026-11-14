@@ -1,23 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "RecipeFile",
-  "description": "Recipe file shape, before resolving local paths and channel aliases.",
+  "title": "Recipe",
   "type": "object",
   "properties": {
     "display": {
       "description": "Optional display settings. An empty mapping uses the defaults.",
-      "$ref": "#/$defs/Display"
+      "$ref": "#/$defs/Display",
+      "default": null
     },
     "menu": {
       "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
       "$ref": "#/$defs/Menu"
     },
     "priiloader": {
-      "description": "Optional Priiloader install/settings/hacks.",
-      "$ref": "#/$defs/PriiloaderFile"
+      "description": "Optional pinned Priiloader install with settings and hacks.",
+      "$ref": "#/$defs/Priiloader",
+      "default": null
     },
     "remove": {
-      "description": "Channels to remove; names expand using the effective menu's region.",
+      "description": "Channels to remove. Names expand using the effective menu's region.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/RemovalInput"
@@ -25,13 +26,14 @@
     },
     "setup": {
       "description": "Optional first-run setup values.",
-      "$ref": "#/$defs/Setup"
+      "$ref": "#/$defs/Setup",
+      "default": null
     },
     "titles": {
-      "description": "Optional WAD titles. Every title requires a path and SHA-256.",
+      "description": "WADs to install from a file or inline bytes.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/TitleFile"
+        "$ref": "#/$defs/Title"
       }
     }
   },
@@ -57,6 +59,42 @@
         "bootmii_ios",
         "system_menu",
         "file"
+      ]
+    },
+    "Binary": {
+      "description": "Bytes encoded as a YAML !!binary scalar.",
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "Data": {
+      "description": "Data supplied by one local file or inline in a recipe.",
+      "oneOf": [
+        {
+          "description": "Local path, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "Data carried in the recipe itself.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "$ref": "#/$defs/Binary"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "inline"
+          ]
+        }
       ]
     },
     "Display": {
@@ -190,14 +228,10 @@
         "usb"
       ]
     },
-    "PriiloaderFile": {
+    "Priiloader": {
       "description": "Priiloader installation and configuration.",
       "type": "object",
       "properties": {
-        "app": {
-          "description": "Optional prebuilt Priiloader installer app, relative to the recipe file.",
-          "type": "string"
-        },
         "hacks": {
           "description": "Complete state for supported hacks. Unlisted hacks default to off.",
           "$ref": "#/$defs/HackSettings",
@@ -536,65 +570,33 @@
           "const": "nintendo"
         },
         {
-          "description": "Permit an unsigned community channel WAD after content validation.",
+          "description": "Permit an unsigned community channel after content validation.",
           "type": "string",
           "const": "allow-unsigned"
         }
       ]
     },
-    "TitleFile": {
-      "description": "A WAD supplied by exactly one local path or inline !!binary data, with a SHA-256 of the exact bytes.",
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "path": {
-              "description": "Local WAD path, relative to the recipe file.",
-              "type": "string"
-            },
-            "sha256": {
-              "description": "64-character hexadecimal SHA-256 digest; normalized to lowercase",
-              "type": "string",
-              "maxLength": 64,
-              "minLength": 64,
-              "pattern": "^[0-9a-fA-F]{64}$"
-            },
-            "signature_policy": {
-              "$ref": "#/$defs/SignaturePolicy"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "path",
-            "sha256"
-          ]
+    "Title": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact WAD bytes.",
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]{64}$"
         },
-        {
-          "type": "object",
-          "properties": {
-            "inline": {
-              "description": "Exact WAD bytes encoded as a YAML !!binary scalar.",
-              "type": "string",
-              "contentEncoding": "base64",
-              "contentMediaType": "application/octet-stream"
-            },
-            "sha256": {
-              "description": "64-character hexadecimal SHA-256 digest; normalized to lowercase",
-              "type": "string",
-              "maxLength": 64,
-              "minLength": 64,
-              "pattern": "^[0-9a-fA-F]{64}$"
-            },
-            "signature_policy": {
-              "$ref": "#/$defs/SignaturePolicy"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "inline",
-            "sha256"
-          ]
+        "signature_policy": {
+          "$ref": "#/$defs/SignaturePolicy"
+        },
+        "source": {
+          "$ref": "#/$defs/Data"
         }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "sha256"
       ]
     }
   }

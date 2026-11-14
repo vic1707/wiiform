@@ -45,8 +45,8 @@ const COMMON_CHANNELS: [(&str, &[&str]); 2] = [
 ];
 
 impl RemovalInput {
-    pub(crate) fn expand(&self, menu: Menu) -> Vec<TitleId> {
-        match self {
+    pub(crate) fn expand(&self, menu: Menu) -> anyhow::Result<Vec<TitleId>> {
+        Ok(match self {
             Self::Name(RemovalName::ForecastChannel) => {
                 vec![
                     title_id(&format!("{}{}", REGIONAL_CHANNELS[0].1, menu.suffix())),
@@ -63,19 +63,18 @@ impl RemovalInput {
             Self::Name(RemovalName::PhotoChannel) => {
                 COMMON_CHANNELS[1].1.iter().map(|id| title_id(id)).collect()
             }
-            Self::Id(id) => vec![id.clone()],
-        }
-    }
-
-    pub(crate) fn is_allowed(&self) -> bool {
-        match self {
-            Self::Name(_) => true,
-            Self::Id(id) => allowlisted_title_ids().contains(id.as_str()),
-        }
+            Self::Id(id) => {
+                anyhow::ensure!(
+                    allowlisted_title_ids().contains(id.as_str()),
+                    "remove contains a title ID outside the supported channel allowlist"
+                );
+                vec![id.clone()]
+            }
+        })
     }
 }
 
-pub(crate) fn allowlisted_title_ids() -> BTreeSet<&'static str> {
+fn allowlisted_title_ids() -> BTreeSet<&'static str> {
     let mut result = BTreeSet::new();
     for (_, base) in REGIONAL_CHANNELS {
         for suffix in ["50", "45", "4a", "41"] {

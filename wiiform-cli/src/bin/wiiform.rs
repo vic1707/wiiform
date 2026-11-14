@@ -6,8 +6,8 @@ use clap::{
 };
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    recipe::{Menu, resolve_regular_file},
-    workflow::{self, BootPolicy, BuildOptions},
+    recipe::{Menu, ResolvedPath},
+    workflow::{self, BootPolicy, BuildOptions, SeedInput},
 };
 
 #[derive(Debug, Parser)]
@@ -18,12 +18,12 @@ use wiiform::{
 )]
 struct Cli {
     /// Plaintext console seed YAML, or - to read from stdin.
-    #[arg(long, value_parser = PathBufValueParser::new().try_map(seed_path))]
-    seed: PathBuf,
+    #[arg(long, value_parser = PathBufValueParser::new().try_map(SeedInput::try_from))]
+    seed: SeedInput,
 
     /// Declarative Wiiform recipe YAML.
-    #[arg(long, value_parser = PathBufValueParser::new().try_map(|path| resolve_regular_file(&path)))]
-    recipe: PathBuf,
+    #[arg(long)]
+    recipe: ResolvedPath,
 
     /// New output directory for nand.bin and its matching keys.bin.
     #[arg(long, value_name = "DIR")]
@@ -36,14 +36,6 @@ struct Cli {
     /// Override the recipe menu with 4.3E, 4.3U, or 4.3J.
     #[arg(long)]
     menu: Option<Menu>,
-}
-
-fn seed_path(path: PathBuf) -> Result<PathBuf> {
-    if path.as_os_str() == "-" {
-        Ok(path)
-    } else {
-        resolve_regular_file(&path)
-    }
 }
 
 fn run(cli: Cli) -> Result<()> {

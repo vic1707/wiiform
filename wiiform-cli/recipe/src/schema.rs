@@ -4,14 +4,14 @@ use std::{borrow::Cow, marker::PhantomData};
 use schemars::{JsonSchema, Schema, SchemaGenerator, schema_for};
 use serde::{Deserialize, Deserializer};
 
-use crate::RecipeFile;
+use crate::Recipe;
 
 /// Generate a JSON Schema document for the user-authored YAML recipe shape.
 ///
 /// Runtime checks still enforce menu-dependent removal allowlists and
 /// filesystem constraints that static JSON Schema cannot express.
 pub fn json_schema() -> Result<String, serde_json::Error> {
-    serde_json::to_string_pretty(&schema_for!(RecipeFile))
+    serde_json::to_string_pretty(&schema_for!(Recipe))
 }
 
 /// Schemars helper for optional Serde fields where YAML null is forbidden.

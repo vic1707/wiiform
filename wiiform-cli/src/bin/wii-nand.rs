@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::Result;
-use clap::{
-    Args, Parser, Subcommand,
-    builder::{PathBufValueParser, TypedValueParser},
-};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use wiiform::{
     native::{self, WadPolicy},
     priiloader_payload,
-    recipe::{HackSettings, PriiloaderSettings, Sha256, TitleId, WadSource, resolve_regular_file},
-    workflow::{nus_environment, prepare_nus_cache, publish_edit, read_bounded, validate_output},
+    recipe::{
+        HackSettings, PriiloaderSettings, ResolvedPath, Sha256, TitleId, WAD_SIZE, read_bounded,
+    },
+    workflow::{nus_environment, prepare_nus_cache, publish_edit, validate_output},
 };
 
 #[derive(Parser)]
@@ -22,8 +21,7 @@ struct Cli {
 #[derive(Args)]
 struct ImagePaths {
     /// Existing footer-bearing NAND.
-    #[arg(value_parser = regular_file())]
-    input: PathBuf,
+    input: ResolvedPath,
     /// New path for the edited NAND.
     output: PathBuf,
 }
@@ -31,7 +29,7 @@ struct ImagePaths {
 impl ImagePaths {
     fn edit(self, operation: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
         validate_output(&self.output)?;
-        let mut nand = read_bounded(&self.input, native::NAND_BYTES, native::NAND_BYTES)?;
+        let mut nand = read_bounded(self.input.as_ref(), native::NAND_BYTES..=native::NAND_BYTES)?;
         operation(&mut nand)?;
         publish_edit(&nand, &self.output)
     }
@@ -51,8 +49,7 @@ enum Command {
     InstallWad {
         #[command(flatten)]
         image: ImagePaths,
-        #[arg(value_parser = regular_file())]
-        wad: PathBuf,
+        wad: ResolvedPath,
         #[arg(long)]
         sha256: Sha256,
         #[arg(long)]
@@ -68,21 +65,11 @@ enum Command {
     InstallPriiloader {
         #[command(flatten)]
         image: ImagePaths,
-        /// Override the bundled Wii Priiloader 0.10.0 app.
-        #[arg(long, value_parser = regular_file())]
-        app: Option<PathBuf>,
-        /// Override the bundled, pinned hacks_hash.ini.
-        #[arg(long, value_parser = regular_file())]
-        hack_definitions: Option<PathBuf>,
         #[command(flatten)]
         settings: PriiloaderSettings,
         #[command(flatten)]
         hacks: HackSettings,
     },
-}
-
-fn regular_file() -> impl TypedValueParser<Value = PathBuf> {
-    PathBufValueParser::new().try_map(|path| resolve_regular_file(&path))
 }
 
 fn main() -> Result<()> {
@@ -109,9 +96,8 @@ fn main() -> Result<()> {
             } else {
                 WadPolicy::Standard
             };
-            let source = WadSource::File(wad);
             image.edit(|nand| {
-                let bytes = source.resolve()?;
+                let bytes = read_bounded(wad.as_ref(), WAD_SIZE)?;
                 native::install_wad(nand, &bytes, &sha256, policy)?;
                 Ok(())
             })
@@ -121,13 +107,10 @@ fn main() -> Result<()> {
         }
         Command::InstallPriiloader {
             image,
-            app,
-            hack_definitions,
             settings,
             hacks,
         } => {
-            let (app, definitions) =
-                priiloader_payload::load(app.as_deref(), hack_definitions.as_deref())?;
+            let (app, definitions) = priiloader_payload::load()?;
             image.edit(|nand| native::apply_priiloader(nand, &app, &definitions, &settings, &hacks))
         }
     }
@@ -163,8 +146,9 @@ mod tests {
         assert_eq!(settings, PriiloaderSettings::default());
         assert_eq!(hacks, HackSettings::default());
 
-        let (settings, hacks) = parse(&["--black-background", "off", "--fix-480p"]);
+        let (settings, hacks) = parse(&["--white-background", "--stop-disc", "--fix-480p"]);
         assert!(!settings.black_background);
+        assert!(settings.stop_disc);
         assert_eq!(
             hacks,
             HackSettings {

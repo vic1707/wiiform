@@ -2,7 +2,7 @@
 use std::{
     ffi::CString,
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -13,16 +13,34 @@ use tempfile::Builder;
 use crate::{
     native::{self, InstalledWad, StockIdentity, WadPolicy},
     priiloader_payload,
-    recipe::{self, Menu, SignaturePolicy, open_regular_file},
+    recipe::{Menu, Recipe, ResolvedPath, SignaturePolicy, WAD_SIZE, open_regular_file},
     seed::StockSeed,
 };
 
 pub use native::BootPolicy;
 
 #[derive(Clone, Debug)]
+pub enum SeedInput {
+    Stdin,
+    File(ResolvedPath),
+}
+
+impl TryFrom<PathBuf> for SeedInput {
+    type Error = anyhow::Error;
+
+    fn try_from(path: PathBuf) -> Result<Self> {
+        if path.as_os_str() == "-" {
+            Ok(Self::Stdin)
+        } else {
+            Ok(Self::File(path.try_into()?))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct BuildOptions {
-    pub seed: PathBuf,
-    pub recipe: PathBuf,
+    pub seed: SeedInput,
+    pub recipe: ResolvedPath,
     pub output: PathBuf,
     pub cache: PathBuf,
     pub offline: bool,
@@ -53,10 +71,9 @@ pub fn nus_environment() -> Result<(PathBuf, bool)> {
 
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |options, recipe| {
-        let seed = if options.seed.as_os_str() == "-" {
-            StockSeed::from_reader(io::stdin().lock())
-        } else {
-            StockSeed::from_reader(open_regular_file(&options.seed)?)
+        let seed = match &options.seed {
+            SeedInput::Stdin => StockSeed::from_reader(io::stdin().lock()),
+            SeedInput::File(path) => StockSeed::from_reader(open_regular_file(path.as_ref())?.0),
         }?;
         prepare_nus_cache(&options.cache, options.offline)?;
         let mut nand = allocate_nand()?;
@@ -64,7 +81,7 @@ pub fn build(options: &BuildOptions) -> Result<()> {
             &seed,
             &mut nand,
             &options.cache,
-            recipe.menu(),
+            recipe.menu,
             options.boot_policy,
             options.offline,
         )?;
@@ -74,7 +91,7 @@ pub fn build(options: &BuildOptions) -> Result<()> {
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&BuildOptions, &recipe::Recipe) -> Result<(Vec<u8>, StockIdentity)>,
+    create_stock: impl FnOnce(&BuildOptions, &Recipe) -> Result<(Vec<u8>, StockIdentity)>,
 ) -> Result<()> {
     validate_output(&options.output)?;
     let parent = output_parent(&options.output)?;
@@ -96,60 +113,60 @@ fn build_with(
             "cache cannot be inside the output bundle"
         );
     }
-    let recipe =
-        recipe::load_recipe(&options.recipe, options.menu).context("cannot parse recipe")?;
+    let (recipe, removals) = Recipe::load(&options.recipe, options.menu)?;
     let priiloader = recipe
-        .priiloader()
-        .map(|config| -> Result<_> {
-            let (app, definitions) = priiloader_payload::load(config.app.as_deref(), None)?;
-            Ok((config, app, definitions))
-        })
+        .priiloader
+        .as_ref()
+        .map(|config| priiloader_payload::load().map(|assets| (config, assets)))
         .transpose()?;
     let (mut nand, identity) =
         create_stock(&options, &recipe).context("cannot create stock NAND")?;
 
-    let removals: Vec<_> = recipe
-        .remove()
+    let removals: Vec<_> = removals
         .iter()
-        .map(recipe::TitleId::as_u64)
+        .map(crate::recipe::TitleId::as_u64)
         .collect();
     for &id in &removals {
         native::remove_title(&mut nand, id)
             .with_context(|| format!("cannot remove title {id:016x}"))?;
     }
 
-    if recipe.setup().is_some() || recipe.display().is_some() {
-        native::apply_system_settings(&mut nand, recipe.menu(), recipe.setup(), recipe.display())
-            .context("cannot generate system settings")?;
+    if recipe.setup.is_some() || recipe.display.is_some() {
+        native::apply_system_settings(
+            &mut nand,
+            recipe.menu,
+            recipe.setup.as_ref(),
+            recipe.display.as_ref(),
+        )
+        .context("cannot generate system settings")?;
     }
 
-    for title in recipe.titles() {
-        let wad = title.source.resolve()?;
+    for (index, title) in recipe.titles.iter().enumerate() {
+        let wad = title
+            .source
+            .resolve(WAD_SIZE)
+            .with_context(|| format!("cannot read titles[{index}] source"))?;
         let policy = match title.signature_policy {
             SignaturePolicy::Nintendo => WadPolicy::Standard,
             SignaturePolicy::AllowUnsigned => WadPolicy::LegacyChannel,
         };
-        let installed = native::install_wad(&mut nand, &wad, &title.sha256, policy).with_context(
-            || match title.source.file_path() {
-                Some(path) => format!("cannot install WAD {}", path.display()),
-                None => "cannot install inline WAD".to_owned(),
-            },
-        )?;
+        let installed = native::install_wad(&mut nand, &wad, &title.sha256, policy)
+            .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
             !removals.contains(&installed.title_id),
             "recipe both removes and installs title {:016x}",
             installed.title_id
         );
-        warn_region(&installed, recipe.menu());
+        warn_region(&installed, recipe.menu);
     }
 
-    if let Some((priiloader, app, definitions)) = priiloader {
+    if let Some((config, (app, definitions))) = priiloader {
         native::apply_priiloader(
             &mut nand,
             &app,
             &definitions,
-            &priiloader.settings,
-            &priiloader.hacks,
+            &config.settings,
+            &config.hacks,
         )
         .context("cannot install or configure Priiloader")?;
     }
@@ -188,29 +205,6 @@ fn allocate_nand() -> Result<Vec<u8>> {
         .context("cannot allocate NAND buffer")?;
     nand.resize(native::NAND_BYTES, 0);
     Ok(nand)
-}
-
-pub fn read_bounded(path: &Path, min: usize, max: usize) -> Result<Vec<u8>> {
-    let mut file = open_regular_file(path)?;
-    let size = usize::try_from(file.metadata()?.len())?;
-    ensure!(
-        (min..=max).contains(&size),
-        "{} has an unsupported file size",
-        path.display(),
-    );
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(size)
-        .context("cannot allocate file buffer")?;
-    bytes.resize(size, 0);
-    file.read_exact(&mut bytes)
-        .with_context(|| format!("cannot read {}", path.display()))?;
-    ensure!(
-        file.read(&mut [0])? == 0,
-        "{} grew while reading",
-        path.display()
-    );
-    Ok(bytes)
 }
 
 pub fn prepare_nus_cache(cache: &Path, offline: bool) -> Result<()> {
@@ -349,6 +343,7 @@ fn rename_noreplace(source: &Path, target: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recipe::read_bounded;
     use sha2::{Digest, Sha256};
     use std::{
         io::{BufRead, BufReader},
@@ -396,15 +391,15 @@ mod tests {
         fs::write(
             &recipe,
             format!(
-                "menu: 4.3E\ntitles:\n  - path: fixture.wad\n    sha256: \"{}\"\n    signature_policy: allow-unsigned\n",
+                "menu: 4.3E\ntitles:\n  - source: {{ path: fixture.wad }}\n    sha256: \"{}\"\n    signature_policy: allow-unsigned\n",
                 expected.trim()
             ),
         )?;
         let image_before = hash(&image)?;
         let wad_before = hash(&wad)?;
         let options = BuildOptions {
-            seed: seed.clone(),
-            recipe,
+            seed: SeedInput::File(seed.clone().try_into()?),
+            recipe: recipe.try_into()?,
             output: output.clone(),
             cache: fixture,
             offline: true,
@@ -412,7 +407,7 @@ mod tests {
             menu: None,
         };
         let failure = build_with(&options, |_, _| {
-            let nand = read_bounded(&image, native::NAND_BYTES, native::NAND_BYTES)?;
+            let nand = read_bounded(&image, native::NAND_BYTES..=native::NAND_BYTES)?;
             Ok((
                 nand,
                 StockIdentity {

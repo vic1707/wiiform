@@ -74,22 +74,22 @@ pub struct PriiloaderSettings {
     #[cfg_attr(feature = "cli", arg(long, value_enum, default_value = "auto"))]
     pub preferred_mount_point: MountPoint,
     /// Stop the disc drive at startup. Defaults to off.
-    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    #[cfg_attr(feature = "cli", arg(long))]
     pub stop_disc: bool,
     /// Light the drive slot when an error occurs. Defaults to off.
-    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    #[cfg_attr(feature = "cli", arg(long))]
     pub lid_slot_on_error: bool,
     /// Ignore standby mode. Defaults to off.
-    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    #[cfg_attr(feature = "cli", arg(long))]
     pub ignore_shutdown_mode: bool,
     /// Use a black background. The pinned default is on.
-    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "on", value_name = "on|off"))]
+    #[cfg_attr(feature = "cli", arg(long = "white-background", action = clap::ArgAction::SetFalse, help = "Use a white background. Defaults to black."))]
     pub black_background: bool,
     /// Dump Gecko output. Defaults to off.
-    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    #[cfg_attr(feature = "cli", arg(long))]
     pub dump_gecko_text: bool,
     /// Show Priiloader update notices. Defaults to off.
-    #[cfg_attr(feature = "cli", arg(long, action = clap::ArgAction::Set, value_parser = parse_on_off, default_value = "off", value_name = "on|off"))]
+    #[cfg_attr(feature = "cli", arg(long))]
     pub show_rc_updates: bool,
 }
 
@@ -107,14 +107,5 @@ impl Default for PriiloaderSettings {
             dump_gecko_text: false,
             show_rc_updates: false,
         }
-    }
-}
-
-#[cfg(feature = "cli")]
-fn parse_on_off(value: &str) -> Result<bool, String> {
-    match value {
-        "on" => Ok(true),
-        "off" => Ok(false),
-        _ => Err("expected on or off".to_owned()),
     }
 }
