@@ -20,13 +20,33 @@ namespace {
         reinterpret_cast<const uchar*>(bytes.constData() + offset));
   }
 
+  auto byte_value(quint8 value) -> QByteArray {
+    return QByteArray(1, static_cast<char>(value));
+  }
+
+  void check_nickname(const QByteArray& payload, const QString& expected) {
+    check(payload.size() == 0x16, "Generated nickname record has the wrong size");
+    for (int index = 0; index < 10; ++index) {
+      const auto code = read_u16(payload, index * 2);
+      const auto expected_code = index < expected.size()
+          ? expected.at(index).unicode()
+          : quint16(0);
+      check(code == expected_code, "Generated nickname UTF-16 bytes are incorrect");
+    }
+    check(read_u16(payload, 20) == expected.size(),
+          "Generated nickname character count is incorrect");
+  }
+
   auto entry_payload(const QByteArray& bytes, std::string_view wanted_name) -> QByteArray {
     const int count = read_u16(bytes, 4);
     for (int index = 0; index < count; ++index) {
       const int start = read_u16(bytes, 6 + index * 2);
       const int next = read_u16(bytes, 6 + (index + 1) * 2);
+      check(start >= 6 + (count + 1) * 2 && start < next && next <= bytes.size() - 4,
+            "Invalid SYSCONF entry offsets");
       const auto descriptor = static_cast<std::uint8_t>(bytes.at(start));
       const int name_size = (descriptor & 0x1f) + 1;
+      check(start + 1 + name_size < next, "SYSCONF entry name exceeds its bounds");
       const auto name = std::string_view(bytes.constData() + start + 1, name_size);
       if (name != wanted_name) continue;
 
@@ -59,31 +79,32 @@ namespace {
     check(bytes.size() == sysconf::size, "Generated SYSCONF has the wrong size");
     check(bytes.startsWith("SCv0") && bytes.mid(bytes.size() - 4) == "SCed",
           "Generated SYSCONF has invalid sentinels");
-    const auto settings = sysconf::read_settings(bytes);
-    check(settings.setup_complete == true, "Generated SYSCONF did not skip first-time setup");
-    check(settings.nickname == QStringLiteral("Setup"), "Generated nickname did not round-trip");
-    check(settings.language == language,
-          "Generated language did not round-trip");
-    check(settings.country == country, "Generated country did not round-trip");
-    check(settings.sensor_bar_above == false, "Generated sensor-bar position did not round-trip");
-
-    const wiiform::SystemSettings alternate{"Alternate", language, country, true, false, false, false};
-    const auto alternate_bytes = sysconf::create(alternate, menu);
-    const auto alternate_settings = sysconf::read_settings(alternate_bytes);
-    const auto alternate_display = sysconf::read_display(alternate_bytes);
-    check(alternate_settings.setup_complete == true &&
-              alternate_settings.nickname == QStringLiteral("Alternate") &&
-              alternate_settings.language == language && alternate_settings.country == country &&
-              alternate_settings.sensor_bar_above == true,
-          "Alternate generated setup fields did not round-trip");
-    check(alternate_display.widescreen == false && alternate_display.progressive_scan == false &&
-              alternate_display.pal60 == false,
-          "Alternate generated display fields did not round-trip");
-
+    check(entry_payload(bytes, "IPL.CD") == byte_value(1),
+          "Generated SYSCONF must mark first-time setup complete");
+    check_nickname(entry_payload(bytes, "IPL.NIK"), QStringLiteral("Setup"));
+    check(entry_payload(bytes, "IPL.LNG") == byte_value(static_cast<quint8>(language)),
+          "Generated language value is incorrect");
     const auto country_payload = entry_payload(bytes, "IPL.SADR");
     check(country_payload.size() == 0x1008, "Generated country payload has the wrong size");
     check(static_cast<std::uint8_t>(country_payload.at(0)) == country,
           "IPL.SADR does not begin with the country code");
+    check(entry_payload(bytes, "BT.BAR") == byte_value(0),
+          "Generated sensor-bar position is incorrect");
+
+    const wiiform::SystemSettings alternate{"Alternate", language, country, true, false, false, false};
+    const auto alternate_bytes = sysconf::create(alternate, menu);
+    check(entry_payload(alternate_bytes, "IPL.CD") == byte_value(1),
+          "Alternate SYSCONF must mark first-time setup complete");
+    check_nickname(entry_payload(alternate_bytes, "IPL.NIK"), QStringLiteral("Alternate"));
+    check(entry_payload(alternate_bytes, "IPL.LNG") == byte_value(static_cast<quint8>(language)),
+          "Alternate generated language value is incorrect");
+    check(entry_payload(alternate_bytes, "BT.BAR") == byte_value(1),
+          "Alternate generated sensor-bar position is incorrect");
+    check(entry_payload(alternate_bytes, "IPL.AR") == byte_value(0) &&
+              entry_payload(alternate_bytes, "IPL.PGS") == byte_value(0) &&
+              entry_payload(alternate_bytes, "IPL.E60") == byte_value(0),
+          "Alternate generated display values are incorrect");
+
     check(country_payload.mid(1, 3) == QByteArray(3, '\0'),
           "Generated country subdivision bytes must retain their zero defaults");
 
@@ -94,12 +115,10 @@ namespace {
     check(entry_payload(bytes, "IPL.PC").size() == 0x4a &&
               entry_payload(bytes, "IPL.IDL").size() == 2,
           "Generated SYSCONF array lengths must match real Wii records");
-    const auto bar_payload = entry_payload(bytes, "BT.BAR");
-    check(bar_payload.size() == 1 && bar_payload.at(0) == 0,
-          "BT.BAR did not encode the below position");
-    const auto display = sysconf::read_display(bytes);
-    check(display.widescreen == true && display.progressive_scan == true && display.pal60 == true,
-          "Generated display flags did not round-trip");
+    check(entry_payload(bytes, "IPL.AR") == byte_value(1) &&
+              entry_payload(bytes, "IPL.PGS") == byte_value(1) &&
+              entry_payload(bytes, "IPL.E60") == byte_value(1),
+          "Generated display values are incorrect");
   }
 } // namespace
 
