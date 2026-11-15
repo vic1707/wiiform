@@ -15,7 +15,8 @@ pub struct Recipe {
     /// Channels to remove. Names expand using the effective menu's region.
     #[serde(default)]
     remove: Vec<RemovalInput>,
-    /// Optional first-run setup values.
+    /// Supply a mapping to complete first-run setup with these settings and defaults.
+    /// Omit this section or use null to run the Wii setup wizard.
     #[serde(default)]
     pub setup: Option<Setup>,
     /// Optional display settings. An empty mapping uses the defaults.

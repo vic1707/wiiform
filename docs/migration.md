@@ -97,7 +97,9 @@ requires a SHA-256 of the raw WAD bytes. For a WAD that the recipe deliberately
 permits without a Nintendo signature, use `signature_policy: allow-unsigned`.
 Regenerate earlier unreleased seeds with the current `wii-seed`.
 Remove `--reference` from scripts. Setup and display options now generate
-SYSCONF using recipe values and menu defaults. Use a two-letter country code
+SYSCONF using recipe values and menu defaults. A `setup` mapping completes
+first-run setup. Omit it or set it to null to keep the wizard enabled, including
+when a `display` mapping is present. Use a two-letter country code
 such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
 parsers interpret it as a boolean. Replace quoted Wii codes such as "110"
 with the corresponding ISO code. Pair Wii Remotes after restore.

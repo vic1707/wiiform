@@ -39,7 +39,7 @@
       }
     },
     "setup": {
-      "description": "Optional first-run setup values.",
+      "description": "Supply a mapping to complete first-run setup with these settings and defaults.\nOmit this section or use null to run the Wii setup wizard.",
       "anyOf": [
         {
           "$ref": "#/$defs/Setup"
@@ -192,7 +192,7 @@
       ]
     },
     "Display": {
-      "description": "Display configuration written to SYSCONF.\n\nAn explicit empty mapping applies the defaults. Omitting both setup and\ndisplay keeps factory first-run behavior.",
+      "description": "Display configuration written to SYSCONF.\n\nAn empty mapping applies display defaults. A display section on its own\nleaves the Wii setup wizard enabled.",
       "type": "object",
       "properties": {
         "aspect": {

@@ -11,8 +11,8 @@ remove:
   # - photo-channel
   # - "0001000248414650"
 
-# Either setup or display marks first-run setup complete.
-# Use an empty mapping for defaults. Omit both sections or write null to run the Wii setup wizard.
+# A setup mapping completes first-run setup. Use {} for all defaults.
+# Omit setup or set it to null to run the Wii setup wizard, even with display settings.
 setup:
   nickname: "Speed Wii" # Defaults to "Wii".
   language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.

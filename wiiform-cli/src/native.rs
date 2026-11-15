@@ -59,6 +59,7 @@ pub fn apply_system_settings(
     setup: Option<&Setup>,
     display: Option<&Display>,
 ) -> Result<()> {
+    let setup_complete = setup.is_some();
     let default_setup;
     let setup = match setup {
         Some(setup) => setup,
@@ -78,6 +79,7 @@ pub fn apply_system_settings(
             widescreen: display.aspect == Aspect::SixteenNine,
             progressive: display.progressive,
             pal60: display.pal60,
+            setup_complete,
         },
     )?)
 }

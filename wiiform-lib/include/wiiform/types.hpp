@@ -65,6 +65,7 @@ namespace wiiform {
     bool widescreen;
     bool progressive;
     bool pal60;
+    bool setup_complete = true;
   };
 
   enum class Autoboot : std::uint8_t { disabled = 0, homebrew_channel = 1, bootmii_ios = 2, system_menu = 3, file = 4 };

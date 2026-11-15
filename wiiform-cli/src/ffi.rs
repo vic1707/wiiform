@@ -24,6 +24,7 @@ pub mod bridge {
         widescreen: bool,
         progressive: bool,
         pal60: bool,
+        setup_complete: bool,
     }
 
     struct PriiloaderSettings {

@@ -54,7 +54,7 @@ void apply_system_settings(Nand nand, const SystemSettings& settings) {
   core::apply_system_settings(span(nand), {
       std::string(settings.nickname), static_cast<wiiform::Language>(settings.language),
       settings.country, settings.sensor_bar_above, settings.widescreen,
-      settings.progressive, settings.pal60});
+      settings.progressive, settings.pal60, settings.setup_complete});
 }
 
 void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,

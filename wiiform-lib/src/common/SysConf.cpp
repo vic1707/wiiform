@@ -270,7 +270,7 @@ namespace {
       {"IPL.CB", Type::Long, u32_bytes(0)},
       {"IPL.AR", Type::Byte, QByteArray(1, settings.widescreen ? char(1) : char(0))},
       {"IPL.SSV", Type::Byte, QByteArray(1, char(1))},
-      {"IPL.CD", Type::ByteBool, QByteArray(1, char(1))},
+      {"IPL.CD", Type::ByteBool, QByteArray(1, char(settings.setup_complete))},
       {"IPL.CD2", Type::ByteBool, QByteArray(1, char(0))},
       {"IPL.EULA", Type::ByteBool, QByteArray(1, char(0))},
       {"IPL.UPT", Type::Byte, QByteArray(1, char(2))},
