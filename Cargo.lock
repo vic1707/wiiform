@@ -773,6 +773,7 @@ dependencies = [
  "libc",
  "lzma-rust2",
  "nnn",
+ "rustix",
  "serde",
  "serde-saphyr",
  "serde_json",

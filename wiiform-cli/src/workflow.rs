@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use std::{
-    ffi::CString,
     fs::{self, File, OpenOptions},
     io::{self, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
@@ -225,13 +224,17 @@ pub fn prepare_nus_cache(cache: &Path, offline: bool) -> Result<()> {
 fn resolve_cache(path: &Path) -> Result<PathBuf> {
     let absolute = std::env::current_dir()?.join(path);
     let mut existing = PathBuf::new();
-    for part in absolute.components() {
-        existing.push(part);
-        if let Ok(canonical) = existing.canonicalize() {
-            existing = canonical;
-        } else if part == std::path::Component::ParentDir {
-            existing.pop();
-            existing.pop();
+    for component in absolute.components() {
+        match existing.join(component.as_os_str()).canonicalize() {
+            Ok(canonical) => existing = canonical,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => match component {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    existing.pop();
+                }
+                _ => existing.push(component.as_os_str()),
+            },
+            Err(error) => return Err(error).context("cannot resolve NUS cache path"),
         }
     }
     Ok(existing)
@@ -296,48 +299,8 @@ fn publish_bundle(nand: &[u8], keys: &[u8], output: &Path) -> Result<()> {
     rename_noreplace(&bundle, output).context("cannot publish NAND restore bundle")
 }
 
-#[cfg(target_os = "linux")]
 fn rename_noreplace(source: &Path, target: &Path) -> std::io::Result<()> {
-    use std::{os::unix::ffi::OsStrExt, os::unix::io::RawFd};
-    const RENAME_NOREPLACE: libc::c_uint = 1;
-    let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "source path contains NUL")
-    })?;
-    let target = CString::new(target.as_os_str().as_bytes()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "target path contains NUL")
-    })?;
-    let result = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD as RawFd,
-            source.as_ptr(),
-            libc::AT_FDCWD as RawFd,
-            target.as_ptr(),
-            RENAME_NOREPLACE,
-        )
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn rename_noreplace(source: &Path, target: &Path) -> std::io::Result<()> {
-    use std::os::unix::ffi::OsStrExt;
-    let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "source path contains NUL")
-    })?;
-    let target = CString::new(target.as_os_str().as_bytes()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "target path contains NUL")
-    })?;
-    let result = unsafe { libc::renamex_np(source.as_ptr(), target.as_ptr(), libc::RENAME_EXCL) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+    renameat_with(CWD, source, CWD, target, RenameFlags::NOREPLACE).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -349,6 +312,30 @@ mod tests {
         io::{BufRead, BufReader},
         process::Command,
     };
+
+    #[test]
+    fn online_creates_the_cache_and_offline_requires_it() -> Result<()> {
+        let work = tempfile::tempdir()?;
+        let expected = work.path().canonicalize()?.join("cache/contents");
+        let path = resolve_cache(&work.path().join("missing/../cache/contents"))?;
+        assert_eq!(path, expected);
+        assert!(prepare_nus_cache(&path, true).is_err());
+        prepare_nus_cache(&path, false)?;
+        assert!(path.is_dir());
+        prepare_nus_cache(&path, true)
+    }
+
+    #[test]
+    fn no_replace_preserves_an_existing_directory() -> Result<()> {
+        let work = tempfile::tempdir()?;
+        let from = work.path().join("staged");
+        let to = work.path().join("existing");
+        fs::create_dir(&from)?;
+        fs::create_dir(&to)?;
+        assert!(rename_noreplace(&from, &to).is_err());
+        assert!(from.is_dir() && to.is_dir());
+        Ok(())
+    }
 
     fn hash(path: &Path) -> Result<Vec<u8>> {
         let mut digest = Sha256::new();
