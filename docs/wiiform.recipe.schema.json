@@ -83,6 +83,7 @@
       "contentEncoding": "base64"
     },
     "Cios": {
+      "description": "One WAD source and the SHA-256 of its exact bytes.",
       "type": "object",
       "properties": {
         "sha256": {
@@ -636,6 +637,7 @@
       ]
     },
     "Title": {
+      "description": "One WAD source and the SHA-256 of its exact bytes.",
       "type": "object",
       "properties": {
         "sha256": {

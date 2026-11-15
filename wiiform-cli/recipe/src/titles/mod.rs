@@ -5,20 +5,17 @@ mod cios;
 mod removal;
 mod sha256;
 mod title_id;
-
-use std::ops::RangeInclusive;
+mod wad;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{Data, yaml::Binary};
-
-pub use cios::{Cios, CiosTarget};
+pub use cios::{Cios, CiosOptions, CiosTarget};
 pub use removal::{RemovalInput, RemovalName};
 pub use sha256::Sha256;
 pub use title_id::TitleId;
 
-pub const WAD_SIZE: RangeInclusive<usize> = 0x40..=0x2100_0000;
+pub use wad::Wad;
 
 /// WAD signature requirements.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema)]
@@ -31,12 +28,11 @@ pub enum SignaturePolicy {
     AllowUnsigned,
 }
 
+pub type Title = Wad<TitleOptions>;
+
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Title {
-    pub source: Data<Binary>,
-    /// SHA-256 of the exact WAD bytes.
-    pub sha256: Sha256,
+#[schemars(rename = "Title")]
+pub struct TitleOptions {
     #[serde(default)]
     pub signature_policy: SignaturePolicy,
 }

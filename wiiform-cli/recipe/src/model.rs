@@ -56,10 +56,10 @@ impl Recipe {
         }
 
         for title in &mut recipe.titles {
-            title.source.rebase(directory);
+            title.rebase(directory);
         }
         for cios in &mut recipe.cios {
-            cios.source.rebase(directory);
+            cios.rebase(directory);
         }
         Ok((recipe, remove))
     }
@@ -119,7 +119,7 @@ mod tests {
             bytes,
             std::borrow::Cow::Borrowed([255, 0, 1, 254, 255])
         ));
-        assert!(recipe.titles[0].source.resolve(crate::WAD_SIZE).is_err());
+        assert!(recipe.titles[0].resolve().is_err());
         for bad in [
             format!("source: {{path: a.wad, inline: !!binary /wAB}}\n    sha256: {SHA}"),
             format!("source: {{inline: /wAB}}\n    sha256: {SHA}"),
@@ -131,6 +131,50 @@ mod tests {
                 read(&format!("menu: 4.3E\ntitles:\n  - {bad}\n"), None).is_err(),
                 "{bad}"
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn wad_options_keep_the_existing_recipe_shape() -> Result<()> {
+        let target = "target: {slot: 249, base: 56, revision: 65535}";
+        let inline = "source: {inline: !!binary /wAB}";
+        let title = format!("menu: 4.3E\ntitles: [{{{inline}, sha256: {SHA}}}]");
+        let (recipe, _) = read(&title, None)?;
+        assert_eq!(
+            recipe.titles[0].options.signature_policy,
+            crate::SignaturePolicy::Nintendo
+        );
+
+        let cios = format!("menu: 4.3E\ncios: [{{{inline}, sha256: {SHA}, {target}}}]");
+        let (recipe, _) = read(&cios, None)?;
+        assert_eq!(
+            recipe.cios[0].options.target.title_id(),
+            0x0000_0001_0000_00f9
+        );
+        assert_eq!(recipe.cios[0].source.resolve(3..=3)?.as_ref(), [255, 0, 1]);
+
+        for (section, fields) in [
+            (
+                "titles",
+                format!("{inline}, sha256: {SHA}, unexpected: true"),
+            ),
+            ("titles", format!("{inline}, sha256: {SHA}, {target}")),
+            (
+                "titles",
+                format!(
+                    "{inline}, sha256: {SHA}, signature_policy: nintendo, signature_policy: allow-unsigned"
+                ),
+            ),
+            ("cios", format!("{inline}, {target}")),
+            ("cios", format!("{inline}, sha256: {SHA}")),
+            (
+                "cios",
+                format!("{inline}, sha256: {SHA}, {target}, signature_policy: allow-unsigned"),
+            ),
+        ] {
+            let yaml = format!("menu: 4.3E\n{section}: [{{{fields}}}]");
+            assert!(read(&yaml, None).is_err(), "{yaml}");
         }
         Ok(())
     }
@@ -152,11 +196,13 @@ mod tests {
         let (recipe, _) = Recipe::load(&recipe_path, None)?;
         let source = &recipe.titles[0].source;
         assert!(matches!(source, Data::Path(path) if path.ends_with("linked.wad")));
-        assert_eq!(source.resolve(0x40..=0x40)?.as_ref(), contents);
+        let (bytes, sha256) = recipe.titles[0].resolve()?;
+        assert_eq!(bytes.as_ref(), contents);
+        assert_eq!(sha256, &[0xaa; 32]);
         for bad in [".", "missing.wad"] {
             let yaml = format!("menu: 4.3E\ntitles: [{{source: {{path: {bad}}}, sha256: {SHA}}}]");
             let (recipe, _) = Recipe::read(yaml.as_bytes(), &dir, None)?;
-            assert!(recipe.titles[0].source.resolve(crate::WAD_SIZE).is_err());
+            assert!(recipe.titles[0].resolve().is_err());
         }
         fs::remove_dir_all(dir)?;
         Ok(())

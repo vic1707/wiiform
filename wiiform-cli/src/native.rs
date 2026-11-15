@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
     Aspect, Cios, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy, Title,
-    WAD_SIZE,
 };
 use crate::seed::StockSeed;
 
@@ -97,30 +96,26 @@ pub fn install_nus_title(
 }
 
 pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
-    let wad = title.source.resolve(WAD_SIZE)?;
-    let policy = match title.signature_policy {
+    let (wad, sha256) = title.resolve()?;
+    let policy = match title.options.signature_policy {
         SignaturePolicy::Nintendo => ffi::WadPolicy::Standard,
         SignaturePolicy::AllowUnsigned => ffi::WadPolicy::LegacyChannel,
     };
-    Ok(ffi::install_wad(
-        nand,
-        &wad,
-        title.sha256.as_bytes(),
-        policy,
-    )?)
+    Ok(ffi::install_wad(nand, &wad, sha256, policy)?)
 }
 
 pub fn install_cios(nand: &mut [u8], cios: &Cios) -> Result<InstalledWad> {
-    let wad = cios.source.resolve(WAD_SIZE)?;
+    let (wad, sha256) = cios.resolve()?;
+    let target = &cios.options.target;
     Ok(ffi::install_cios(
         nand,
         &wad,
-        cios.sha256.as_bytes(),
+        sha256,
         &ffi::CiosOptions {
-            slot: cios.target.slot,
-            base: cios.target.base,
-            revision: cios.target.revision,
-            replace_stock_stub: cios.target.replace_stock_stub,
+            slot: target.slot,
+            base: target.base,
+            revision: target.revision,
+            replace_stock_stub: target.replace_stock_stub,
         },
     )?)
 }

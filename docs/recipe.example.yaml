@@ -28,6 +28,10 @@ titles:
       path: wads/example-pal-channel.wad
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     signature_policy: nintendo # or allow-unsigned for verified community WADs
+  # Stock IOS9 v1034 also uses titles with the default Nintendo signature policy.
+  # - source:
+  #     path: wads/IOS9-64-v1034.wad
+  #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   # Or supply the WAD bytes as base64. Each source takes one key.
   # - source:
   #     inline: !!binary |

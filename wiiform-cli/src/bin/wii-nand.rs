@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use wiiform::{
     native, priiloader_payload,
     recipe::{
-        Cios, CiosTarget, Data, HackSettings, PriiloaderSettings, ResolvedPath, Sha256,
-        SignaturePolicy, Title, TitleId, read_bounded,
+        Cios, CiosOptions, CiosTarget, HackSettings, PriiloaderSettings, ResolvedPath, Sha256,
+        SignaturePolicy, Title, TitleId, TitleOptions, read_bounded,
     },
     workflow::{nus_environment, prepare_nus_cache, publish_edit, validate_output},
 };
@@ -101,15 +101,12 @@ fn main() -> Result<()> {
             sha256,
             allow_unverified_signatures,
         } => {
-            let title = Title {
-                source: Data::Path(wad.as_ref().to_owned()),
-                sha256,
-                signature_policy: if allow_unverified_signatures {
-                    SignaturePolicy::AllowUnsigned
-                } else {
-                    SignaturePolicy::Nintendo
-                },
+            let signature_policy = if allow_unverified_signatures {
+                SignaturePolicy::AllowUnsigned
+            } else {
+                SignaturePolicy::Nintendo
             };
+            let title = Title::from_path(&wad, sha256, TitleOptions { signature_policy });
             image.edit(|nand| {
                 native::install_wad(nand, &title)?.warn_if_already_present();
                 Ok(())
@@ -121,11 +118,7 @@ fn main() -> Result<()> {
             sha256,
             target,
         } => {
-            let cios = Cios {
-                source: Data::Path(wad.as_ref().to_owned()),
-                sha256,
-                target,
-            };
+            let cios = Cios::from_path(&wad, sha256, CiosOptions { target });
             image.edit(|nand| {
                 native::install_cios(nand, &cios)?.warn_if_already_present();
                 Ok(())

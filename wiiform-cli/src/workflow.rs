@@ -145,7 +145,7 @@ fn build_with(
             !recipe
                 .cios
                 .iter()
-                .any(|cios| cios.target.title_id() == installed.title_id),
+                .any(|cios| cios.options.target.title_id() == installed.title_id),
             "recipe lists a title WAD and a cIOS for the same slot ({:016x})",
             installed.title_id
         );
@@ -155,7 +155,7 @@ fn build_with(
 
     for cios in &recipe.cios {
         native::install_cios(&mut nand, cios)
-            .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?
+            .with_context(|| format!("cannot configure cIOS slot {}", cios.options.target.slot))?
             .warn_if_already_present();
     }
 

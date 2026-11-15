@@ -63,8 +63,9 @@ Use the `titles` list for downloadable channels and Nintendo-signed system
 channels or Wii IOS WADs for slots 3–253. The `allow-unsigned` policy applies to
 downloadable channels. Each entry verifies an exact installed match or installs
 the WAD when the title is absent. An exact match emits a warning. A conflicting
-title or incomplete installation stops the build. Stock 4.3 includes IOS9 v1034,
-so listing that WAD verifies the dependency in an Ocarina of Time recipe.
+title or incomplete installation stops the build. Stock 4.3 includes IOS9 v1034
+in slot 9. List that WAD under `titles` with the default Nintendo signature
+policy to verify the dependency in an Ocarina of Time recipe.
 `wii-nand install-wad` writes a byte-identical copy to the requested output when
 it verifies a match.
 

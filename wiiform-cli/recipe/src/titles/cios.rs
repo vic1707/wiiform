@@ -2,8 +2,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::Sha256;
-use crate::{Data, yaml::Binary};
+use super::Wad;
 
 /// Expected identity and replacement policy for a prebuilt Wii d2x WAD.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -33,11 +32,10 @@ impl CiosTarget {
     }
 }
 
+pub type Cios = Wad<CiosOptions>;
+
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Cios {
-    pub source: Data<Binary>,
-    /// SHA-256 of the exact WAD bytes.
-    pub sha256: Sha256,
+#[schemars(rename = "Cios")]
+pub struct CiosOptions {
     pub target: CiosTarget,
 }
