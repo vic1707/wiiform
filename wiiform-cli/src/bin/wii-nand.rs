@@ -101,7 +101,7 @@ fn main() -> Result<()> {
                 },
             };
             image.edit(|nand| {
-                native::install_wad(nand, &title)?;
+                native::install_wad(nand, &title)?.warn_if_already_present();
                 Ok(())
             })
         }

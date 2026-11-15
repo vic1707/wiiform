@@ -51,23 +51,24 @@ namespace {
     qToBigEndian<quint64>(value, reinterpret_cast<uchar*>(bytes.data() + offset));
   }
 
-  auto make_wad() -> QByteArray {
-    const QByteArray content(2 * 1024 * 1024, 'w');
+  auto make_wad(char content_byte = 'w', quint16 version = wad_title_version,
+                quint64 title_id = wad_title_id, quint16 content_type = 1) -> QByteArray {
+    const QByteArray content(2 * 1024 * 1024, content_byte);
     QByteArray tmd(0x1e4 + 0x24, '\0');
     put32(tmd, 0, ES_SIG_RSA2048);
-    put64(tmd, 0x18c, wad_title_id);
-    qToBigEndian<quint16>(wad_title_version, reinterpret_cast<uchar*>(tmd.data() + 0x1dc));
+    put64(tmd, 0x18c, title_id);
+    qToBigEndian<quint16>(version, reinterpret_cast<uchar*>(tmd.data() + 0x1dc));
     qToBigEndian<quint16>(1, reinterpret_cast<uchar*>(tmd.data() + 0x1de));
     auto* record = reinterpret_cast<uchar*>(tmd.data() + 0x1e4);
     qToBigEndian<quint32>(0x40, record);
     qToBigEndian<quint16>(7, record + 4);
-    qToBigEndian<quint16>(1, record + 6);
+    qToBigEndian<quint16>(content_type, record + 6);
     qToBigEndian<quint64>(content.size(), record + 8);
     tmd.replace(0x1f4, 20, GetSha1(content));
 
     QByteArray ticket(0x2a4, '\0');
     put32(ticket, 0, ES_SIG_RSA2048);
-    put64(ticket, 0x1dc, wad_title_id);
+    put64(ticket, 0x1dc, title_id);
     Ticket parsed_ticket(ticket, false);
     Tmd metadata(tmd);
     AesSetKey(parsed_ticket.DecryptedKey());
@@ -93,6 +94,18 @@ namespace {
     wiiform::Sha256 result{};
     std::copy_n(reinterpret_cast<const std::uint8_t*>(hash.constData()), result.size(), result.begin());
     return result;
+  }
+
+  auto wad_bytes(const QByteArray& wad) -> std::span<const std::uint8_t> {
+    return {reinterpret_cast<const std::uint8_t*>(wad.constData()),
+            static_cast<std::size_t>(wad.size())};
+  }
+
+  auto buffer_digest(std::span<const std::uint8_t> image) -> QByteArray {
+    return QCryptographicHash::hash(
+        QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
+                                static_cast<int>(image.size())),
+        QCryptographicHash::Sha256);
   }
 
   auto file_digest(const QString& path) -> QByteArray {
@@ -141,6 +154,15 @@ namespace {
           "Near-full synthetic NAND does not have the expected remaining capacity");
   }
 
+  void create_empty_nand(const QString& path) {
+    NandBin nand;
+    UIDmap uid;
+    check(nand.CreateNew(path, QByteArray(0x400, '\0'),
+                         QByteArray(0x108000, '\xff')) &&
+              initialize_system(nand, uid.Data()) && nand.WriteMetaData(),
+          "Cannot construct an empty synthetic NAND");
+  }
+
   auto make_fixtures(const QString& directory) -> void {
     check(QDir().mkpath(directory), "Cannot create fixture directory");
     const QDir output(directory);
@@ -154,9 +176,7 @@ namespace {
   }
 
   void test_capacity_helpers(std::span<std::uint8_t> image) {
-    const auto before = QCryptographicHash::hash(
-        QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
-                                static_cast<int>(image.size())), QCryptographicHash::Sha256);
+    const auto before = buffer_digest(image);
     {
       working_image::Image working(image);
       const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
@@ -170,52 +190,126 @@ namespace {
                                         0x1800, 0);
       }, "FST entries");
     }
-    const auto after = QCryptographicHash::hash(
-        QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
-                                static_cast<int>(image.size())), QCryptographicHash::Sha256);
+    const auto after = buffer_digest(image);
     check(before == after, "Capacity checks changed the NAND buffer");
   }
 
   void test_wad_rejections(std::span<std::uint8_t> image, const QByteArray& wad) {
-    const auto before = QCryptographicHash::hash(
-        QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
-                                static_cast<int>(image.size())), QCryptographicHash::Sha256);
+    const auto before = buffer_digest(image);
     auto invalid_digest = wad_digest(wad);
     invalid_digest[0] ^= 0xff;
     rejects([&] {
-      wiiform::core::install_wad(image,
-          std::span(reinterpret_cast<const std::uint8_t*>(wad.constData()),
-                    static_cast<std::size_t>(wad.size())),
-          invalid_digest, wiiform::WadPolicy::legacy_channel);
+      wiiform::core::install_wad(image, wad_bytes(wad), invalid_digest,
+                                 wiiform::WadPolicy::legacy_channel);
     }, "SHA-256");
-    check(before == QCryptographicHash::hash(
-              QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
-                                      static_cast<int>(image.size())), QCryptographicHash::Sha256),
-          "Invalid WAD digest changed the NAND buffer");
+    check(before == buffer_digest(image), "Invalid WAD digest changed the NAND buffer");
     auto invalid_content = wad;
     // WAD data begins after the aligned header, certificate, ticket, and TMD sections.
     constexpr int content_offset = 0x40 + 0x40 + 0x2c0 + 0x240;
     invalid_content[content_offset + 20] = char(invalid_content.at(content_offset + 20) ^ 1);
     rejects([&] {
-      wiiform::core::install_wad(image,
-          std::span(reinterpret_cast<const std::uint8_t*>(invalid_content.constData()),
-                    static_cast<std::size_t>(invalid_content.size())),
-          wad_digest(invalid_content), wiiform::WadPolicy::legacy_channel);
+      wiiform::core::install_wad(image, wad_bytes(invalid_content), wad_digest(invalid_content),
+                                 wiiform::WadPolicy::legacy_channel);
     }, "WAD content validation failed");
-    check(before == QCryptographicHash::hash(
-              QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
-                                      static_cast<int>(image.size())), QCryptographicHash::Sha256),
-          "Invalid WAD content changed the NAND buffer");
+    check(before == buffer_digest(image), "Invalid WAD content changed the NAND buffer");
     rejects([&] {
-      wiiform::core::install_wad(image,
-          std::span(reinterpret_cast<const std::uint8_t*>(wad.constData()),
-                    static_cast<std::size_t>(wad.size())),
-          wad_digest(wad), wiiform::WadPolicy::legacy_channel);
+      wiiform::core::install_wad(image, wad_bytes(wad), wad_digest(wad),
+                                 wiiform::WadPolicy::legacy_channel);
     }, "Insufficient NAND space");
-    check(before == QCryptographicHash::hash(
-              QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
-                                      static_cast<int>(image.size())), QCryptographicHash::Sha256),
-          "WAD capacity failure changed the NAND buffer");
+    check(before == buffer_digest(image), "WAD capacity failure changed the NAND buffer");
+  }
+
+  void test_wad_installation(const QString& temporary_path) {
+    const auto nand_path = QDir(temporary_path).filePath("empty-nand.bin");
+    create_empty_nand(nand_path);
+    auto image = read_bytes(nand_path, nand_file_size);
+    const auto wad = make_wad();
+    const auto install = [&](const QByteArray& package) {
+      return wiiform::core::install_wad(image, wad_bytes(package), wad_digest(package),
+                                        wiiform::WadPolicy::legacy_channel);
+    };
+
+    const auto installed = install(wad);
+    check(installed.title_id == wad_title_id && installed.version == wad_title_version &&
+              !installed.already_present,
+          "Fresh WAD install returned the wrong title identity or outcome");
+    const auto installed_hash = buffer_digest(image);
+
+    const auto matched = install(wad);
+    check(matched.title_id == wad_title_id && matched.version == wad_title_version &&
+              matched.already_present,
+          "Exact WAD reapplication was not reported as already installed");
+    check(installed_hash == buffer_digest(image), "Exact WAD reapplication changed the NAND buffer");
+
+    const auto conflicting_wad = make_wad('x');
+    const auto before_conflict = buffer_digest(image);
+    rejects([&] {
+      install(conflicting_wad);
+    }, "Installed title conflicts with WAD title metadata");
+    check(before_conflict == buffer_digest(image),
+          "Conflicting WAD changed the NAND buffer");
+
+    const auto version_conflict = make_wad('w', wad_title_version + 1);
+    rejects([&] { install(version_conflict); }, "Installed title conflicts with WAD title metadata");
+    check(before_conflict == buffer_digest(image),
+          "Title-version conflict changed the NAND buffer");
+
+    {
+      working_image::Image working(image);
+      check(working.nand.SetData("/title/00010001/48414243/content/00000040.app",
+                                 QByteArray(2 * 1024 * 1024, 'x')) &&
+                working.nand.WriteMetaData(),
+            "Cannot corrupt installed title content");
+    }
+    const auto before_corrupt_content = buffer_digest(image);
+    rejects([&] { install(wad); }, "Installed title content conflicts with WAD");
+    check(before_corrupt_content == buffer_digest(image),
+          "Corrupt installed title content changed during reapplication");
+
+    {
+      working_image::Image working(image);
+      check(working.nand.Delete("/title/00010001/48414243/content/00000040.app") &&
+                working.nand.WriteMetaData(),
+            "Cannot make an incomplete installed WAD fixture");
+    }
+    const auto before_incomplete = buffer_digest(image);
+    rejects([&] {
+      install(wad);
+    }, "Installed title is incomplete or inconsistent with WAD");
+    check(before_incomplete == buffer_digest(image), "Incomplete WAD reapplication changed the NAND buffer");
+  }
+
+  void test_shared_wad_matching(const QString& temporary_path) {
+    const auto nand_path = QDir(temporary_path).filePath("shared-empty-nand.bin");
+    create_empty_nand(nand_path);
+    auto image = read_bytes(nand_path, nand_file_size);
+    constexpr quint64 first_title_id = 0x0001000148414244ull;
+    constexpr quint64 second_title_id = 0x0001000148414245ull;
+    const auto first_wad = make_wad('s', wad_title_version, first_title_id, 0x8001);
+    const auto second_wad = make_wad('s', wad_title_version, second_title_id, 0x8001);
+    const auto install = [&](const QByteArray& wad) {
+      return wiiform::core::install_wad(image, wad_bytes(wad), wad_digest(wad),
+                                        wiiform::WadPolicy::legacy_channel);
+    };
+
+    check(!install(first_wad).already_present && !install(second_wad).already_present,
+          "Shared WAD fixtures did not install");
+    const auto before_match = buffer_digest(image);
+    const auto matched = install(second_wad);
+    check(matched.title_id == second_title_id && matched.already_present,
+          "A title using shared content was not recognized as already installed");
+    check(before_match == buffer_digest(image),
+          "Shared-content WAD reapplication changed the NAND buffer");
+
+    {
+      working_image::Image working(image);
+      check(working.nand.SetData("/shared1/00000000.app", QByteArray(2 * 1024 * 1024, 'x')) &&
+                working.nand.WriteMetaData(),
+            "Cannot corrupt shared-content fixture");
+    }
+    const auto before_corrupt = buffer_digest(image);
+    rejects([&] { install(second_wad); }, "Installed title content conflicts with WAD");
+    check(before_corrupt == buffer_digest(image), "Invalid shared content changed during WAD reapplication");
   }
 }
 
@@ -226,7 +320,12 @@ int main(int argc, char** argv) {
       make_fixtures(QString::fromLocal8Bit(argv[2]));
       return 0;
     }
-    check(argc == 1, "Usage: nand-buffer-regressions [--make-fixtures DIR]");
+    if (argc == 3 && QString::fromLocal8Bit(argv[1]) == "--make-empty-fixture") {
+      create_empty_nand(QString::fromLocal8Bit(argv[2]));
+      return 0;
+    }
+    check(argc == 1,
+          "Usage: nand-buffer-regressions [--make-fixtures DIR] [--make-empty-fixture PATH]");
     std::async(std::launch::async, [] {
       rejects([] { wiiform::core::remove_title({}, 0); }, "QCoreApplication thread");
     }).get();
@@ -238,7 +337,10 @@ int main(int argc, char** argv) {
     const auto wad = make_wad();
     test_capacity_helpers(image);
     test_wad_rejections(image, wad);
-    std::cout << "NAND buffer capacity and rejection checks passed\n";
+    std::vector<std::uint8_t>().swap(image);
+    test_wad_installation(temporary.path());
+    test_shared_wad_matching(temporary.path());
+    std::cout << "NAND buffer capacity, rejection, and WAD matching checks passed\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "NAND buffer regressions failed: " << error.what() << '\n';

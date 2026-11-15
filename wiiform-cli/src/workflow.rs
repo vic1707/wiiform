@@ -141,6 +141,7 @@ fn build_with(
             "recipe both removes and installs title {:016x}",
             installed.title_id
         );
+        installed.warn_if_already_present();
         warn_region(&installed, recipe.menu);
     }
 
@@ -161,6 +162,9 @@ fn build_with(
 }
 
 fn warn_region(wad: &InstalledWad, menu: Menu) {
+    if !matches!(wad.title_id >> 32, 0x0001_0001 | 0x0001_0002) {
+        return;
+    }
     let expected = match menu {
         Menu::J43 => 0,
         Menu::U43 => 1,

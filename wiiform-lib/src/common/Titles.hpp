@@ -8,4 +8,5 @@
 #include <TitleValidation.hpp>
 
 bool initialize_system(NandBin& nand, const QByteArray& uid_data);
-bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, ValidatedTitleJob job);
+bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared,
+                   const ValidatedTitleJob& job);

@@ -12,6 +12,17 @@ use crate::seed::StockSeed;
 
 pub use ffi::{InstalledWad, StockIdentity};
 
+impl InstalledWad {
+    pub fn warn_if_already_present(&self) {
+        if self.already_present {
+            eprintln!(
+                "warning: title {:016x} v{} is already installed and verified",
+                self.title_id, self.version
+            );
+        }
+    }
+}
+
 /// Boot-area validation policy for stock NAND creation.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 #[repr(u8)]

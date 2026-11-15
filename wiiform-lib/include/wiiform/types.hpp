@@ -53,6 +53,8 @@ namespace wiiform {
   struct InstalledWad {
     std::uint64_t title_id;
     std::uint16_t region;
+    std::uint16_t version;
+    bool already_present;
   };
 
   enum class Language : std::uint8_t { ja = 0, en = 1, de = 2, fr = 3, es = 4, it = 5, nl = 6 };

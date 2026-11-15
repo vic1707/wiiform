@@ -44,11 +44,12 @@ bool initialize_system(NandBin& nand, const QByteArray& uid_data) {
          nand.SetData(entry, uid_data) && nand.WriteMetaData();
 }
 
-bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, ValidatedTitleJob validated) {
+bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared,
+                   const ValidatedTitleJob& validated) {
   if (!shared.Data().isEmpty() && !shared.Check()) return false;
-  auto job = std::move(validated).take();
-  Tmd tmd(job.data.takeFirst());
-  Ticket ticket(job.data.takeFirst(), false);
+  const auto& job = validated.get();
+  Tmd tmd(job.data[0]);
+  Ticket ticket(job.data[1], false);
   const auto count = tmd.Count();
 
   const auto tid = QString("%1").arg(job.tid, 16, 16, QChar('0'));
@@ -79,9 +80,9 @@ bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared, Validat
       if (!shared.GetAppFromHash(tmd.Hash(i)).isEmpty()) continue;
       const auto cid = shared.GetNextEmptyCid();
       path = "/shared1/" + cid + ".app";
-      if (!write(path, job.data[i])) return false;
+      if (!write(path, job.data[i + 2])) return false;
       shared.AddEntry(cid, tmd.Hash(i));
-    } else if (!write(path, job.data[i])) return false;
+    } else if (!write(path, job.data[i + 2])) return false;
   }
   return true;
 }

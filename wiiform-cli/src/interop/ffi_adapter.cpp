@@ -66,7 +66,7 @@ auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha25
                  WadPolicy policy) -> InstalledWad {
   const auto result = core::install_wad(span(nand), span(wad), sha256,
                                        static_cast<wiiform::WadPolicy>(policy));
-  return {result.title_id, result.region};
+  return {result.title_id, result.region, result.version, result.already_present};
 }
 
 void remove_title(Nand nand, std::uint64_t title_id) {

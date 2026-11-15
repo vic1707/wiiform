@@ -98,8 +98,7 @@ void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cach
 auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                  const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad {
   const detail::ApiCall call;
-  const auto [id, region] = title_install::install_wad(nand, wad, expected_sha256, policy);
-  return {id, region};
+  return title_install::install_wad(nand, wad, expected_sha256, policy);
 }
 
 void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {

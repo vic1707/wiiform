@@ -82,6 +82,8 @@ pub mod bridge {
     struct InstalledWad {
         title_id: u64,
         region: u16,
+        version: u16,
+        already_present: bool,
     }
 
     unsafe extern "C++" {

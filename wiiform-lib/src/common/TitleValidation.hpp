@@ -14,7 +14,6 @@ public:
   auto operator=(ValidatedTitleJob&&) noexcept -> ValidatedTitleJob& = default;
 
   [[nodiscard]] auto get() const -> const NusJob& { return job_; }
-  auto take() && -> NusJob { return std::move(job_); }
 
 private:
   explicit ValidatedTitleJob(NusJob job) : job_(std::move(job)) {}
