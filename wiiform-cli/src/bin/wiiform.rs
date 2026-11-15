@@ -34,7 +34,7 @@ struct Cli {
     boot_policy: BootPolicy,
 
     /// Override the recipe menu with 4.3E, 4.3U, or 4.3J.
-    #[arg(long)]
+    #[arg(long, value_enum)]
     menu: Option<Menu>,
 }
 

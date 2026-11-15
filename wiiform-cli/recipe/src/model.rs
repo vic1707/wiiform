@@ -187,10 +187,11 @@ mod tests {
         );
 
         let (recipe, _) = read(
-            "menu: 4.3E\nsetup: {display: {aspect: '16:9', progressive: true}}",
+            "menu: 4.3E\nsetup: {nickname: 'Éééééééééé', display: {aspect: '16:9', progressive: true}}",
             None,
         )?;
         let setup = recipe.setup.context("expected setup settings")?;
+        assert_eq!(setup.nickname.as_ref(), "Éééééééééé");
         assert_eq!(setup.display.aspect, crate::Aspect::SixteenNine);
         assert!(setup.display.progressive);
         assert!(!setup.display.pal60);

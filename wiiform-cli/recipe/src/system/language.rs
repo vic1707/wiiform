@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::str::FromStr;
-
 use schemars::JsonSchema;
-use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 
 /// Wii first-run language value written to SYSCONF.
@@ -28,12 +25,5 @@ pub enum Language {
 impl Language {
     pub const fn as_u8(self) -> u8 {
         self as u8
-    }
-}
-
-impl FromStr for Language {
-    type Err = serde::de::value::Error;
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::deserialize(value.into_deserializer())
     }
 }

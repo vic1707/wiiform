@@ -311,7 +311,7 @@
       ]
     },
     "Nickname": {
-      "description": "Nonblank console nickname with 1–10 printable BMP characters.",
+      "description": "Console nickname with 1–10 BMP letters, numbers, or spaces, including a letter or number.",
       "type": "string",
       "maxLength": 10,
       "minLength": 1

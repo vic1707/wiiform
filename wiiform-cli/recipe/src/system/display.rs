@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::str::FromStr;
-
 use schemars::JsonSchema;
-use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 
 /// Screen aspect ratio.
@@ -13,13 +10,6 @@ pub enum Aspect {
     FourThree,
     #[serde(rename = "16:9")]
     SixteenNine,
-}
-
-impl FromStr for Aspect {
-    type Err = serde::de::value::Error;
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::deserialize(value.into_deserializer())
-    }
 }
 
 /// Display configuration applied during first-run setup.

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::str::FromStr;
-
 use schemars::JsonSchema;
-use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 
 use super::{CountryCode, Language};
@@ -11,16 +8,20 @@ use super::{CountryCode, Language};
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, JsonSchema,
 )]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 #[repr(u16)]
 pub enum Menu {
     /// European 4.3 menu.
     #[serde(rename = "4.3E")]
+    #[cfg_attr(feature = "cli", value(name = "4.3E"))]
     E43 = 514,
     /// North American 4.3 menu.
     #[serde(rename = "4.3U")]
+    #[cfg_attr(feature = "cli", value(name = "4.3U"))]
     U43 = 513,
     /// Japanese 4.3 menu.
     #[serde(rename = "4.3J")]
+    #[cfg_attr(feature = "cli", value(name = "4.3J"))]
     J43 = 512,
 }
 
@@ -82,12 +83,5 @@ impl Menu {
             Self::E43 | Self::U43 => Language::En,
             Self::J43 => Language::Ja,
         }
-    }
-}
-
-impl FromStr for Menu {
-    type Err = serde::de::value::Error;
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::deserialize(value.into_deserializer())
     }
 }
