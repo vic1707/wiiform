@@ -124,11 +124,6 @@ pub fn install_cios(nand: &mut [u8], cios: &Cios) -> Result<InstalledWad> {
     )?)
 }
 
-pub fn preserve_homebrew_channel(nand: &mut [u8], backup: &Path) -> Result<InstalledWad> {
-    let backup = crate::recipe::read_bounded(backup, NAND_BYTES..=NAND_BYTES)?;
-    Ok(ffi::preserve_homebrew_channel(nand, &backup)?)
-}
-
 pub fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()> {
     Ok(ffi::remove_title(nand, title_id)?)
 }

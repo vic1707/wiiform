@@ -53,11 +53,6 @@ titles:
 #       revision: 65535 # TMD revision of the WAD.
 #       replace_stock_stub: true # Allows replacing the verified 249/250 v65280 stub.
 
-# Optional original HackMii HBC 1.1.2. The backup must come from the seed's Wii
-# and include the 1 KiB key footer. This preserves the channel without its data.
-# homebrew_channel:
-#   backup: backups/this-wii-nand.bin
-
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
   settings:
     # Every configurable Priiloader setting is written. Omitted keys use the

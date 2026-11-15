@@ -2,12 +2,10 @@
 #include <Install.hpp>
 
 #include <Factory.hpp>
-#include <Layout.hpp>
 #include <Titles.hpp>
 #include <WadPackage.hpp>
 #include <WorkingImage.hpp>
 #include <tiktmd.h>
-#include <sharedcontentmap.h>
 
 #include <QTreeWidgetItem>
 #include <QSet>
@@ -422,71 +420,6 @@ namespace {
     return {title_id, region, version, false};
   }
 
-  auto read_title_from_nand(NandBin& nand, QTreeWidgetItem* tree, quint64 title_id,
-                            quint16 version, const char* unavailable_message) -> NusJob {
-    constexpr quint64 max_tmd_size = 0x1e4 + 0xffff * 0x24;
-    const auto id = title_name(title_id);
-    const auto title = "/title/" + id.left(8) + "/" + id.mid(8);
-    const auto content_dir = title + "/content";
-    const auto ticket_path = "/ticket/" + id.left(8) + "/" + id.mid(8) + ".tik";
-
-    const auto* tmd_entry = find_path(tree, content_dir + "/title.tmd");
-    const auto* ticket_entry = find_path(tree, ticket_path);
-    require(tmd_entry && ticket_entry, unavailable_message);
-    const auto tmd = read_authenticated_file(nand, tmd_entry, max_tmd_size);
-    const auto ticket_bytes = read_authenticated_file(nand, ticket_entry, 0x2a4);
-    require(check_title_metadata(tmd, ticket_bytes) && ticket_bytes.size() == 0x2a4,
-            "The NAND title ticket has an invalid size or structure");
-    Tmd metadata(tmd);
-    Ticket ticket(ticket_bytes, false);
-    require(tmd.size() == 0x1e4 + metadata.Count() * 0x24,
-            "The NAND title metadata size is invalid");
-    require(metadata.Tid() == title_id && metadata.Version() == version,
-            unavailable_message);
-    require(ticket.Tid() == title_id, "The NAND title ticket does not match its metadata");
-
-    const auto* map_entry = find_path(tree, "/shared1/content.map");
-    const auto map = map_entry ? read_authenticated_file(nand, map_entry, 1024 * 1024) : QByteArray();
-    SharedContentMap shared(map);
-    require(map.isEmpty() || shared.Check(), "The NAND shared-content map is invalid");
-
-    NusJob job;
-    job.tid = title_id;
-    job.version = version;
-    job.decrypt = true;
-    job.data << tmd << ticket_bytes;
-    quint64 total_size = 0;
-    QSet<QString> expected_files{"title.tmd"};
-    for (int index = 0; index < metadata.Count(); ++index) {
-      const auto size = metadata.Size(index);
-      require(size > 0 && size <= 0x20000000 - total_size,
-              "The NAND title has invalid content sizes");
-      total_size += size;
-      QString path;
-      if (metadata.Type(index) == 0x8001) {
-        const auto cid = shared.GetAppFromHash(metadata.Hash(index));
-        require(!cid.isEmpty(), "The NAND title is missing a shared content file");
-        path = shared_path(cid);
-      } else {
-        require(metadata.Type(index) == 1, "The NAND title has an unsupported content type");
-        const auto cid = metadata.Cid(index);
-        expected_files.insert(cid + ".app");
-        path = content_dir + "/" + cid + ".app";
-      }
-      job.data << read_authenticated_file(nand, find_path(tree, path), size);
-    }
-
-    const auto* content = find_path(tree, content_dir);
-    require(content && entry_kind(content) == NAND_DIR, "The NAND title has no content directory");
-    QSet<QString> actual_files;
-    for (int index = 0; index < content->childCount(); ++index) {
-      const auto* entry = content->child(index);
-      require(entry_kind(entry) == NAND_FILE, "The NAND title has an unexpected content entry");
-      actual_files.insert(entry->text(0));
-    }
-    require(actual_files == expected_files, "The NAND title content does not match its TMD");
-    return job;
-  }
 } // namespace
 
 namespace title_install {
@@ -512,68 +445,6 @@ namespace title_install {
     require(parsed.tid == expected_id && parsed.version == options.revision,
             "cIOS WAD does not match its declared slot and revision");
     return install_validated_wad(image, job, options.replace_stock_stub);
-  }
-
-  auto preserve_homebrew_channel(std::span<std::uint8_t> image,
-                                 std::span<const std::uint8_t> backup) -> wiiform::InstalledWad {
-    constexpr quint64 hbc_id = 0x000100014c554c5aull;
-    constexpr quint16 hbc_version = 258;
-    constexpr quint64 ios58_id = 0x000000010000003aull;
-    constexpr quint16 ios58_version = 6176;
-    constexpr std::size_t full_size = 0x21000400;
-    constexpr std::size_t footer_size = 0x400;
-    constexpr std::size_t console_identity_offset = 0x124;
-    constexpr std::size_t console_identity_size = 0x44;
-    require(image.size() == full_size && backup.size() == full_size,
-            "Expected footer-bearing destination and source NAND images");
-
-    const auto source_identity = backup.last(footer_size).subspan(console_identity_offset,
-                                                                  console_identity_size);
-    const auto target_identity = std::span<const std::uint8_t>(image).last(footer_size).subspan(
-        console_identity_offset, console_identity_size);
-    require(std::equal(source_identity.begin(), source_identity.end(), target_identity.begin()),
-            "The HBC backup belongs to a different Wii");
-
-    const auto source_layout = inspect::validate_layout(backup, false);
-    nand_buffer::Device source_device{backup};
-    NandBin source;
-    require(source.SetDevice(&source_device) && source.InitNand() &&
-                source.CheckHmacMeta(source_layout.active_metadata),
-            "Cannot authenticate the HBC source backup");
-    std::unique_ptr<QTreeWidgetItem> source_tree(source.GetTree());
-    require(source_tree && source_tree->childCount() == 1,
-            "Cannot read the HBC source backup filesystem");
-    const auto hbc = validate_title(read_title_from_nand(
-                                        source, source_tree.get(), hbc_id, hbc_version,
-                                        "Backup does not contain original Homebrew Channel 1.1.2 (LULZ)"),
-                                    "The Homebrew Channel backup content is invalid");
-    const auto ios58 = validate_title(read_title_from_nand(
-                                          source, source_tree.get(), ios58_id, ios58_version,
-                                          "The HBC backup does not contain IOS58 v6176"),
-                                      "The IOS58 backup content is invalid");
-    require(check_cert_chain(ios58.get().data[0]) == ERROR_SUCCESS &&
-                check_cert_chain(ios58.get().data[1]) == ERROR_SUCCESS,
-            "The HBC backup does not contain Nintendo-signed IOS58 v6176");
-    const auto source_console_id = qFromBigEndian<quint32>(
-        reinterpret_cast<const uchar*>(backup.data() + backup.size() - footer_size + console_identity_offset));
-    Tmd hbc_tmd(hbc.get().data[0]);
-    require(hbc_tmd.IOS() == ios58_id &&
-                (qFromBigEndian<quint32>(hbc.get().data[1].constData() + 0x1d8) == 0 ||
-                 qFromBigEndian<quint32>(hbc.get().data[1].constData() + 0x1d8) == source_console_id) &&
-                static_cast<uchar>(hbc.get().data[1][0x1f1]) == 0,
-            "The backup does not contain the supported IOS58 Homebrew Channel release");
-
-    {
-      working_image::Image target(image);
-      std::unique_ptr<QTreeWidgetItem> target_tree(target.nand.GetTree());
-      require(target_tree && target_tree->childCount() == 1,
-              "Cannot read the destination NAND filesystem");
-      require(installed_wad_matches(target.nand, target_tree.get(),
-                                    "/title/00000001/0000003a/content",
-                                    "/ticket/00000001/0000003a.tik", ios58),
-              "The destination NAND does not contain authentic stock IOS58 v6176");
-    }
-    return install_validated_wad(image, hbc, false);
   }
 
 } // namespace title_install

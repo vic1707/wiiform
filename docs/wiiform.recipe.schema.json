@@ -10,17 +10,6 @@
         "$ref": "#/$defs/Cios"
       }
     },
-    "homebrew_channel": {
-      "description": "Preserve the original HackMii Homebrew Channel from a backup of this Wii.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/HomebrewChannel"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "menu": {
       "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
       "$ref": "#/$defs/Menu"
@@ -364,19 +353,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "HomebrewChannel": {
-      "type": "object",
-      "properties": {
-        "backup": {
-          "description": "Same-console NAND backup with an embedded footer and original HBC 1.1.2.\nRelative paths resolve from the recipe directory.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "backup"
-      ]
     },
     "Language": {
       "description": "Wii first-run language value written to SYSCONF.",
