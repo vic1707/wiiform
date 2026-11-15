@@ -102,20 +102,6 @@ namespace {
 }
 
 namespace priiloader {
-  auto legacy_fix_480p_definitions() -> QByteArray {
-    QByteArray data(
-        "[480p graphics fix in system menu]\n"
-        "maxversion=518\n"
-        "minversion=96\n"
-        "amount=2\n"
-        "hash=0x38000065,0x9b810019,0x38810018,0x386000e0,0x98010018,0x38a00002\n"
-        "patch=0x38000065,0x3c60812f,0x6063efe0,0x7c6803a6,0x4e800021\n"
-        "offset=0x812fefe0\n"
-        "patch=0x38600003,0x98610019,0x38810018,0x386000e0,0x98010018,0x4e800020\n");
-    data.append(QByteArray((32 - data.size() % 32) % 32, '\0'));
-    return data;
-  }
-
   auto prepare_hacks(std::span<const std::uint8_t> input, int menu_version,
                      std::span<const wiiform::Hack> enabled_hacks) -> HackFiles {
     require(!input.empty() && input.size() <= definitions_limit,

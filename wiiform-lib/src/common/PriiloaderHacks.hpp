@@ -17,5 +17,4 @@ namespace priiloader {
 
   auto prepare_hacks(std::span<const std::uint8_t> definitions, int menu_version,
                      std::span<const wiiform::Hack> enabled_hacks) -> HackFiles;
-  auto legacy_fix_480p_definitions() -> QByteArray;
 }

@@ -111,6 +111,8 @@ and the `--app` and
 `--hack-definitions` flags. The commands use the bundled installer and definitions.
 Pass `--stop-disc` to enable the setting or omit it for the default. Use
 `--white-background` for a white background and `--fix-480p` to enable that hack.
+Rebuild from the seed and recipe to migrate an early image containing the
+480p-only Priiloader definitions.
 
 ## What a seed contributes
 

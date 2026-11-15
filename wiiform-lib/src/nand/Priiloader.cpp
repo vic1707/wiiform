@@ -131,33 +131,12 @@ namespace {
     const auto* state_entry = find_path(tree, priiloader::hack_states_path);
     require(bool(definition_entry) == bool(state_entry),
             "Priiloader hack files must be a matching pair");
-    QByteArray previous_definitions;
-    QByteArray previous_states;
-    bool recognized_legacy = false;
-    if (definition_entry) {
-      previous_definitions = read_authenticated_file(nand, definition_entry, 64 * 1024);
-      previous_states = read_authenticated_file(nand, state_entry, 64 * 1024);
-      recognized_legacy = previous_definitions == priiloader::legacy_fix_480p_definitions();
-      if (recognized_legacy) {
-        require(previous_states.size() == 1 &&
-                    (previous_states.at(0) == 0 || previous_states.at(0) == 1),
-                "Invalid legacy Priiloader hack state");
-      } else {
-        require(!definitions.empty(),
-                "Existing Priiloader hack definitions need the pinned 0.10.0 source");
-      }
-    }
-
-    require(!definitions.empty(), "Priiloader hacks need pinned hacks_hash.ini bytes");
-    // The request is the complete desired state; existing hack toggles are
-    // never inherited. Any supported hack not requested is written off.
     const auto desired = priiloader::prepare_hacks(definitions, version, enabled_hacks);
     if (definition_entry) {
-      require(previous_definitions == desired.definitions || recognized_legacy,
+      const auto existing = read_authenticated_file(nand, definition_entry, 64 * 1024);
+      require(existing == desired.definitions,
               "Existing Priiloader hack definitions differ from the pinned 0.10.0 release");
-      if (previous_definitions != desired.definitions)
-        files["hack_definitions"] = {priiloader::hack_definitions_path, desired.definitions, NAND_RW, true};
-      if (previous_states != desired.states)
+      if (read_authenticated_file(nand, state_entry, 64 * 1024) != desired.states)
         files["hack_states"] = {priiloader::hack_states_path, desired.states, NAND_RW, true};
     } else {
       files["hack_definitions"] = {priiloader::hack_definitions_path, desired.definitions};
