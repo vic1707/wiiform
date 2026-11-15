@@ -5,7 +5,14 @@
   "properties": {
     "display": {
       "description": "Optional display settings. An empty mapping uses the defaults.",
-      "$ref": "#/$defs/Display",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Display"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null
     },
     "menu": {
@@ -14,7 +21,14 @@
     },
     "priiloader": {
       "description": "Optional pinned Priiloader install with settings and hacks.",
-      "$ref": "#/$defs/Priiloader",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Priiloader"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null
     },
     "remove": {
@@ -26,7 +40,14 @@
     },
     "setup": {
       "description": "Optional first-run setup values.",
-      "$ref": "#/$defs/Setup",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Setup"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null
     },
     "titles": {
@@ -65,6 +86,79 @@
       "description": "Bytes encoded as a YAML !!binary scalar.",
       "type": "string",
       "contentEncoding": "base64"
+    },
+    "CountryCode": {
+      "description": "Supported ISO alpha-2 country code and its Wii SYSCONF byte.",
+      "type": "string",
+      "enum": [
+        "JP",
+        "AI",
+        "AG",
+        "AR",
+        "AW",
+        "BS",
+        "BB",
+        "BZ",
+        "BO",
+        "BR",
+        "VG",
+        "CA",
+        "KY",
+        "CL",
+        "CO",
+        "CR",
+        "DM",
+        "DO",
+        "EC",
+        "SV",
+        "GF",
+        "GD",
+        "GP",
+        "GT",
+        "GY",
+        "HT",
+        "HN",
+        "JM",
+        "MQ",
+        "MX",
+        "MS",
+        "AN",
+        "NI",
+        "PA",
+        "PY",
+        "PE",
+        "KN",
+        "LC",
+        "VC",
+        "SR",
+        "TT",
+        "TC",
+        "US",
+        "UY",
+        "VI",
+        "VE",
+        "AU",
+        "AT",
+        "BE",
+        "DK",
+        "FI",
+        "FR",
+        "DE",
+        "GR",
+        "IE",
+        "IT",
+        "LU",
+        "NL",
+        "NZ",
+        "NO",
+        "PL",
+        "PT",
+        "RO",
+        "ES",
+        "SE",
+        "CH",
+        "GB"
+      ]
     },
     "Data": {
       "description": "Data supplied by one local file or inline in a recipe.",
@@ -234,7 +328,14 @@
       "properties": {
         "hacks": {
           "description": "Complete state for supported hacks. Unlisted hacks default to off.",
-          "$ref": "#/$defs/HackSettings",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HackSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": {
             "auto_press_a": false,
             "block_disc_autoboot": false,
@@ -251,14 +352,30 @@
           }
         },
         "settings": {
-          "description": "Complete settings. This section is required; omitted fields use pinned Priiloader defaults.",
-          "$ref": "#/$defs/PriiloaderSettings"
+          "description": "Complete settings. Omitted values use pinned Priiloader defaults.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PriiloaderSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": {
+            "autoboot": "system_menu",
+            "black_background": true,
+            "dump_gecko_text": false,
+            "ignore_shutdown_mode": false,
+            "lid_slot_on_error": false,
+            "preferred_mount_point": "auto",
+            "return_to": "system_menu",
+            "show_rc_updates": false,
+            "shutdown_to": "none",
+            "stop_disc": false
+          }
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "settings"
-      ]
+      "additionalProperties": false
     },
     "PriiloaderSettings": {
       "description": "Complete Priiloader settings written to its settings file.\n\nMissing recipe values use the pinned 0.10.0 defaults. Applying this type\nwrites every configurable setting, replacing values already present in NAND.",
@@ -326,13 +443,7 @@
         },
         {
           "description": "A quoted title ID from the removal allowlist.",
-          "type": "string",
-          "maxLength": 16,
-          "minLength": 16,
-          "not": {
-            "const": "0000000000000000"
-          },
-          "pattern": "^[0-9a-fA-F]{16}$"
+          "$ref": "#/$defs/TitleId"
         }
       ]
     },
@@ -385,157 +496,25 @@
       "properties": {
         "country": {
           "description": "Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote \"NO\" in YAML.",
-          "type": "string",
           "anyOf": [
             {
-              "enum": [
-                "JP",
-                "AI",
-                "AG",
-                "AR",
-                "AW",
-                "BS",
-                "BB",
-                "BZ",
-                "BO",
-                "BR",
-                "VG",
-                "CA",
-                "KY",
-                "CL",
-                "CO",
-                "CR",
-                "DM",
-                "DO",
-                "EC",
-                "SV",
-                "GF",
-                "GD",
-                "GP",
-                "GT",
-                "GY",
-                "HT",
-                "HN",
-                "JM",
-                "MQ",
-                "MX",
-                "MS",
-                "AN",
-                "NI",
-                "PA",
-                "PY",
-                "PE",
-                "KN",
-                "LC",
-                "VC",
-                "SR",
-                "TT",
-                "TC",
-                "US",
-                "UY",
-                "VI",
-                "VE",
-                "AU",
-                "AT",
-                "BE",
-                "DK",
-                "FI",
-                "FR",
-                "DE",
-                "GR",
-                "IE",
-                "IT",
-                "LU",
-                "NL",
-                "NZ",
-                "NO",
-                "PL",
-                "PT",
-                "RO",
-                "ES",
-                "SE",
-                "CH",
-                "GB"
-              ]
+              "$ref": "#/$defs/CountryCode"
             },
             {
-              "description": "Legacy quoted Wii country byte. Prefer the two-letter code.",
-              "deprecated": true,
-              "enum": [
-                "1",
-                "8",
-                "9",
-                "10",
-                "11",
-                "12",
-                "13",
-                "14",
-                "15",
-                "16",
-                "17",
-                "18",
-                "19",
-                "20",
-                "21",
-                "22",
-                "23",
-                "24",
-                "25",
-                "26",
-                "27",
-                "28",
-                "29",
-                "30",
-                "31",
-                "32",
-                "33",
-                "34",
-                "35",
-                "36",
-                "37",
-                "38",
-                "39",
-                "40",
-                "41",
-                "42",
-                "43",
-                "44",
-                "45",
-                "46",
-                "47",
-                "48",
-                "49",
-                "50",
-                "51",
-                "52",
-                "65",
-                "66",
-                "67",
-                "74",
-                "76",
-                "77",
-                "78",
-                "79",
-                "82",
-                "83",
-                "88",
-                "94",
-                "95",
-                "96",
-                "97",
-                "98",
-                "99",
-                "105",
-                "107",
-                "108",
-                "110"
-              ]
+              "type": "null"
             }
           ]
         },
         "language": {
           "description": "Setup language, constrained by the effective menu region.",
-          "$ref": "#/$defs/Language"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Language"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "nickname": {
           "description": "Console nickname. Defaults to the Wii's factory name.",
@@ -551,6 +530,13 @@
         }
       },
       "additionalProperties": false
+    },
+    "Sha256": {
+      "description": "SHA-256 of the exact binary payload, encoded as 64 hex digits.",
+      "type": "string",
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[0-9a-fA-F]{64}$"
     },
     "ShutdownTo": {
       "description": "Priiloader shutdown destination.",
@@ -581,10 +567,7 @@
       "properties": {
         "sha256": {
           "description": "SHA-256 of the exact WAD bytes.",
-          "type": "string",
-          "maxLength": 64,
-          "minLength": 64,
-          "pattern": "^[0-9a-fA-F]{64}$"
+          "$ref": "#/$defs/Sha256"
         },
         "signature_policy": {
           "$ref": "#/$defs/SignaturePolicy"
@@ -598,6 +581,16 @@
         "source",
         "sha256"
       ]
+    },
+    "TitleId": {
+      "description": "Nonzero Wii title ID written as 16 hex digits.",
+      "type": "string",
+      "maxLength": 16,
+      "minLength": 16,
+      "not": {
+        "const": "0000000000000000"
+      },
+      "pattern": "^[0-9a-fA-F]{16}$"
     }
   }
 }

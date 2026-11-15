@@ -5,11 +5,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{ResolvedPath, read_bounded};
+use crate::read_bounded;
 
 /// Data supplied by one local file or inline in a recipe.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -22,11 +22,10 @@ pub enum Data<T> {
 }
 
 impl<T> Data<T> {
-    pub(crate) fn resolve_path(&mut self, directory: &Path) -> Result<()> {
+    pub(crate) fn rebase(&mut self, directory: &Path) {
         if let Self::Path(path) = self {
-            *path = ResolvedPath::try_from(directory.join(&*path))?.into_path();
+            *path = directory.join(&*path);
         }
-        Ok(())
     }
 }
 
@@ -34,7 +33,14 @@ impl<T: AsRef<[u8]>> Data<T> {
     pub fn resolve(&self, bounds: RangeInclusive<usize>) -> Result<Cow<'_, [u8]>> {
         match self {
             Self::Path(path) => read_bounded(path, bounds).map(Cow::Owned),
-            Self::Inline(data) => Ok(Cow::Borrowed(data.as_ref())),
+            Self::Inline(data) => {
+                let bytes = data.as_ref();
+                ensure!(
+                    bounds.contains(&bytes.len()),
+                    "inline payload has an unsupported size"
+                );
+                Ok(Cow::Borrowed(bytes))
+            }
         }
     }
 }

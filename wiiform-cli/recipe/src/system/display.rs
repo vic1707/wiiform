@@ -15,15 +15,6 @@ pub enum Aspect {
     SixteenNine,
 }
 
-impl Aspect {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::FourThree => "4:3",
-            Self::SixteenNine => "16:9",
-        }
-    }
-}
-
 impl FromStr for Aspect {
     type Err = serde::de::value::Error;
     fn from_str(value: &str) -> Result<Self, Self::Err> {

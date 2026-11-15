@@ -11,20 +11,10 @@ pub struct Setup {
     /// Console nickname. Defaults to the Wii's factory name.
     pub nickname: Nickname,
     /// Setup language, constrained by the effective menu region.
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<Language>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<Language>,
     /// Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote "NO" in YAML.
-    #[serde(
-        default,
-        deserialize_with = "crate::schema::non_null_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "crate::schema::NonNull<CountryCode>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub country: Option<CountryCode>,
     /// Physical sensor bar position. Defaults to above the display.
     pub sensor_bar: SensorBar,

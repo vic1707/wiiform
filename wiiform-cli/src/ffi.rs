@@ -8,6 +8,14 @@ pub mod bridge {
         LegacyChannel,
     }
 
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum BootMiiState {
+        Detected,
+        Stock,
+        Unknown,
+    }
+
     struct SystemSettings<'a> {
         nickname: &'a str,
         language: u8,
@@ -57,7 +65,7 @@ pub mod bridge {
         keys: &'a [u8],
         boot_blocks: &'a [u8],
         bad_blocks: &'a [u16],
-        settings: ConsoleSettings,
+        settings: &'a ConsoleSettings,
         settings_sha256: [u8; 32],
     }
 
@@ -67,7 +75,7 @@ pub mod bridge {
         bad_blocks: Vec<u16>,
         settings: ConsoleSettings,
         settings_sha256: [u8; 32],
-        bootmii: String,
+        bootmii: BootMiiState,
         footer_header: String,
     }
 

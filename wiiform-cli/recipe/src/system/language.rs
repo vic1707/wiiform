@@ -29,18 +29,6 @@ impl Language {
     pub const fn as_u8(self) -> u8 {
         self as u8
     }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ja => "ja",
-            Self::En => "en",
-            Self::De => "de",
-            Self::Fr => "fr",
-            Self::Es => "es",
-            Self::It => "it",
-            Self::Nl => "nl",
-        }
-    }
 }
 
 impl FromStr for Language {

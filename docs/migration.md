@@ -99,13 +99,14 @@ Regenerate earlier unreleased seeds with the current `wii-seed`.
 Remove `--reference` from scripts. Setup and display options now generate
 SYSCONF using recipe values and menu defaults. Use a two-letter country code
 such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
-parsers interpret it as a boolean. Existing quoted Wii codes such as "110"
-still work. Pair Wii Remotes after restore.
+parsers interpret it as a boolean. Replace quoted Wii codes such as "110"
+with the corresponding ISO code. Pair Wii Remotes after restore.
 
 Use `WIIFORM_NUS_CACHE` for a persistent title cache and `WIIFORM_NUS_OFFLINE=1`
-to require cache hits. Without either variable, title downloads stay in memory.
-A Priiloader recipe requires a `settings` mapping. Use `settings: {}` to apply
-the pinned defaults. Remove old `app` fields and the `--app` and
+to require cache hits. Online builds create the configured cache. Title
+downloads stay in memory by default.
+Use `priiloader: {}` to install with pinned defaults. Remove old `app` fields
+and the `--app` and
 `--hack-definitions` flags. The commands use the bundled installer and definitions.
 Pass `--stop-disc` to enable the setting or omit it for the default. Use
 `--white-background` for a white background and `--fix-480p` to enable that hack.

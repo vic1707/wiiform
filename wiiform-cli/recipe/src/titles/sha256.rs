@@ -1,75 +1,39 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::borrow::Cow;
+use std::str::FromStr;
 
-use nnn::nnn;
+use hex::FromHex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[nnn(
-    derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        Serialize,
-        Deserialize
-    ),
-    nnn_derive(TryFrom, AsRef, Deref),
-    sanitizers(lowercase),
-    validators(regex = r"^[0-9a-f]{64}$")
-)]
-pub struct Sha256(String);
+/// SHA-256 of the exact binary payload, encoded as 64 hex digits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(transparent)]
+pub struct Sha256(
+    #[serde(with = "hex")]
+    #[schemars(
+        with = "String",
+        length(equal = 64),
+        regex(pattern = "^[0-9a-fA-F]{64}$")
+    )]
+    [u8; 32],
+);
 
-impl std::str::FromStr for Sha256 {
-    type Err = Sha256Error;
+impl FromStr for Sha256 {
+    type Err = hex::FromHexError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::try_from(value.to_owned())
+        <[u8; 32]>::from_hex(value).map(Self)
     }
 }
 
-impl JsonSchema for Sha256 {
-    fn schema_name() -> Cow<'static, str> {
-        "Sha256".into()
-    }
-    fn schema_id() -> Cow<'static, str> {
-        concat!(module_path!(), "::Sha256").into()
-    }
-    fn inline_schema() -> bool {
-        true
-    }
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "string",
-            "minLength": 64,
-            "maxLength": 64,
-            "pattern": "^[0-9a-fA-F]{64}$",
-            "description": "64-character hexadecimal SHA-256 digest; normalized to lowercase"
-        })
+impl From<[u8; 32]> for Sha256 {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
     }
 }
 
 impl Sha256 {
-    pub fn as_str(&self) -> &str {
-        self.as_ref().as_str()
-    }
-
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut bytes = [0; 32];
-        for (index, pair) in self
-            .as_str()
-            .as_bytes()
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .enumerate()
-        {
-            let text = std::str::from_utf8(pair).expect("validated hexadecimal SHA-256");
-            bytes[index] = u8::from_str_radix(text, 16).expect("validated hexadecimal SHA-256");
-        }
-        bytes
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 }

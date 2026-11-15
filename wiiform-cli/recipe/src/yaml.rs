@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use serde::{Deserialize, Serialize, Serializer};
-use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
+use serde_saphyr::MergeKeyPolicy;
 
 pub const MAX_EVENTS: usize = 20_000;
 pub const MAX_DEPTH: usize = 24;
@@ -50,26 +50,23 @@ impl<'de> Deserialize<'de> for Binary {
     }
 }
 
-pub fn options() -> Options {
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::Error;
-    options.merge_keys = MergeKeyPolicy::Error;
-    options.reject_unsupported_tags = true;
-    options.strict_booleans = true;
-    options.no_schema = true;
-    options.with_snippet = false;
-    options.crop_radius = 0;
-
-    let mut budget = serde_saphyr::Budget::default();
-    budget.max_events = MAX_EVENTS;
-    budget.max_aliases = 0;
-    budget.max_anchors = 0;
-    budget.max_depth = MAX_DEPTH;
-    budget.max_documents = 1;
-    budget.max_nodes = 8_192;
-    budget.max_reader_input_bytes = None;
-    budget.max_total_scalar_bytes = usize::MAX;
-    budget.flow_nesting_limit = MAX_DEPTH;
-    options.budget = Some(budget);
-    options
+pub fn options() -> serde_saphyr::Options {
+    serde_saphyr::options! {
+        merge_keys: MergeKeyPolicy::Error,
+        reject_unsupported_tags: true,
+        strict_booleans: true,
+        no_schema: true,
+        with_snippet: false,
+        budget: serde_saphyr::budget! {
+            max_events: MAX_EVENTS,
+            max_aliases: 0,
+            max_anchors: 0,
+            max_depth: MAX_DEPTH,
+            max_documents: 1,
+            max_nodes: 8_192,
+            max_reader_input_bytes: None,
+            max_total_scalar_bytes: usize::MAX,
+            flow_nesting_limit: MAX_DEPTH,
+        },
+    }
 }

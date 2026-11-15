@@ -37,11 +37,11 @@ impl Menu {
         }
     }
 
-    pub fn suffix(self) -> &'static str {
+    pub const fn channel_suffix(self) -> u8 {
         match self {
-            Self::E43 => "50",
-            Self::U43 => "45",
-            Self::J43 => "4a",
+            Self::E43 => b'P',
+            Self::U43 => b'E',
+            Self::J43 => b'J',
         }
     }
 

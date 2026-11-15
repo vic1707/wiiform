@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/vic1707/wiiform/main/docs/wiiform.recipe.schema.json
 # Template only: replace the sample WAD path and hash with real values.
-# Local paths resolve relative to this file. Titles always require a SHA-256.
+# Local paths are read at install time, relative to this file. Titles require a SHA-256.
 menu: 4.3E
 
 # Names expand to the correct region's title IDs. Explicit IDs must be quoted.
@@ -12,7 +12,7 @@ remove:
   # - "0001000248414650"
 
 # Either setup or display marks first-run setup complete.
-# Use an empty mapping for defaults. Omit both sections to run the Wii setup wizard.
+# Use an empty mapping for defaults. Omit both sections or write null to run the Wii setup wizard.
 setup:
   nickname: "Speed Wii" # Defaults to "Wii".
   language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.
@@ -35,7 +35,7 @@ titles:
   #       BASE64_OF_WAD
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-priiloader:
+priiloader: # An empty mapping installs Priiloader with pinned defaults.
   settings:
     # Every configurable Priiloader setting is written. Omitted keys use the
     # pinned 0.10.0 defaults; prior NAND values are not preserved.

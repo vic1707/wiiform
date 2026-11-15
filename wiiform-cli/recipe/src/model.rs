@@ -16,19 +16,16 @@ pub struct Recipe {
     #[serde(default)]
     remove: Vec<RemovalInput>,
     /// Optional first-run setup values.
-    #[serde(default, deserialize_with = "crate::schema::non_null_option")]
-    #[schemars(with = "crate::schema::NonNull<Setup>")]
+    #[serde(default)]
     pub setup: Option<Setup>,
     /// Optional display settings. An empty mapping uses the defaults.
-    #[serde(default, deserialize_with = "crate::schema::non_null_option")]
-    #[schemars(with = "crate::schema::NonNull<Display>")]
+    #[serde(default)]
     pub display: Option<Display>,
     /// WADs to install from a file or inline bytes.
     #[serde(default)]
     pub titles: Vec<Title>,
     /// Optional pinned Priiloader install with settings and hacks.
-    #[serde(default, deserialize_with = "crate::schema::non_null_option")]
-    #[schemars(with = "crate::schema::NonNull<Priiloader>")]
+    #[serde(default)]
     pub priiloader: Option<Priiloader>,
 }
 
@@ -58,7 +55,7 @@ impl Recipe {
         }
 
         for title in &mut recipe.titles {
-            title.source.resolve_path(directory)?;
+            title.source.rebase(directory);
         }
         Ok((recipe, remove))
     }
@@ -84,7 +81,7 @@ impl Recipe {
         for input in &self.remove {
             for id in input.expand(menu)? {
                 ensure!(
-                    seen.insert(id.clone()),
+                    seen.insert(id),
                     "duplicate removal after channel alias expansion"
                 );
                 remove.push(id);
@@ -113,11 +110,12 @@ mod tests {
             "menu: 4.3E\ntitles:\n  - sha256: {SHA}\n    source:\n      inline: !!binary |\n        /wAB\n        /v8=\n"
         );
         let (recipe, _) = read(&yaml, None)?;
-        let bytes = recipe.titles[0].source.resolve(crate::WAD_SIZE)?;
+        let bytes = recipe.titles[0].source.resolve(0..=usize::MAX)?;
         assert!(matches!(
             bytes,
             std::borrow::Cow::Borrowed([255, 0, 1, 254, 255])
         ));
+        assert!(recipe.titles[0].source.resolve(crate::WAD_SIZE).is_err());
         for bad in [
             format!("source: {{path: a.wad, inline: !!binary /wAB}}\n    sha256: {SHA}"),
             format!("source: {{inline: /wAB}}\n    sha256: {SHA}"),
@@ -149,11 +147,12 @@ mod tests {
         let recipe_path = ResolvedPath::try_from(recipe_path)?;
         let (recipe, _) = Recipe::load(&recipe_path, None)?;
         let source = &recipe.titles[0].source;
-        assert!(matches!(source, Data::Path(path) if *path == wad.canonicalize().unwrap()));
-        assert_eq!(source.resolve(crate::WAD_SIZE)?.as_ref(), contents);
+        assert!(matches!(source, Data::Path(path) if path.ends_with("linked.wad")));
+        assert_eq!(source.resolve(0x40..=0x40)?.as_ref(), contents);
         for bad in [".", "missing.wad"] {
             let yaml = format!("menu: 4.3E\ntitles: [{{source: {{path: {bad}}}, sha256: {SHA}}}]");
-            assert!(Recipe::read(yaml.as_bytes(), &dir, None).is_err());
+            let (recipe, _) = Recipe::read(yaml.as_bytes(), &dir, None)?;
+            assert!(recipe.titles[0].source.resolve(crate::WAD_SIZE).is_err());
         }
         fs::remove_dir_all(dir)?;
         Ok(())
@@ -163,10 +162,11 @@ mod tests {
     fn menu_override_rechecks_settings_and_removals() -> Result<()> {
         let (_, ids) = read("menu: 4.3E\nremove: [forecast-channel]", Some(Menu::J43))?;
         assert_eq!(
-            ids.iter().map(TitleId::as_str).collect::<Vec<_>>(),
-            ["000100024841464a", "0001000248414641"]
+            ids.iter().map(|id| id.as_u64()).collect::<Vec<_>>(),
+            [0x0001_0002_4841_464a, 0x0001_0002_4841_4641]
         );
         for yaml in [
+            "menu: 4.3E\nsetup: {country: '110'}",
             "menu: 4.3E\nsetup: {language: ja}",
             "menu: 4.3E\nsetup: {country: GB}",
             "menu: 4.3E\nremove: [forecast-channel, '0001000248414650']",
@@ -188,17 +188,18 @@ mod tests {
         assert!(
             config.settings.stop_disc && config.settings.black_background && config.hacks.fix_480p
         );
-        for yaml in [
-            "priiloader: null",
-            "priiloader: {}",
-            "priiloader: {app: override.app, settings: {}}",
-            "setup: null",
-        ] {
-            assert!(
-                read(&format!("menu: 4.3E\n{yaml}"), None).is_err(),
-                "{yaml}"
-            );
+        for priiloader in ["{}", "{settings: null, hacks: null}"] {
+            let (recipe, _) = read(&format!("menu: 4.3E\npriiloader: {priiloader}"), None)?;
+            assert_eq!(recipe.priiloader, Some(Priiloader::default()));
         }
+
+        let (recipe, _) = read("menu: 4.3E\npriiloader: null", None)?;
+        assert!(recipe.priiloader.is_none());
+        let (recipe, _) = read("menu: 4.3E\nsetup: null", None)?;
+        assert!(recipe.setup.is_none());
+        let (recipe, _) = read("menu: 4.3E\ndisplay: null", None)?;
+        assert!(recipe.display.is_none());
+        assert!(read("menu: 4.3E\npriiloader: {app: override.app}", None).is_err());
         Ok(())
     }
 }

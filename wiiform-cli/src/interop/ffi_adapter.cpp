@@ -26,7 +26,11 @@ auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts {
       rust::String(source.settings.code), rust::String(source.settings.serial),
       rust::String(source.settings.video), rust::String(source.settings.game)};
   result.settings_sha256 = source.settings_sha256;
-  result.bootmii = rust::String(source.bootmii);
+  switch (source.bootmii) {
+    case wiiform::BootMiiState::detected: result.bootmii = BootMiiState::Detected; break;
+    case wiiform::BootMiiState::stock: result.bootmii = BootMiiState::Stock; break;
+    case wiiform::BootMiiState::unknown: result.bootmii = BootMiiState::Unknown; break;
+  }
   result.footer_header = rust::String(source.footer_header);
   return result;
 }

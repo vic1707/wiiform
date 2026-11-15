@@ -29,17 +29,17 @@ impl Nickname {
     }
 }
 
-impl Default for Nickname {
-    fn default() -> Self {
-        Self::try_from("Wii".to_owned()).expect("built-in Wii nickname is valid")
-    }
-}
-
 impl std::str::FromStr for Nickname {
     type Err = NicknameError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::try_from(value.to_owned())
+    }
+}
+
+impl Default for Nickname {
+    fn default() -> Self {
+        Self::try_from("Wii".to_owned()).expect("built-in Wii nickname is valid")
     }
 }
 

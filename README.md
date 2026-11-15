@@ -56,8 +56,8 @@ regenerate the schema from the Rust recipe model. Local file paths resolve
 relative to the recipe. A WAD entry has a `source` with either a local `path`
 or an `inline: !!binary |` block containing base64. Both require the SHA-256
 of the raw WAD bytes. The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
-channel removal, initial setup, display settings, and Priiloader settings and
-named hacks.
+channel removal, initial setup, display settings, and Priiloader settings and named hacks. Set setup country
+codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
 
 ```sh
 wiiform --seed console.seed.yaml --recipe recipe.yaml \
@@ -67,18 +67,22 @@ wiiform --seed console.seed.yaml --recipe recipe.yaml \
 
 NUS downloads are authenticated and kept in memory by default; no cache files
 are read or written. To reuse verified downloads, set `WIIFORM_NUS_CACHE` to a
-directory. For repeatable offline builds (including CI), set both
+directory. Online builds create it automatically. For repeatable offline
+builds (including CI), set both
 `WIIFORM_NUS_CACHE` and `WIIFORM_NUS_OFFLINE=1`. An offline cache miss fails.
 The cache stores only files that pass Wii title signature and content checks.
 
 The output must be a new directory. A successful build publishes `nand.bin`
 and its matching BootMii `keys.bin` together. Setup or display settings generate
 a fresh SYSCONF and mark first-run setup complete. Pair Wii Remotes again after
-restoring a prepared image. A stock recipe without either section uses the
-console's first-run setup. Wiiform uses the pinned Priiloader assets included in the release archive. When running from a checkout, run `mise run assets:priiloader` once before
-using a Priiloader recipe. A `priiloader` section requires `settings`. Use
-`settings: {}` for the pinned defaults. Each application replaces the settings
-and disables unspecified hacks.
+restoring a prepared image. Omitted or null setup and display sections leave
+first-run setup enabled when neither section is present. An empty mapping
+applies the section's defaults.
+
+Wiiform uses the pinned Priiloader assets included in the release archive.
+When running from a checkout, run `mise run assets:priiloader` once before
+using a Priiloader recipe. Use `priiloader: {}` to install with pinned defaults.
+Each application replaces the settings and disables unspecified hacks.
 
 The seed contains plaintext console key material. Save the output privately.
 A footer-bearing backup supplies its own keys. For a footerless backup, pass

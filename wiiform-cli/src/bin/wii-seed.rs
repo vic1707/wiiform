@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::io::{self, Write};
+use std::io;
 use wiiform::{
     native,
     recipe::{ResolvedPath, read_bounded},
@@ -39,7 +39,6 @@ fn main() -> Result<()> {
             Vec::new(),
         ),
     };
-    let seed = native::extract_seed(&nand, &sidecar)?;
-    io::stdout().lock().write_all(seed.as_bytes())?;
+    native::extract_seed(&nand, &sidecar, io::stdout().lock())?;
     Ok(())
 }

@@ -1,67 +1,51 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::borrow::Cow;
+use std::{num::NonZeroU64, str::FromStr};
 
-use nnn::nnn;
+use anyhow::{Context, Result};
+use hex::FromHex;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[nnn(
-    derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        Serialize,
-        Deserialize
-    ),
-    nnn_derive(TryFrom, AsRef, Deref),
-    sanitizers(lowercase),
-    validators(
-        regex = r"^[0-9a-f]{16}$",
-        custom(with = |value: &String| value != "0000000000000000", error = Zero)
-    )
-)]
-pub struct TitleId(String);
+/// Nonzero Wii title ID written as 16 hex digits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Deserialize, JsonSchema)]
+#[serde(try_from = "String")]
+#[schemars(!try_from, transparent)]
+pub struct TitleId(
+    #[schemars(
+        with = "String",
+        length(equal = 16),
+        regex(pattern = "^[0-9a-fA-F]{16}$"),
+        extend("not" = {"const": "0000000000000000"})
+    )]
+    NonZeroU64,
+);
 
-impl std::str::FromStr for TitleId {
-    type Err = TitleIdError;
+impl FromStr for TitleId {
+    type Err = anyhow::Error;
 
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::try_from(value.to_owned())
+    fn from_str(value: &str) -> Result<Self> {
+        let bytes =
+            <[u8; 8]>::from_hex(value).context("expected a 16-digit hexadecimal title ID")?;
+        NonZeroU64::new(u64::from_be_bytes(bytes))
+            .map(Self)
+            .context("title ID must be nonzero")
     }
 }
 
-impl JsonSchema for TitleId {
-    fn schema_name() -> Cow<'static, str> {
-        "TitleId".into()
-    }
-    fn schema_id() -> Cow<'static, str> {
-        concat!(module_path!(), "::TitleId").into()
-    }
-    fn inline_schema() -> bool {
-        true
-    }
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "string",
-            "minLength": 16,
-            "maxLength": 16,
-            "pattern": "^[0-9a-fA-F]{16}$",
-            "not": {"const": "0000000000000000"},
-            "description": "Nonzero 16-character hexadecimal Wii title ID, normalized to lowercase"
-        })
+impl TryFrom<String> for TitleId {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        value.parse()
     }
 }
 
 impl TitleId {
-    pub fn as_str(&self) -> &str {
-        self.as_ref().as_str()
+    pub(crate) const fn known(value: u64) -> Self {
+        Self(NonZeroU64::new(value).expect("built-in title IDs are nonzero"))
     }
 
-    pub fn as_u64(&self) -> u64 {
-        u64::from_str_radix(self.as_str(), 16).expect("validated title ID is hexadecimal")
+    pub const fn as_u64(self) -> u64 {
+        self.0.get()
     }
 }

@@ -11,6 +11,7 @@
 namespace wiiform {
   enum class BootPolicy : std::uint8_t { stock = 0, preserve_source = 1 };
   enum class WadPolicy { standard, legacy_channel };
+  enum class BootMiiState : std::uint8_t { detected, stock, unknown };
 
   inline constexpr std::size_t raw_nand_size = 0x21000000;
   inline constexpr std::size_t nand_size = raw_nand_size + 0x400;
@@ -33,7 +34,7 @@ namespace wiiform {
     std::vector<std::uint16_t> bad_blocks;
     ConsoleSettings settings;
     Sha256 settings_sha256;
-    std::string bootmii;
+    BootMiiState bootmii;
     std::string footer_header;
   };
   struct StockSeed {

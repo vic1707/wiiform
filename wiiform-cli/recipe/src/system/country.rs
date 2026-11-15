@@ -1,43 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::{borrow::Cow, fmt, str::FromStr};
-
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use serde::{Deserialize, Serialize};
 
 // Keep the Wii byte values, supported countries, and editor schema in one table.
 macro_rules! country_codes {
     ($($name:ident = $code:literal => $alpha2:literal),+ $(,)?) => {
         /// Supported ISO alpha-2 country code and its Wii SYSCONF byte.
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
         #[repr(u8)]
         pub enum CountryCode {
-            $($name = $code),+
+            $(#[serde(rename = $alpha2)] $name = $code),+
         }
 
         impl CountryCode {
+            #[cfg(test)]
             const ALL: &[Self] = &[$(Self::$name),+];
 
             pub const fn as_alpha2(self) -> &'static str {
                 match self {
                     $(Self::$name => $alpha2),+
-                }
-            }
-
-            fn from_alpha2(value: &str) -> Option<Self> {
-                match value {
-                    $($alpha2 => Some(Self::$name),)+
-                    _ => None,
-                }
-            }
-        }
-
-        impl TryFrom<u8> for CountryCode {
-            type Error = InvalidCountryCode;
-
-            fn try_from(value: u8) -> Result<Self, Self::Error> {
-                match value {
-                    $($code => Ok(Self::$name),)+
-                    _ => Err(InvalidCountryCode),
                 }
             }
         }
@@ -129,92 +110,18 @@ impl CountryCode {
     }
 }
 
-impl FromStr for CountryCode {
-    type Err = InvalidCountryCode;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        if let Some(country) = Self::from_alpha2(value) {
-            return Ok(country);
-        }
-        // Older recipes used the Wii's byte as a quoted decimal string.
-        let code = value.parse::<u8>().map_err(|_| InvalidCountryCode)?;
-        if code.to_string() != value {
-            return Err(InvalidCountryCode);
-        }
-        Self::try_from(code)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InvalidCountryCode;
-
-impl fmt::Display for InvalidCountryCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(
-            "unknown country code, expected an uppercase ISO alpha-2 code supported by the Wii",
-        )
-    }
-}
-
-impl std::error::Error for InvalidCountryCode {}
-
-impl Serialize for CountryCode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.as_alpha2())
-    }
-}
-
-impl<'de> Deserialize<'de> for CountryCode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        value.parse().map_err(de::Error::custom)
-    }
-}
-
-impl JsonSchema for CountryCode {
-    fn schema_name() -> Cow<'static, str> {
-        "CountryCode".into()
-    }
-    fn schema_id() -> Cow<'static, str> {
-        concat!(module_path!(), "::CountryCode").into()
-    }
-    fn inline_schema() -> bool {
-        true
-    }
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "string",
-            "anyOf": [
-                {
-                    "enum": Self::ALL.iter().map(|code| code.as_alpha2()).collect::<Vec<_>>()
-                },
-                {
-                    "description": "Legacy quoted Wii country byte. Prefer the two-letter code.",
-                    "enum": Self::ALL.iter().map(|code| code.as_u8().to_string()).collect::<Vec<_>>(),
-                    "deprecated": true
-                }
-            ]
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn iso_and_legacy_codes_map_to_the_same_wii_byte() {
+    fn iso_codes_map_to_their_wii_bytes() {
         for &country in CountryCode::ALL {
             let alpha2 = country.as_alpha2();
-            let legacy = country.as_u8().to_string();
-            assert_eq!(alpha2.parse(), Ok(country));
-            assert_eq!(legacy.parse(), Ok(country));
+            assert_eq!(
+                serde_saphyr::from_str::<CountryCode>(alpha2).unwrap(),
+                country
+            );
             assert_eq!(serde_json::to_value(country).unwrap(), alpha2);
         }
         assert_eq!(CountryCode::UnitedKingdom.as_alpha2(), "GB");
@@ -222,6 +129,7 @@ mod tests {
         assert_eq!(CountryCode::UnitedStates.as_u8(), 49);
         assert_eq!(CountryCode::Japan.as_u8(), 1);
         assert_eq!(CountryCode::NetherlandsAntilles.as_alpha2(), "AN");
-        assert!("ZZ".parse::<CountryCode>().is_err());
+        assert!(serde_saphyr::from_str::<CountryCode>("ZZ").is_err());
+        assert!(serde_saphyr::from_str::<CountryCode>("110").is_err());
     }
 }

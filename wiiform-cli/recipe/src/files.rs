@@ -12,12 +12,6 @@ use anyhow::{Context, Result, ensure};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedPath(PathBuf);
 
-impl ResolvedPath {
-    pub(crate) fn into_path(self) -> PathBuf {
-        self.0
-    }
-}
-
 impl TryFrom<PathBuf> for ResolvedPath {
     type Error = anyhow::Error;
 

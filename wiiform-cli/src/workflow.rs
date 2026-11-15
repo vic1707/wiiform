@@ -7,12 +7,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
+use rustix::fs::{CWD, RenameFlags, renameat_with};
 use tempfile::Builder;
 
 use crate::{
-    native::{self, InstalledWad, StockIdentity, WadPolicy},
+    native::{self, InstalledWad, StockIdentity},
     priiloader_payload,
-    recipe::{Menu, Recipe, ResolvedPath, SignaturePolicy, WAD_SIZE, open_regular_file},
+    recipe::{Menu, Recipe, ResolvedPath, open_regular_file},
     seed::StockSeed,
 };
 
@@ -121,10 +122,7 @@ fn build_with(
     let (mut nand, identity) =
         create_stock(&options, &recipe).context("cannot create stock NAND")?;
 
-    let removals: Vec<_> = removals
-        .iter()
-        .map(crate::recipe::TitleId::as_u64)
-        .collect();
+    let removals: Vec<_> = removals.iter().map(|id| id.as_u64()).collect();
     for &id in &removals {
         native::remove_title(&mut nand, id)
             .with_context(|| format!("cannot remove title {id:016x}"))?;
@@ -141,15 +139,7 @@ fn build_with(
     }
 
     for (index, title) in recipe.titles.iter().enumerate() {
-        let wad = title
-            .source
-            .resolve(WAD_SIZE)
-            .with_context(|| format!("cannot read titles[{index}] source"))?;
-        let policy = match title.signature_policy {
-            SignaturePolicy::Nintendo => WadPolicy::Standard,
-            SignaturePolicy::AllowUnsigned => WadPolicy::LegacyChannel,
-        };
-        let installed = native::install_wad(&mut nand, &wad, &title.sha256, policy)
+        let installed = native::install_wad(&mut nand, title)
             .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
             !removals.contains(&installed.title_id),

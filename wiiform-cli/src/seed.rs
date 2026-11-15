@@ -1,62 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! Validated, decoded inputs from one Wii seed.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 use anyhow::{Context, Result, anyhow, ensure};
 use lzma_rust2::XzReader;
-use nnn::nnn;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
-use wiiform_recipe::{
-    Sha256,
-    yaml::{self, Binary},
-};
+use wiiform_recipe::{Sha256, yaml::Binary};
+
+use crate::ffi::bridge as ffi;
 
 const BOOT_BYTES: usize = 0x108000;
 const KEYS_BYTES: usize = 0x400;
-const MAX_XZ_MEMORY: u64 = 128 * 1024 * 1024;
+const XZ_MEMORY_KIB: u32 = 128 * 1024;
 
-#[nnn(
-    derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize),
-    nnn_derive(TryFrom, AsRef),
-    validators(custom(with = valid_setting_value, error = InvalidConsoleSettingValue))
-)]
-pub struct ConsoleSettingValue(String);
+pub use crate::ffi::bridge::ConsoleSettings;
 
-fn valid_setting_value(value: &str) -> bool {
-    !value.is_empty() && value.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
-}
-
-impl ConsoleSettingValue {
-    pub fn as_str(&self) -> &str {
-        self.as_ref().as_str()
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ConsoleSettings {
-    #[serde(rename = "AREA")]
-    pub area: ConsoleSettingValue,
-    #[serde(rename = "MODEL")]
-    pub model: ConsoleSettingValue,
-    #[serde(rename = "DVD")]
-    pub dvd: ConsoleSettingValue,
-    #[serde(rename = "MPCH")]
-    pub mpch: ConsoleSettingValue,
-    #[serde(rename = "CODE")]
-    pub code: ConsoleSettingValue,
-    #[serde(rename = "SERNO")]
-    pub serial: ConsoleSettingValue,
-    #[serde(rename = "VIDEO")]
-    pub video: ConsoleSettingValue,
-    #[serde(rename = "GAME")]
-    pub game: ConsoleSettingValue,
-}
-
-/// Seed components checked before recipe overrides are applied.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Seed components whose binary digests and compressed boot data were checked.
 pub struct StockSeed {
     keys: Vec<u8>,
     boot_blocks: Vec<u8>,
@@ -68,7 +29,7 @@ pub struct StockSeed {
 impl StockSeed {
     pub fn from_reader<R: Read>(reader: R) -> Result<Self> {
         let manifest: SeedManifest =
-            serde_saphyr::from_reader_with_options(reader, yaml::options())
+            serde_saphyr::from_reader_with_options(reader, crate::recipe::yaml::options())
                 .map_err(|_| anyhow!("Invalid Wii seed YAML"))?;
 
         let keys = manifest.keys.footer.0;
@@ -77,13 +38,13 @@ impl StockSeed {
             "Seed keys footer has the wrong size"
         );
         ensure!(
-            sha256(&keys) == manifest.keys.sha256.as_str(),
+            digest(&keys) == manifest.keys.sha256,
             "Keys do not match their SHA-256"
         );
 
         let boot_blocks = decode_xz(&manifest.boot_blocks.xz.0)?;
         ensure!(
-            sha256(&boot_blocks) == manifest.boot_blocks.sha256.as_str(),
+            digest(&boot_blocks) == manifest.boot_blocks.sha256,
             "Boot blocks do not match their SHA-256"
         );
 
@@ -92,32 +53,18 @@ impl StockSeed {
             boot_blocks,
             bad_blocks: manifest.bad_blocks,
             settings: manifest.settings.fields,
-            settings_sha256: manifest.settings.sha256.to_bytes(),
+            settings_sha256: *manifest.settings.sha256.as_bytes(),
         })
     }
 
-    pub fn parse(bytes: &[u8]) -> Result<Self> {
-        Self::from_reader(bytes)
-    }
-
-    pub fn keys(&self) -> &[u8] {
-        &self.keys
-    }
-
-    pub fn boot_blocks(&self) -> &[u8] {
-        &self.boot_blocks
-    }
-
-    pub fn bad_blocks(&self) -> &[u16] {
-        &self.bad_blocks
-    }
-
-    pub fn settings(&self) -> &ConsoleSettings {
-        &self.settings
-    }
-
-    pub fn settings_sha256(&self) -> &[u8; 32] {
-        &self.settings_sha256
+    pub(crate) fn as_native(&self) -> ffi::StockSeed<'_> {
+        ffi::StockSeed {
+            keys: &self.keys,
+            boot_blocks: &self.boot_blocks,
+            bad_blocks: &self.bad_blocks,
+            settings: &self.settings,
+            settings_sha256: self.settings_sha256,
+        }
     }
 }
 
@@ -153,7 +100,27 @@ struct BootBlocks {
 struct Settings {
     #[serde(rename = "_sha256")]
     sha256: Sha256,
+    #[serde(with = "ConsoleSettingsSerde")]
     fields: ConsoleSettings,
+}
+
+/// Serde view of WiiQt's settings value; field names and validation stay native.
+#[derive(Deserialize, Serialize)]
+#[serde(
+    remote = "ffi::ConsoleSettings",
+    rename_all = "UPPERCASE",
+    deny_unknown_fields
+)]
+struct ConsoleSettingsSerde {
+    area: String,
+    model: String,
+    dvd: String,
+    mpch: String,
+    code: String,
+    #[serde(rename = "SERNO")]
+    serial: String,
+    video: String,
+    game: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -173,23 +140,23 @@ enum BootMiiState {
     Unknown,
 }
 
-fn sha256(bytes: &[u8]) -> String {
-    let digest = Sha256Hasher::digest(bytes);
-    let mut hex = String::with_capacity(64);
-    for byte in digest {
-        use std::fmt::Write as _;
-        write!(hex, "{byte:02x}").expect("writing to String cannot fail");
+impl From<ffi::BootMiiState> for BootMiiState {
+    fn from(state: ffi::BootMiiState) -> Self {
+        match state {
+            ffi::BootMiiState::Detected => Self::Detected,
+            ffi::BootMiiState::Stock => Self::Stock,
+            _ => Self::Unknown,
+        }
     }
-    hex
 }
 
-fn digest(bytes: &[u8]) -> Sha256 {
-    Sha256::try_from(sha256(bytes)).expect("SHA-256 output always has 64 lowercase hex digits")
+fn digest(bytes: impl AsRef<[u8]>) -> Sha256 {
+    let digest: [u8; 32] = Sha256Hasher::digest(bytes).into();
+    Sha256::from(digest)
 }
 
 fn decode_xz(compressed: &[u8]) -> Result<Vec<u8>> {
-    let memory_limit_kb = u32::try_from(MAX_XZ_MEMORY / 1024).expect("memory limit fits u32");
-    let mut decoder = XzReader::new_mem_limit(compressed, false, memory_limit_kb);
+    let mut decoder = XzReader::new_mem_limit(compressed, false, XZ_MEMORY_KIB);
     let mut output = Vec::with_capacity(BOOT_BYTES);
     decoder
         .by_ref()
@@ -208,73 +175,33 @@ fn decode_xz(compressed: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn encode_xz(boot: &[u8]) -> Result<Vec<u8>> {
-    use std::io::Write;
-    ensure!(
-        boot.len() == BOOT_BYTES,
-        "Boot block data has the wrong size"
-    );
     let mut writer = lzma_rust2::XzWriter::new(Vec::new(), lzma_rust2::XzOptions::with_preset(1))?;
     writer.write_all(boot)?;
     Ok(writer.finish()?)
 }
 
-/// Serialize authenticated native extraction data in the stable plaintext seed format.
-pub fn serialize_seed(
-    keys: Vec<u8>,
-    boot_blocks: Vec<u8>,
-    bad_blocks: Vec<u16>,
-    settings: ConsoleSettings,
-    settings_sha256: [u8; 32],
-    bootmii: &str,
-    footer_header: &str,
-) -> Result<String> {
-    ensure!(
-        keys.len() == KEYS_BYTES,
-        "Seed keys footer has the wrong size"
-    );
-    ensure!(
-        boot_blocks.len() == BOOT_BYTES,
-        "Boot block data has the wrong size"
-    );
-    let bootmii_boot2 = match bootmii {
-        "detected" => BootMiiState::Detected,
-        "stock" => BootMiiState::Stock,
-        "unknown" => BootMiiState::Unknown,
-        _ => {
-            return Err(anyhow!(
-                "Native extractor returned an invalid BootMii state"
-            ));
-        }
-    };
+/// Write native extraction data as the stable plaintext seed YAML format.
+pub fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
     let manifest = SeedManifest {
         keys: KeyFooter {
-            sha256: digest(&keys),
-            footer: Binary(keys),
+            sha256: digest(&parts.keys),
+            footer: Binary(parts.keys),
         },
-        bad_blocks,
+        bad_blocks: parts.bad_blocks,
         boot_blocks: BootBlocks {
-            sha256: digest(&boot_blocks),
-            xz: Binary(encode_xz(&boot_blocks)?),
+            sha256: digest(&parts.boot_blocks),
+            xz: Binary(encode_xz(&parts.boot_blocks)?),
         },
         settings: Settings {
-            sha256: Sha256::try_from(hex_digest(&settings_sha256))?,
-            fields: settings,
+            sha256: Sha256::from(parts.settings_sha256),
+            fields: parts.settings,
         },
         info: Some(SeedInfo {
-            bootmii_boot2: Some(bootmii_boot2),
-            footer_header: (!footer_header.is_empty()).then(|| footer_header.to_owned()),
+            bootmii_boot2: Some(parts.bootmii.into()),
+            footer_header: (!parts.footer_header.is_empty()).then_some(parts.footer_header),
         }),
     };
-    serde_saphyr::to_string(&manifest).context("cannot serialize Wii seed YAML")
-}
-
-fn hex_digest(bytes: &[u8; 32]) -> String {
-    let mut hex = String::with_capacity(64);
-    for byte in bytes {
-        use std::fmt::Write as _;
-        write!(hex, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    hex
+    serde_saphyr::to_io_writer(&mut writer, &manifest).context("cannot serialize Wii seed YAML")
 }
 
 #[cfg(test)]
@@ -282,49 +209,51 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    fn settings() -> Result<ConsoleSettings> {
-        Ok(ConsoleSettings {
-            area: ConsoleSettingValue::try_from("EUR".to_owned())?,
-            model: ConsoleSettingValue::try_from("RVL-001(EUR)".to_owned())?,
-            dvd: ConsoleSettingValue::try_from("0".to_owned())?,
-            mpch: ConsoleSettingValue::try_from("0x7FFE".to_owned())?,
-            code: ConsoleSettingValue::try_from("LEH".to_owned())?,
-            serial: ConsoleSettingValue::try_from("182060878".to_owned())?,
-            video: ConsoleSettingValue::try_from("PAL".to_owned())?,
-            game: ConsoleSettingValue::try_from("EU".to_owned())?,
-        })
-    }
-
-    fn synthetic_seed() -> Result<String> {
-        serialize_seed(
-            vec![0; KEYS_BYTES],
-            vec![0x5a; BOOT_BYTES],
-            vec![9],
-            settings()?,
-            [0; 32],
-            "unknown",
-            "BOOTMII",
-        )
-    }
-
     #[test]
-    fn serializes_binary_and_parses_seed_from_reader() -> Result<()> {
-        let yaml = synthetic_seed()?;
-        assert!(yaml.contains("!!binary"));
-        let seed = StockSeed::from_reader(Cursor::new(yaml.as_bytes()))?;
-        assert_eq!(seed.keys().len(), KEYS_BYTES);
-        assert_eq!(seed.boot_blocks().len(), BOOT_BYTES);
-        assert_eq!(seed.bad_blocks(), [9]);
-        assert_eq!(seed.settings().area.as_str(), "EUR");
-        assert_eq!(seed.settings_sha256(), &[0; 32]);
+    fn decodes_binary_and_reads_settings_through_native_type() -> Result<()> {
+        let manifest = SeedManifest {
+            keys: KeyFooter {
+                sha256: digest(vec![0; KEYS_BYTES]),
+                footer: Binary(vec![0; KEYS_BYTES]),
+            },
+            bad_blocks: vec![9],
+            boot_blocks: BootBlocks {
+                sha256: digest(vec![0x5a; BOOT_BYTES]),
+                xz: Binary(encode_xz(&vec![0x5a; BOOT_BYTES])?),
+            },
+            settings: Settings {
+                sha256: Sha256::from([0; 32]),
+                fields: ConsoleSettings {
+                    area: "EUR".into(),
+                    model: "RVL-001(EUR)".into(),
+                    dvd: "0".into(),
+                    mpch: "0x7FFE".into(),
+                    code: "LEH".into(),
+                    serial: "182060878".into(),
+                    video: "PAL".into(),
+                    game: "EU".into(),
+                },
+            },
+            info: None,
+        };
+        let mut yaml = Vec::new();
+        serde_saphyr::to_io_writer(&mut yaml, &manifest)?;
+        assert!(String::from_utf8_lossy(&yaml).contains("!!binary"));
+        let seed = StockSeed::from_reader(Cursor::new(yaml))?;
+        assert_eq!(seed.keys.len(), KEYS_BYTES);
+        assert_eq!(seed.boot_blocks.len(), BOOT_BYTES);
+        assert_eq!(seed.bad_blocks, [9]);
+        assert_eq!(seed.settings.area, "EUR");
+        assert_eq!(seed.settings_sha256, [0; 32]);
         Ok(())
     }
 
     #[test]
-    fn hides_parser_excerpts() -> Result<()> {
-        let error = StockSeed::parse(b"keys: SECRET_SENTINEL: {").unwrap_err();
+    fn hides_parser_excerpts() {
+        let Err(error) = StockSeed::from_reader(&b"keys: SECRET_SENTINEL: {"[..]) else {
+            panic!("invalid YAML must be rejected");
+        };
         assert_eq!(format!("{error:#}"), "Invalid Wii seed YAML");
         assert!(!format!("{error:#}").contains("SECRET_SENTINEL"));
-        Ok(())
     }
 }

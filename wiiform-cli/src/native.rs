@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    Aspect, Display, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, Sha256,
+    Aspect, Display, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy,
+    Title, WAD_SIZE,
 };
-use crate::seed::{ConsoleSettingValue, ConsoleSettings, StockSeed};
+use crate::seed::StockSeed;
 
-pub use ffi::{InstalledWad, StockIdentity, WadPolicy};
+pub use ffi::{InstalledWad, StockIdentity};
 
 /// Boot-area validation policy for stock NAND creation.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -27,27 +28,9 @@ fn cache_dir(path: &Path) -> Result<&str> {
         .with_context(|| format!("NUS cache directory must be UTF-8: {}", path.display()))
 }
 
-pub fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<String> {
+pub fn extract_seed<W: Write>(nand: &[u8], sidecar_keys: &[u8], writer: W) -> Result<()> {
     let parts = ffi::extract_seed(nand, sidecar_keys)?;
-    let settings = ConsoleSettings {
-        area: ConsoleSettingValue::try_from(parts.settings.area)?,
-        model: ConsoleSettingValue::try_from(parts.settings.model)?,
-        dvd: ConsoleSettingValue::try_from(parts.settings.dvd)?,
-        mpch: ConsoleSettingValue::try_from(parts.settings.mpch)?,
-        code: ConsoleSettingValue::try_from(parts.settings.code)?,
-        serial: ConsoleSettingValue::try_from(parts.settings.serial)?,
-        video: ConsoleSettingValue::try_from(parts.settings.video)?,
-        game: ConsoleSettingValue::try_from(parts.settings.game)?,
-    };
-    crate::seed::serialize_seed(
-        parts.keys,
-        parts.boot_blocks,
-        parts.bad_blocks,
-        settings,
-        parts.settings_sha256,
-        &parts.bootmii,
-        &parts.footer_header,
-    )
+    crate::seed::write_seed(writer, parts)
 }
 
 pub fn create_stock(
@@ -58,24 +41,8 @@ pub fn create_stock(
     policy: BootPolicy,
     offline: bool,
 ) -> Result<StockIdentity> {
-    let settings = ffi::ConsoleSettings {
-        area: seed.settings().area.as_str().to_owned(),
-        model: seed.settings().model.as_str().to_owned(),
-        dvd: seed.settings().dvd.as_str().to_owned(),
-        mpch: seed.settings().mpch.as_str().to_owned(),
-        code: seed.settings().code.as_str().to_owned(),
-        serial: seed.settings().serial.as_str().to_owned(),
-        video: seed.settings().video.as_str().to_owned(),
-        game: seed.settings().game.as_str().to_owned(),
-    };
     Ok(ffi::create_stock(
-        &ffi::StockSeed {
-            keys: seed.keys(),
-            boot_blocks: seed.boot_blocks(),
-            bad_blocks: seed.bad_blocks(),
-            settings,
-            settings_sha256: *seed.settings_sha256(),
-        },
+        &seed.as_native(),
         nand,
         cache_dir(cache)?,
         &ffi::StockOptions {
@@ -131,14 +98,18 @@ pub fn install_nus_title(
     )?)
 }
 
-pub fn install_wad(
-    nand: &mut [u8],
-    wad: &[u8],
-    sha256: &Sha256,
-    policy: WadPolicy,
-) -> Result<InstalledWad> {
-    let digest = sha256.to_bytes();
-    Ok(ffi::install_wad(nand, wad, &digest, policy)?)
+pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
+    let wad = title.source.resolve(WAD_SIZE)?;
+    let policy = match title.signature_policy {
+        SignaturePolicy::Nintendo => ffi::WadPolicy::Standard,
+        SignaturePolicy::AllowUnsigned => ffi::WadPolicy::LegacyChannel,
+    };
+    Ok(ffi::install_wad(
+        nand,
+        &wad,
+        title.sha256.as_bytes(),
+        policy,
+    )?)
 }
 
 pub fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()> {

@@ -187,7 +187,9 @@ namespace seed {
           !(info.state & BOOT_2_MARKED_BAD))
         detected_bootmii = true;
     }
-    result.bootmii = detected_bootmii ? "detected" : all_copies_stock && stock_primary ? "stock" : "unknown";
+    result.bootmii = detected_bootmii ? wiiform::BootMiiState::detected
+        : all_copies_stock && stock_primary ? wiiform::BootMiiState::stock
+        : wiiform::BootMiiState::unknown;
     return result;
   }
 } // namespace seed

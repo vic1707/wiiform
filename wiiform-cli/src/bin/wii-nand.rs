@@ -3,10 +3,10 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use wiiform::{
-    native::{self, WadPolicy},
-    priiloader_payload,
+    native, priiloader_payload,
     recipe::{
-        HackSettings, PriiloaderSettings, ResolvedPath, Sha256, TitleId, WAD_SIZE, read_bounded,
+        Data, HackSettings, PriiloaderSettings, ResolvedPath, Sha256, SignaturePolicy, Title,
+        TitleId, read_bounded,
     },
     workflow::{nus_environment, prepare_nus_cache, publish_edit, validate_output},
 };
@@ -91,14 +91,17 @@ fn main() -> Result<()> {
             sha256,
             allow_unverified_signatures,
         } => {
-            let policy = if allow_unverified_signatures {
-                WadPolicy::LegacyChannel
-            } else {
-                WadPolicy::Standard
+            let title = Title {
+                source: Data::Path(wad.as_ref().to_owned()),
+                sha256,
+                signature_policy: if allow_unverified_signatures {
+                    SignaturePolicy::AllowUnsigned
+                } else {
+                    SignaturePolicy::Nintendo
+                },
             };
             image.edit(|nand| {
-                let bytes = read_bounded(wad.as_ref(), WAD_SIZE)?;
-                native::install_wad(nand, &bytes, &sha256, policy)?;
+                native::install_wad(nand, &title)?;
                 Ok(())
             })
         }
