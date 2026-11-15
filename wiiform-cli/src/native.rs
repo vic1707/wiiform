@@ -4,6 +4,7 @@ use std::{io::Write, path::Path};
 use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
+use crate::https::fetch;
 use crate::recipe::{
     Aspect, Cios, HackSettings, Hbc, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy,
     Title,
@@ -96,12 +97,8 @@ pub fn install_nus_title(
     )?)
 }
 
-fn fetch_https(url: &str, limit: usize) -> Result<Vec<u8>> {
-    Ok(ffi::fetch_https(url, limit)?)
-}
-
 pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
-    let (wad, sha256) = title.resolve(fetch_https)?;
+    let (wad, sha256) = title.resolve(fetch)?;
     let policy = match title.options.signature_policy {
         SignaturePolicy::Nintendo => ffi::WadPolicy::Standard,
         SignaturePolicy::AllowUnsigned => ffi::WadPolicy::LegacyChannel,
@@ -110,7 +107,7 @@ pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
 }
 
 pub fn install_hbc(nand: &mut [u8], hbc: &Hbc) -> Result<InstalledWad> {
-    let (wad, digest) = hbc.resolve(fetch_https)?;
+    let (wad, digest) = hbc.resolve(fetch)?;
     Ok(ffi::install_wad(
         nand,
         &wad,
@@ -120,7 +117,7 @@ pub fn install_hbc(nand: &mut [u8], hbc: &Hbc) -> Result<InstalledWad> {
 }
 
 pub fn install_cios(nand: &mut [u8], cios: &Cios) -> Result<InstalledWad> {
-    let (wad, sha256) = cios.resolve(fetch_https)?;
+    let (wad, sha256) = cios.resolve(fetch)?;
     let target = &cios.options.target;
     Ok(ffi::install_cios(
         nand,

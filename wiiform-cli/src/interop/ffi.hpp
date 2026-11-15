@@ -25,7 +25,6 @@ namespace wiiform::ffi {
   void apply_system_settings(Nand nand, const SystemSettings& settings);
   void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
                          std::uint16_t version, bool offline);
-  auto fetch_https(rust::Str url, std::size_t limit) -> rust::Vec<std::uint8_t>;
   auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
                    WadPolicy policy) -> InstalledWad;
   auto install_cios(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,

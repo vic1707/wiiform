@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 mod ffi;
+mod https;
 pub mod native;
 
 pub mod priiloader_payload;

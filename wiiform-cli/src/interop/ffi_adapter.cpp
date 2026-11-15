@@ -69,10 +69,6 @@ void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
   core::install_nus_title(span(nand), std::string(cache), title_id, version, offline);
 }
 
-auto fetch_https(rust::Str url, std::size_t limit) -> rust::Vec<std::uint8_t> {
-  return rust_bytes(core::fetch_https(std::string_view(url.data(), url.size()), limit));
-}
-
 auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
                  WadPolicy policy) -> InstalledWad {
   const auto result = core::install_wad(span(nand), span(wad), sha256,

@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace wiiform::core {
@@ -22,8 +21,6 @@ namespace wiiform::core {
   void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings);
   void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,
                          std::uint64_t title_id, std::uint16_t version, bool offline);
-  // Download a bounded HTTPS response. Authenticate the returned bytes before use.
-  auto fetch_https(std::string_view url, std::size_t limit) -> std::vector<std::uint8_t>;
   auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                    const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad;
   auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,

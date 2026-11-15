@@ -9,7 +9,11 @@ the applicable upstream license notices and corresponding license texts.
 | WiiQt NAND tools | NAND filesystem, title and console-format operations | [vic1707/wiiqt-tools](https://github.com/vic1707/wiiqt-tools), pinned commit `42536a2c3becf384687a64a3d9ddadad435dc22b` with local [read-only access](xmake/patches/wiiqt-read-only.patch) and [buffer device](xmake/patches/wiiqt-buffer-device.patch) patches | GPL-2.0-only; preserve its `COPYING` and notices in source/release bundles |
 | Priiloader | Wii-side installer project, source reference and submodule | [DacoTaco/priiloader](https://github.com/DacoTaco/priiloader), vendored submodule | Preserve the submodule's upstream license files/notices; Wiiform host integration remains separately identified as project code |
 | Qt | Native runtime and GUI/Widgets/Network libraries used by WiiQt | Host Qt SDK during build; exact detected SDK recorded by xmake package configuration | Follow the license notices shipped with the Qt distribution and include applicable notices in binary archives |
-| Rust crates | CLI, parsing, schema, hashing, XZ compression, CXX bridge and supporting functions | Exact resolved graph in `Cargo.lock` | Preserve each crate's license metadata/notices; generate a complete notice list before publishing binaries |
+| Rust crates | CLI, parsing, schema, hashing, XZ compression, CXX bridge and reqwest HTTPS with Rustls/AWS-LC | Exact resolved graph in `Cargo.lock` | Preserve each crate's license metadata/notices; generate a complete notice list before publishing binaries |
+
+The `aws-lc-sys` crate declares Apache-2.0 among its required licenses. Its
+use in the GPL-2.0-only binary needs review before public distribution.
+[Apache Software Foundation compatibility notes](https://www.apache.org/licenses/GPL-compatibility)
 
 ## Build tools and packaging tools
 
