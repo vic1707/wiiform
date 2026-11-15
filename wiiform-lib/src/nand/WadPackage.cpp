@@ -82,11 +82,15 @@ namespace wad_package {
             "WAD TMD size does not match its content table");
     require(u32(ticket_bytes, 0x1d8) == 0, "Console-bound WAD tickets are unsupported");
 
+    // The vWii marker follows the three version bytes in the signed TMD header.
+    require(tmd_bytes[0x183] == '\0', "vWii WADs are unsupported");
     Tmd tmd(tmd_bytes);
     const auto type = tmd.Tid() >> 32;
-    require(type == 0x00010001 || (!legacy && type == 0x00010002),
-            legacy ? "Legacy WAD policy supports downloadable channels"
-                   : "WAD install supports downloadable and system channels");
+    const auto slot = static_cast<quint32>(tmd.Tid());
+    const bool wii_ios = type == 0x00000001 && slot >= 3 && slot <= 253;
+    require(type == 0x00010001 || (!legacy && (type == 0x00010002 || wii_ios)),
+            legacy ? "Unsigned WAD policy supports only downloadable channels"
+                   : "WAD install supports Wii channels and IOS slots 3 through 253");
     const int key_index = static_cast<uchar>(ticket_bytes[0x1f1]);
     require(key_index == 0 || (legacy && key_index > 2), "Unsupported WAD ticket common-key index");
     if (!legacy)

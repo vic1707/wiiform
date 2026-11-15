@@ -219,6 +219,26 @@ namespace {
     check(before == buffer_digest(image), "WAD capacity failure changed the NAND buffer");
   }
 
+  void test_ios_wad_policy(std::span<std::uint8_t> image) {
+    using wiiform::WadPolicy;
+    const auto before = buffer_digest(image);
+    const auto ios = make_wad('i', 1034, 0x0000000100000009ull);
+    const auto install = [&](const QByteArray& wad, WadPolicy policy) {
+      return wiiform::core::install_wad(image, wad_bytes(wad), wad_digest(wad), policy);
+    };
+    rejects([&] { install(ios, WadPolicy::standard); }, "must be genuinely Nintendo-signed");
+    rejects([&] { install(ios, WadPolicy::legacy_channel); }, "only downloadable channels");
+
+    auto vwii = ios;
+    constexpr int tmd_offset = 0x40 + 0x40 + 0x2c0;
+    vwii[tmd_offset + 0x183] = char(1);
+    rejects([&] { install(vwii, WadPolicy::standard); }, "vWii WADs are unsupported");
+
+    const auto bootmii = make_wad('i', 65280, 0x00000001000000feull);
+    rejects([&] { install(bootmii, WadPolicy::standard); }, "IOS slots 3 through 253");
+    check(before == buffer_digest(image), "Unsupported IOS WAD changed the NAND buffer");
+  }
+
   void test_wad_installation(const QString& temporary_path) {
     const auto nand_path = QDir(temporary_path).filePath("empty-nand.bin");
     create_empty_nand(nand_path);
@@ -331,13 +351,14 @@ int main(int argc, char** argv) {
     }).get();
     QTemporaryDir temporary(QDir::current().filePath("build/nand-buffer-regressions-XXXXXX"));
     check(temporary.isValid(), "Cannot create buffer regression directory");
-    const auto nand_path = QDir(temporary.path()).filePath("nand.bin");
-    create_near_full_nand(nand_path);
-    auto image = read_bytes(nand_path, nand_file_size);
-    const auto wad = make_wad();
-    test_capacity_helpers(image);
-    test_wad_rejections(image, wad);
-    std::vector<std::uint8_t>().swap(image);
+    {
+      const auto nand_path = QDir(temporary.path()).filePath("nand.bin");
+      create_near_full_nand(nand_path);
+      auto image = read_bytes(nand_path, nand_file_size);
+      test_capacity_helpers(image);
+      test_wad_rejections(image, make_wad());
+      test_ios_wad_policy(image);
+    }
     test_wad_installation(temporary.path());
     test_shared_wad_matching(temporary.path());
     std::cout << "NAND buffer capacity, rejection, and WAD matching checks passed\n";

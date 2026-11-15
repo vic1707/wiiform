@@ -59,6 +59,15 @@ of the raw WAD bytes. The recipe supports 4.3E, 4.3U, and 4.3J, along with allow
 channel removal, initial setup, display settings, and Priiloader settings and named hacks. Set setup country
 codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
 
+Use the `titles` list for downloadable channels and Nintendo-signed system
+channels or Wii IOS WADs for slots 3–253. The `allow-unsigned` policy applies to
+downloadable channels. Each entry verifies an exact installed match or installs
+the WAD when the title is absent. An exact match emits a warning. A conflicting
+title or incomplete installation stops the build. Stock 4.3 includes IOS9 v1034,
+so listing that WAD verifies the dependency in an Ocarina of Time recipe.
+`wii-nand install-wad` writes a byte-identical copy to the requested output when
+it verifies a match.
+
 ```sh
 wiiform --seed console.seed.yaml --recipe recipe.yaml \
   --output prepared-console \
