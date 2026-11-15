@@ -19,7 +19,7 @@ pub struct Recipe {
     /// Omit this section or use null to run the Wii setup wizard.
     #[serde(default)]
     pub setup: Option<Setup>,
-    /// WADs to install from a file or inline bytes.
+    /// WADs to install from a local file, inline bytes, or an HTTPS URL.
     #[serde(default)]
     pub titles: Vec<Title>,
     /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
@@ -108,21 +108,26 @@ mod tests {
         Recipe::read(yaml.as_bytes(), Path::new("."), menu)
     }
 
+    fn no_fetch(_: &str, _: usize) -> Result<Vec<u8>> {
+        panic!("local payload resolution should not fetch")
+    }
+
     #[test]
     fn binary_and_source_shape() -> Result<()> {
         let yaml = format!(
             "menu: 4.3E\ntitles:\n  - sha256: {SHA}\n    source:\n      inline: !!binary |\n        /wAB\n        /v8=\n"
         );
         let (recipe, _) = read(&yaml, None)?;
-        let bytes = recipe.titles[0].source.resolve(0..=usize::MAX)?;
+        let bytes = recipe.titles[0].source.resolve(0..=usize::MAX, no_fetch)?;
         assert!(matches!(
             bytes,
             std::borrow::Cow::Borrowed([255, 0, 1, 254, 255])
         ));
-        assert!(recipe.titles[0].resolve().is_err());
+        assert!(recipe.titles[0].resolve(no_fetch).is_err());
         for bad in [
             format!("source: {{path: a.wad, inline: !!binary /wAB}}\n    sha256: {SHA}"),
             format!("source: {{inline: /wAB}}\n    sha256: {SHA}"),
+            format!("source: {{url: https://example.com/a.wad, path: a.wad}}\n    sha256: {SHA}"),
             format!("source: {{path: null}}\n    sha256: {SHA}"),
             format!("sha256: {SHA}"),
             "source: {inline: !!binary /wAB}".to_owned(),
@@ -132,6 +137,22 @@ mod tests {
                 "{bad}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn url_source_uses_the_same_wad_limits_and_digest() -> Result<()> {
+        let url = "https://example.com/package.wad";
+        let yaml = format!("menu: 4.3E\ntitles: [{{source: {{url: {url}}}, sha256: {SHA}}}]");
+        let (recipe, _) = read(&yaml, None)?;
+        let (bytes, sha256) = recipe.titles[0].resolve(|requested, limit| {
+            assert_eq!(requested, url);
+            assert_eq!(limit, 0x2100_0000);
+            Ok(vec![7; 0x40])
+        })?;
+        assert_eq!(&*bytes, &[7; 0x40]);
+        assert_eq!(sha256, &[0xaa; 32]);
+        assert!(recipe.titles[0].resolve(|_, _| Ok(vec![])).is_err());
         Ok(())
     }
 
@@ -152,7 +173,10 @@ mod tests {
             recipe.cios[0].options.target.title_id(),
             0x0000_0001_0000_00f9
         );
-        assert_eq!(recipe.cios[0].source.resolve(3..=3)?.as_ref(), [255, 0, 1]);
+        assert_eq!(
+            recipe.cios[0].source.resolve(3..=3, no_fetch)?.as_ref(),
+            [255, 0, 1]
+        );
 
         for (section, fields) in [
             (
@@ -196,13 +220,13 @@ mod tests {
         let (recipe, _) = Recipe::load(&recipe_path, None)?;
         let source = &recipe.titles[0].source;
         assert!(matches!(source, Data::Path(path) if path.ends_with("linked.wad")));
-        let (bytes, sha256) = recipe.titles[0].resolve()?;
+        let (bytes, sha256) = recipe.titles[0].resolve(no_fetch)?;
         assert_eq!(bytes.as_ref(), contents);
         assert_eq!(sha256, &[0xaa; 32]);
         for bad in [".", "missing.wad"] {
             let yaml = format!("menu: 4.3E\ntitles: [{{source: {{path: {bad}}}, sha256: {SHA}}}]");
             let (recipe, _) = Recipe::read(yaml.as_bytes(), &dir, None)?;
-            assert!(recipe.titles[0].resolve().is_err());
+            assert!(recipe.titles[0].resolve(no_fetch).is_err());
         }
         fs::remove_dir_all(dir)?;
         Ok(())

@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::read_bounded;
 
-/// Data supplied by one local file or inline in a recipe.
+/// Data supplied by one local file, inline in a recipe, or over HTTPS.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Data<T> {
@@ -19,6 +19,8 @@ pub enum Data<T> {
     Path(PathBuf),
     /// Data carried in the recipe itself.
     Inline(T),
+    /// HTTPS URL for the raw file.
+    Url(String),
 }
 
 impl<T> Data<T> {
@@ -30,17 +32,20 @@ impl<T> Data<T> {
 }
 
 impl<T: AsRef<[u8]>> Data<T> {
-    pub fn resolve(&self, bounds: RangeInclusive<usize>) -> Result<Cow<'_, [u8]>> {
-        match self {
-            Self::Path(path) => read_bounded(path, bounds).map(Cow::Owned),
-            Self::Inline(data) => {
-                let bytes = data.as_ref();
-                ensure!(
-                    bounds.contains(&bytes.len()),
-                    "inline payload has an unsupported size"
-                );
-                Ok(Cow::Borrowed(bytes))
-            }
-        }
+    pub fn resolve(
+        &self,
+        bounds: RangeInclusive<usize>,
+        fetch: impl FnOnce(&str, usize) -> Result<Vec<u8>>,
+    ) -> Result<Cow<'_, [u8]>> {
+        let bytes = match self {
+            Self::Path(path) => return read_bounded(path, bounds).map(Cow::Owned),
+            Self::Inline(data) => Cow::Borrowed(data.as_ref()),
+            Self::Url(url) => Cow::Owned(fetch(url, *bounds.end())?),
+        };
+        ensure!(
+            bounds.contains(&bytes.len()),
+            "payload has an unsupported size"
+        );
+        Ok(bytes)
     }
 }

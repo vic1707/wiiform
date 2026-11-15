@@ -53,11 +53,18 @@ archive carries its Qt runtime.
 See the [example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
 regenerate the schema from the Rust recipe model. Local file paths resolve
-relative to the recipe. A WAD entry has a `source` with either a local `path`
-or an `inline: !!binary |` block containing base64. Both require the SHA-256
-of the raw WAD bytes. The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
+relative to the recipe. A WAD entry has exactly one `source` key. Use `path`
+for a local file, `inline: !!binary |` for a base64 block, or `url` for an
+HTTPS download. Each source requires the SHA-256 of the raw WAD bytes.
+The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
 channel removal, initial setup, display settings, and Priiloader settings and named hacks. Set setup country
 codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
+
+URL sources work for both `titles` and `cios`. Downloads use system TLS
+trust, follow up to five HTTPS redirects, and have a 60-second total
+timeout and the same size limit as a local WAD. Use a local `path` or
+`inline` for a network-free build. `WIIFORM_NUS_OFFLINE` controls only
+Nintendo title downloads.
 
 Use the `titles` list for downloadable channels and Nintendo-signed system
 channels or Wii IOS WADs for slots 3–253. The `allow-unsigned` policy applies to
@@ -112,7 +119,8 @@ wii-nand install-cios INPUT_NAND OUTPUT_NAND D2X_WAD --sha256 HEX \
   --slot 249 --base 56 --revision 65535 --replace-stock-stub
 ```
 
-The command uses the same slot and package checks as the recipe. See the
+The command also accepts an HTTPS URL in place of the WAD path and uses the
+same slot and package checks as the recipe. See the
 [example recipe](docs/recipe.example.yaml) and the [upstream d2x installation
 guide](https://github.com/wiidev/d2x-cios/wiki/How-to-install-d2x-cIOSs-on-your-Wii)
 for package preparation.
@@ -142,6 +150,7 @@ backups. See the [seed format](docs/migration.md#what-a-seed-contributes).
 ```sh
 wii-nand install-title INPUT OUTPUT TITLE_ID VERSION
 wii-nand install-wad INPUT OUTPUT PACKAGE.wad --sha256 SHA256
+wii-nand install-wad INPUT OUTPUT 'https://example.com/package.wad' --sha256 SHA256
 wii-nand remove-title INPUT OUTPUT TITLE_ID
 wii-nand install-priiloader INPUT OUTPUT --fix-480p --block-disc-updates
 ```

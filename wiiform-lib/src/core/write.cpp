@@ -23,7 +23,7 @@ namespace {
     if (!condition) throw std::runtime_error(message);
   }
 
-  auto qstring(const std::string& value, const char* label) -> QString {
+  auto qstring(std::string_view value, const char* label) -> QString {
     require(value.size() <= std::size_t(std::numeric_limits<int>::max()), label);
     const auto converted = QString::fromUtf8(value.data(), int(value.size()));
     require(value.find('\0') == std::string::npos &&
@@ -93,6 +93,16 @@ void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cach
   require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
   title_install::install_nus_title(nand, qstring(nus_cache_dir, "Cache path must be UTF-8"),
                                    title_id, version, offline);
+}
+
+auto fetch_https(std::string_view url, std::size_t limit) -> std::vector<std::uint8_t> {
+  const detail::ApiCall call;
+  require(limit <= raw_nand_size, "Unsupported download size limit");
+  const auto parsed = QUrl(qstring(url, "Package URL must be UTF-8"), QUrl::StrictMode);
+  require(parsed.scheme() == "https", "Package URL must use HTTPS");
+  const auto data = factory::fetch(parsed, static_cast<qint64>(limit));
+  const auto* begin = reinterpret_cast<const std::uint8_t*>(data.constData());
+  return {begin, begin + data.size()};
 }
 
 auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,

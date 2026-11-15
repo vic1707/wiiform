@@ -49,7 +49,9 @@ enum Command {
     InstallWad {
         #[command(flatten)]
         image: ImagePaths,
-        wad: ResolvedPath,
+        /// Local WAD path or HTTPS URL.
+        #[arg(value_name = "WAD")]
+        wad: PathBuf,
         #[arg(long)]
         sha256: Sha256,
         #[arg(long)]
@@ -59,7 +61,9 @@ enum Command {
     InstallCios {
         #[command(flatten)]
         image: ImagePaths,
-        wad: ResolvedPath,
+        /// Local WAD path or HTTPS URL.
+        #[arg(value_name = "WAD")]
+        wad: PathBuf,
         #[arg(long)]
         sha256: Sha256,
         #[command(flatten)]
@@ -106,7 +110,7 @@ fn main() -> Result<()> {
             } else {
                 SignaturePolicy::Nintendo
             };
-            let title = Title::from_path(&wad, sha256, TitleOptions { signature_policy });
+            let title = Title::from_argument(wad, sha256, TitleOptions { signature_policy })?;
             image.edit(|nand| {
                 native::install_wad(nand, &title)?.warn_if_already_present();
                 Ok(())
@@ -118,7 +122,7 @@ fn main() -> Result<()> {
             sha256,
             target,
         } => {
-            let cios = Cios::from_path(&wad, sha256, CiosOptions { target });
+            let cios = Cios::from_argument(wad, sha256, CiosOptions { target })?;
             image.edit(|nand| {
                 native::install_cios(nand, &cios)?.warn_if_already_present();
                 Ok(())

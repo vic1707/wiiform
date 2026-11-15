@@ -4,6 +4,13 @@
 
 namespace wiiform::ffi {
 namespace {
+  auto rust_bytes(std::span<const std::uint8_t> bytes) -> rust::Vec<std::uint8_t> {
+    rust::Vec<std::uint8_t> result;
+    result.reserve(bytes.size());
+    for (const auto byte : bytes) result.push_back(byte);
+    return result;
+  }
+
   template<class T>
   auto span(const rust::Slice<T>& bytes) -> std::span<T> {
     return {bytes.data(), bytes.size()};
@@ -62,6 +69,10 @@ void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
   core::install_nus_title(span(nand), std::string(cache), title_id, version, offline);
 }
 
+auto fetch_https(rust::Str url, std::size_t limit) -> rust::Vec<std::uint8_t> {
+  return rust_bytes(core::fetch_https(std::string_view(url.data(), url.size()), limit));
+}
+
 auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
                  WadPolicy policy) -> InstalledWad {
   const auto result = core::install_wad(span(nand), span(wad), sha256,
@@ -97,9 +108,6 @@ void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
 
 auto prepare_backupmii(Nand nand, const StockIdentity& expected) -> rust::Vec<std::uint8_t> {
   const auto keys = core::prepare_backupmii(span(nand), {expected.boot_area, expected.original_footer});
-  rust::Vec<std::uint8_t> result;
-  result.reserve(keys.size());
-  for (const auto key : keys) result.push_back(key);
-  return result;
+  return rust_bytes(keys);
 }
 }

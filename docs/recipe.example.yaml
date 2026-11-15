@@ -32,13 +32,17 @@ titles:
   # - source:
   #     path: wads/IOS9-64-v1034.wad
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  # Or use an HTTPS URL. Use the SHA-256 of the raw WAD you expect to download.
+  # - source:
+  #     url: "https://example.com/channel.wad"
+  #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   # Or supply the WAD bytes as base64. Each source takes one key.
   # - source:
   #     inline: !!binary |
   #       BASE64_OF_WAD
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-# Optional prebuilt d2x WADs. The source also accepts inline: !!binary.
+# Optional prebuilt d2x WADs. Use path, url, or inline as with titles.
 # cios:
 #   - source:
 #       path: wads/d2x-wii-249-base56.wad

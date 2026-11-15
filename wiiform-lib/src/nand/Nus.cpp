@@ -16,6 +16,11 @@ namespace {
     if (!condition) throw std::runtime_error(message.toStdString());
   }
 
+  bool valid_https(const QUrl& url) {
+    return url.isValid() && url.scheme() == "https" && !url.host().isEmpty() &&
+           !url.authority().contains('@') && !url.hasFragment();
+  }
+
   auto read(const QString& path, qint64 limit) -> QByteArray {
     QFile file(path);
     const QFileInfo info(path);
@@ -40,21 +45,34 @@ namespace {
 
 namespace factory {
   auto fetch(const QUrl& url, qint64 limit) -> QByteArray {
-    require((url.scheme() == "http" || url.scheme() == "https") && limit >= 0 && limit <= 0x20000040,
-            "Invalid bounded HTTP request");
+    const bool https = url.scheme() == "https";
+    require(https ? valid_https(url) : url.scheme() == "http", "Invalid download URL");
+    const auto label = https ? url.host() : url.toString();
+    require(limit >= 0 && limit <= 0x21000000, "Invalid download size limit");
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "wii libnup/1.0");
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         https ? QNetworkRequest::UserVerifiedRedirectPolicy
+                               : QNetworkRequest::ManualRedirectPolicy);
+    request.setMaximumRedirectsAllowed(5);
     auto* reply = manager.get(request);
     reply->setReadBufferSize(std::min<qint64>(limit + 1, 64 * 1024));
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
     QByteArray data;
-    bool oversized = false, timed_out = false;
+    bool oversized = false, timed_out = false, unsafe_redirect = false;
+    QObject::connect(reply, &QNetworkReply::redirected, &loop, [&](const QUrl& target) {
+      if (valid_https(reply->url().resolved(target))) {
+        reply->redirectAllowed();
+      } else {
+        unsafe_redirect = true;
+        reply->abort();
+      }
+    });
     auto drain = [&] {
-      if (oversized || timed_out || !reply->bytesAvailable()) return;
+      if (oversized || timed_out || unsafe_redirect || !reply->bytesAvailable()) return;
       if (reply->bytesAvailable() > limit - data.size()) {
         oversized = true;
         reply->abort();
@@ -68,12 +86,17 @@ namespace factory {
     if (!reply->isFinished()) loop.exec();
     timer.stop();
     drain();
-    require(!oversized, "Download exceeds size limit: " + url.toString());
-    require(!timed_out, "Download timed out: " + url.toString());
+    require(!oversized, "Download exceeds size limit: " + label);
+    require(!timed_out, "Download timed out: " + label);
+    require(!unsafe_redirect, "Download redirected to a disallowed URL: " + label);
     const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    require(!status || status == 200, "HTTP " + QString::number(status) + " fetching " + url.toString());
-    require(reply->error() == QNetworkReply::NoError && status == 200,
-            "Download failed: " + reply->errorString() + " (" + url.toString() + ")");
+    if (reply->error() == QNetworkReply::TooManyRedirectsError)
+      throw std::runtime_error("Download exceeded five redirects");
+    require(!status || status == 200, "HTTP " + QString::number(status) + " fetching " + label);
+    const auto error = reply->error();
+    require(error == QNetworkReply::NoError && status == 200,
+            https ? "HTTPS download failed (Qt network error " + QString::number(error) + "): " + label
+                  : "Download failed: " + reply->errorString() + " (" + label + ")");
     return data;
   }
 

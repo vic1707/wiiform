@@ -111,6 +111,7 @@ pub mod bridge {
             version: u16,
             offline: bool,
         ) -> Result<()>;
+        fn fetch_https(url: &str, limit: usize) -> Result<Vec<u8>>;
         fn install_wad(
             nand: &mut [u8],
             wad_bytes: &[u8],

@@ -46,7 +46,7 @@
       "default": null
     },
     "titles": {
-      "description": "WADs to install from a file or inline bytes.",
+      "description": "WADs to install from a local file, inline bytes, or an HTTPS URL.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Title"
@@ -222,7 +222,7 @@
       ]
     },
     "Data": {
-      "description": "Data supplied by one local file or inline in a recipe.",
+      "description": "Data supplied by one local file, inline in a recipe, or over HTTPS.",
       "oneOf": [
         {
           "description": "Local path, relative to the recipe.",
@@ -248,6 +248,19 @@
           "additionalProperties": false,
           "required": [
             "inline"
+          ]
+        },
+        {
+          "description": "HTTPS URL for the raw file.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "url"
           ]
         }
       ]

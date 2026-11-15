@@ -95,8 +95,12 @@ pub fn install_nus_title(
     )?)
 }
 
+fn fetch_https(url: &str, limit: usize) -> Result<Vec<u8>> {
+    Ok(ffi::fetch_https(url, limit)?)
+}
+
 pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
-    let (wad, sha256) = title.resolve()?;
+    let (wad, sha256) = title.resolve(fetch_https)?;
     let policy = match title.options.signature_policy {
         SignaturePolicy::Nintendo => ffi::WadPolicy::Standard,
         SignaturePolicy::AllowUnsigned => ffi::WadPolicy::LegacyChannel,
@@ -105,7 +109,7 @@ pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
 }
 
 pub fn install_cios(nand: &mut [u8], cios: &Cios) -> Result<InstalledWad> {
-    let (wad, sha256) = cios.resolve()?;
+    let (wad, sha256) = cios.resolve(fetch_https)?;
     let target = &cios.options.target;
     Ok(ffi::install_cios(
         nand,
