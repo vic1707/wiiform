@@ -30,7 +30,7 @@ namespace {
     return qFromBigEndian<quint32>(bytes.constData() + offset);
   }
 
-  enum class PackageMode { standard, legacy_channel, d2x_cios };
+  enum class PackageMode { standard, legacy_channel, homebrew_channel, d2x_cios };
 
   auto valid_cios_header(const QByteArray& content, std::uint8_t expected_base) -> bool {
     // d2x's ciosmaps.xml writes IOSINFO at the start of the first local module.
@@ -44,7 +44,7 @@ namespace {
                     const wiiform::Sha256& expected_sha256,
                     PackageMode mode,
                     const wiiform::CiosOptions* cios_options) -> ValidatedTitleJob {
-    const bool legacy = mode == PackageMode::legacy_channel;
+    const bool legacy = mode == PackageMode::legacy_channel || mode == PackageMode::homebrew_channel;
     const bool cios = mode == PackageMode::d2x_cios;
     require(input.size() >= wad_header_size && input.size() <= max_wad_size,
             "WAD file size is outside supported bounds");
@@ -96,11 +96,21 @@ namespace {
     const auto type = tmd.Tid() >> 32;
     const auto slot = static_cast<quint32>(tmd.Tid());
     const bool wii_ios = type == 0x00000001 && slot >= 3 && slot <= 253;
-    require(cios ? (wii_ios && slot == cios_options->slot)
-                 : (type == 0x00010001 || (!legacy && (type == 0x00010002 || wii_ios))),
-            cios ? "WAD does not match requested cIOS slot"
-                 : (legacy ? "Unsigned WAD policy supports only downloadable channels"
-                           : "WAD install supports Wii channels and IOS slots 3 through 253"));
+    switch (mode) {
+      case PackageMode::d2x_cios:
+        require(wii_ios && slot == cios_options->slot, "WAD does not match requested cIOS slot");
+        break;
+      case PackageMode::homebrew_channel:
+        require(wiiform::is_homebrew_channel_title(tmd.Tid()), "WAD is not a recognized Homebrew Channel title");
+        break;
+      case PackageMode::legacy_channel:
+        require(type == 0x00010001, "Unsigned WAD policy supports only downloadable channels");
+        break;
+      case PackageMode::standard:
+        require(type == 0x00010001 || type == 0x00010002 || wii_ios,
+                "WAD install supports Wii channels and IOS slots 3 through 253");
+        break;
+    }
     const int key_index = static_cast<uchar>(ticket_bytes[0x1f1]);
     require(key_index == 0 || (legacy && key_index > 2), "Unsupported WAD ticket common-key index");
     if (!legacy && !cios)
@@ -156,10 +166,14 @@ namespace wad_package {
   auto read(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
             wiiform::WadPolicy policy) -> ValidatedTitleJob {
     using wiiform::WadPolicy;
-    require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
-    return read_package(input, expected_sha256,
-                        policy == WadPolicy::legacy_channel ? PackageMode::legacy_channel : PackageMode::standard,
-                        nullptr);
+    PackageMode mode;
+    switch (policy) {
+      case WadPolicy::standard: mode = PackageMode::standard; break;
+      case WadPolicy::legacy_channel: mode = PackageMode::legacy_channel; break;
+      case WadPolicy::homebrew_channel: mode = PackageMode::homebrew_channel; break;
+      default: throw std::runtime_error("Unsupported WAD signature policy");
+    }
+    return read_package(input, expected_sha256, mode, nullptr);
   }
 
   auto read_cios(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,

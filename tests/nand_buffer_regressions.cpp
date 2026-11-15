@@ -279,6 +279,12 @@ namespace {
     rejects([&] { install(ios, WadPolicy::standard); }, "must be genuinely Nintendo-signed");
     rejects([&] { install(ios, WadPolicy::legacy_channel); }, "only downloadable channels");
 
+    const auto unrelated_channel = make_wad('h', 1, wad_title_id);
+    rejects([&] { install(unrelated_channel, WadPolicy::homebrew_channel); },
+            "not a recognized Homebrew Channel title");
+    check(before == buffer_digest(image),
+          "Rejected non-Homebrew Channel WAD changed the NAND buffer");
+
     auto vwii = ios;
     constexpr int tmd_offset = 0x40 + 0x40 + 0x2c0;
     vwii[tmd_offset + 0x183] = char(1);

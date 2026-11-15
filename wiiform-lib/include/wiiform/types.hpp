@@ -10,7 +10,7 @@
 
 namespace wiiform {
   enum class BootPolicy : std::uint8_t { stock = 0, preserve_source = 1 };
-  enum class WadPolicy { standard, legacy_channel };
+  enum class WadPolicy { standard, legacy_channel, homebrew_channel };
   enum class BootMiiState : std::uint8_t { detected, stock, unknown };
 
   inline constexpr std::size_t raw_nand_size = 0x21000000;

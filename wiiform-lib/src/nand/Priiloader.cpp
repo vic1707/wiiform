@@ -71,8 +71,11 @@ namespace {
     }
     if (settings.autoboot == Autoboot::homebrew_channel) {
       bool present = false;
-      for (const auto* tid : {"48415858", "4a4f4449", "af1bf516", "4c554c5a", "4f484243"})
-        present |= find_path(tree, QString("/title/00010001/") + tid + "/content/title.tmd") != nullptr;
+      for (const auto tid : wiiform::homebrew_channel_title_ids) {
+        const auto low = QString::number(static_cast<qulonglong>(tid), 16)
+                             .rightJustified(8, QLatin1Char('0'));
+        present |= find_path(tree, QString("/title/00010001/") + low + "/content/title.tmd") != nullptr;
+      }
       require(present, "Priiloader Homebrew Channel autoboot needs an installed Homebrew Channel");
     }
     if (settings.autoboot == Autoboot::bootmii_ios) {
