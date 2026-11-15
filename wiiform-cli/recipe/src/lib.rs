@@ -19,4 +19,6 @@ pub use priiloader::{
 };
 pub use schema::json_schema;
 pub use system::{Aspect, CountryCode, Display, Language, Menu, Nickname, SensorBar, Setup};
-pub use titles::{RemovalInput, RemovalName, Sha256, SignaturePolicy, Title, TitleId, WAD_SIZE};
+pub use titles::{
+    Cios, CiosTarget, RemovalInput, RemovalName, Sha256, SignaturePolicy, Title, TitleId, WAD_SIZE,
+};

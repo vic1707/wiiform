@@ -94,6 +94,30 @@ When running from a checkout, run `mise run assets:priiloader` once before
 using a Priiloader recipe. Use `priiloader: {}` to install with pinned defaults.
 Each application replaces the settings and disables unspecified hacks.
 
+### cIOS packages
+
+Use `cios` entries for prebuilt, hash-pinned Wii d2x WADs. Each entry gives
+the expected slot, base IOS, and TMD revision. Wiiform checks the Wii TMD,
+ticket, decrypted content hashes, and the d2x IOSINFO record. The SHA-256
+pins the package you obtained from your chosen source.
+
+Slots 248–251 and bases 38, 56, 57, and 58 are supported. An empty slot can be
+installed, and an exact installed match is verified and reported. Set
+`replace_stock_stub: true` to replace the verified Nintendo v65280 stub in
+slot 249 or 250. Other occupied slots only accept an exact match.
+
+```sh
+wii-nand install-cios INPUT_NAND OUTPUT_NAND D2X_WAD --sha256 HEX \
+  --slot 249 --base 56 --revision 65535 --replace-stock-stub
+```
+
+The command uses the same slot and package checks as the recipe. See the
+[example recipe](docs/recipe.example.yaml) and the [upstream d2x installation
+guide](https://github.com/wiidev/d2x-cios/wiki/How-to-install-d2x-cIOSs-on-your-Wii)
+for package preparation.
+
+### Seed input
+
 The seed contains plaintext console key material. Save the output privately.
 A footer-bearing backup supplies its own keys. For a footerless backup, pass
 its matching 1,024-byte sidecar explicitly.

@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    Aspect, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy, Title,
+    Aspect, Cios, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy, Title,
     WAD_SIZE,
 };
 use crate::seed::StockSeed;
@@ -107,6 +107,21 @@ pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
         &wad,
         title.sha256.as_bytes(),
         policy,
+    )?)
+}
+
+pub fn install_cios(nand: &mut [u8], cios: &Cios) -> Result<InstalledWad> {
+    let wad = cios.source.resolve(WAD_SIZE)?;
+    Ok(ffi::install_cios(
+        nand,
+        &wad,
+        cios.sha256.as_bytes(),
+        &ffi::CiosOptions {
+            slot: cios.target.slot,
+            base: cios.target.base,
+            revision: cios.target.revision,
+            replace_stock_stub: cios.target.replace_stock_stub,
+        },
     )?)
 }
 

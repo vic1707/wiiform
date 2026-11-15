@@ -69,6 +69,13 @@ auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha25
   return {result.title_id, result.region, result.version, result.already_present};
 }
 
+auto install_cios(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
+                  const CiosOptions& options) -> InstalledWad {
+  const auto result = core::install_cios(span(nand), span(wad), sha256,
+      {options.slot, options.base, options.revision, options.replace_stock_stub});
+  return {result.title_id, result.region, result.version, result.already_present};
+}
+
 void remove_title(Nand nand, std::uint64_t title_id) {
   core::remove_title(span(nand), title_id);
 }

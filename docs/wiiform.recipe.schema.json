@@ -3,6 +3,13 @@
   "title": "Recipe",
   "type": "object",
   "properties": {
+    "cios": {
+      "description": "Prebuilt, hash-pinned Wii d2x cIOS WADs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Cios"
+      }
+    },
     "menu": {
       "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
       "$ref": "#/$defs/Menu"
@@ -74,6 +81,71 @@
       "description": "Bytes stored as a YAML `!!binary` scalar.",
       "type": "string",
       "contentEncoding": "base64"
+    },
+    "Cios": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact WAD bytes.",
+          "$ref": "#/$defs/Sha256"
+        },
+        "source": {
+          "$ref": "#/$defs/Data"
+        },
+        "target": {
+          "$ref": "#/$defs/CiosTarget"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "sha256",
+        "target"
+      ]
+    },
+    "CiosTarget": {
+      "description": "Expected identity and replacement policy for a prebuilt Wii d2x WAD.",
+      "type": "object",
+      "properties": {
+        "base": {
+          "description": "Base IOS declared by the d2x payload.",
+          "type": "integer",
+          "format": "uint8",
+          "enum": [
+            38,
+            56,
+            57,
+            58
+          ],
+          "maximum": 255,
+          "minimum": 0
+        },
+        "replace_stock_stub": {
+          "description": "Permit replacement of the verified Nintendo stub in slot 249 or 250.",
+          "type": "boolean",
+          "default": false
+        },
+        "revision": {
+          "description": "TMD title revision, such as 65535.",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "slot": {
+          "description": "Destination IOS slot (248–251).",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 251,
+          "minimum": 248
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "base",
+        "revision"
+      ]
     },
     "CountryCode": {
       "description": "Supported ISO alpha-2 country code and its Wii SYSCONF byte.",

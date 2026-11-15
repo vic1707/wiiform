@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! WAD requests, title identifiers, and channel removals.
 
+mod cios;
 mod removal;
 mod sha256;
 mod title_id;
@@ -12,6 +13,7 @@ use serde::Deserialize;
 
 use crate::{Data, yaml::Binary};
 
+pub use cios::{Cios, CiosTarget};
 pub use removal::{RemovalInput, RemovalName};
 pub use sha256::Sha256;
 pub use title_id::TitleId;

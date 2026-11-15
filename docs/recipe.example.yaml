@@ -34,6 +34,17 @@ titles:
   #       BASE64_OF_WAD
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+# Optional prebuilt d2x WADs. The source also accepts inline: !!binary.
+# cios:
+#   - source:
+#       path: wads/d2x-wii-249-base56.wad
+#     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+#     target:
+#       slot: 249 # 248–251.
+#       base: 56 # 38, 56, 57, or 58. Must match d2x IOSINFO.
+#       revision: 65535 # TMD revision of the WAD.
+#       replace_stock_stub: true # Allows replacing the verified 249/250 v65280 stub.
+
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
   settings:
     # Every configurable Priiloader setting is written. Omitted keys use the

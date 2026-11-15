@@ -79,6 +79,13 @@ pub mod bridge {
         footer_header: String,
     }
 
+    struct CiosOptions {
+        slot: u8,
+        base: u8,
+        revision: u16,
+        replace_stock_stub: bool,
+    }
+
     struct InstalledWad {
         title_id: u64,
         region: u16,
@@ -109,6 +116,12 @@ pub mod bridge {
             wad_bytes: &[u8],
             expected_sha256: &[u8; 32],
             policy: WadPolicy,
+        ) -> Result<InstalledWad>;
+        fn install_cios(
+            nand: &mut [u8],
+            wad_bytes: &[u8],
+            expected_sha256: &[u8; 32],
+            options: &CiosOptions,
         ) -> Result<InstalledWad>;
         fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
         fn apply_priiloader(

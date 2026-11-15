@@ -141,8 +141,22 @@ fn build_with(
             "recipe both removes and installs title {:016x}",
             installed.title_id
         );
+        ensure!(
+            !recipe
+                .cios
+                .iter()
+                .any(|cios| cios.target.title_id() == installed.title_id),
+            "recipe lists a title WAD and a cIOS for the same slot ({:016x})",
+            installed.title_id
+        );
         installed.warn_if_already_present();
         warn_region(&installed, recipe.menu);
+    }
+
+    for cios in &recipe.cios {
+        native::install_cios(&mut nand, cios)
+            .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?
+            .warn_if_already_present();
     }
 
     if let Some((config, (app, definitions))) = priiloader {

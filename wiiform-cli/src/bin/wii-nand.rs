@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use wiiform::{
     native, priiloader_payload,
     recipe::{
-        Data, HackSettings, PriiloaderSettings, ResolvedPath, Sha256, SignaturePolicy, Title,
-        TitleId, read_bounded,
+        Cios, CiosTarget, Data, HackSettings, PriiloaderSettings, ResolvedPath, Sha256,
+        SignaturePolicy, Title, TitleId, read_bounded,
     },
     workflow::{nus_environment, prepare_nus_cache, publish_edit, validate_output},
 };
@@ -55,6 +55,16 @@ enum Command {
         #[arg(long)]
         allow_unverified_signatures: bool,
     },
+    /// Install a prebuilt, hash-pinned Wii d2x cIOS WAD.
+    InstallCios {
+        #[command(flatten)]
+        image: ImagePaths,
+        wad: ResolvedPath,
+        #[arg(long)]
+        sha256: Sha256,
+        #[command(flatten)]
+        target: CiosTarget,
+    },
     /// Remove one allowlisted channel by title ID.
     RemoveTitle {
         #[command(flatten)]
@@ -102,6 +112,22 @@ fn main() -> Result<()> {
             };
             image.edit(|nand| {
                 native::install_wad(nand, &title)?.warn_if_already_present();
+                Ok(())
+            })
+        }
+        Command::InstallCios {
+            image,
+            wad,
+            sha256,
+            target,
+        } => {
+            let cios = Cios {
+                source: Data::Path(wad.as_ref().to_owned()),
+                sha256,
+                target,
+            };
+            image.edit(|nand| {
+                native::install_cios(nand, &cios)?.warn_if_already_present();
                 Ok(())
             })
         }

@@ -5,7 +5,7 @@ use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
+use crate::{Cios, Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -22,6 +22,9 @@ pub struct Recipe {
     /// WADs to install from a file or inline bytes.
     #[serde(default)]
     pub titles: Vec<Title>,
+    /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
+    #[serde(default)]
+    pub cios: Vec<Cios>,
     /// Optional pinned Priiloader install with settings and hacks.
     #[serde(default)]
     pub priiloader: Option<Priiloader>,
@@ -54,6 +57,9 @@ impl Recipe {
 
         for title in &mut recipe.titles {
             title.source.rebase(directory);
+        }
+        for cios in &mut recipe.cios {
+            cios.source.rebase(directory);
         }
         Ok((recipe, remove))
     }
