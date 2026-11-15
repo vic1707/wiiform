@@ -37,6 +37,7 @@ impl std::str::FromStr for Nickname {
     }
 }
 
+// nnn 1.2.6's generated default test reuses the inner value after moving it.
 impl Default for Nickname {
     fn default() -> Self {
         Self::try_from("Wii".to_owned()).expect("built-in Wii nickname is valid")
