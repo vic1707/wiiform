@@ -25,7 +25,7 @@ pub struct Recipe {
     /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
     #[serde(default)]
     pub cios: Vec<Cios>,
-    /// Optional Homebrew Channel from a pinned Reborn release or a custom WAD.
+    /// Optional Homebrew Channel from a tagged Reborn release or a custom WAD.
     #[serde(default)]
     pub hbc: Option<Hbc>,
     /// Optional pinned Priiloader install with settings and hacks.
@@ -119,42 +119,84 @@ mod tests {
     }
 
     #[test]
-    fn hbc_variants_require_exact_release_or_custom_source() -> Result<()> {
-        let (recipe, _) = read("menu: 4.3E\nhbc: {variant: reborn, version: 1.16.0}", None)?;
-        let (_, digest) = recipe.hbc.unwrap().resolve(|url, _| {
-            assert!(url.ends_with("/v1.16.0/hbc-reborn-1.16.0-OHBC.wad"));
-            Ok(vec![0; 0x40])
-        })?;
-        let expected = "81ed7e395f586a3e4c20a84c86de99d074ba8cbb55dd6b479f259631a71f4850";
-        assert_eq!(digest, expected.parse()?);
-        read(
-            &format!("menu: 4.3E\nhbc: {{variant: reborn, version: 1.16.0, sha256: {expected}}}"),
-            None,
-        )?;
-        let (recipe, _) = read(
-            &format!(
-                "menu: 4.3E\nhbc: {{variant: custom, source: {{path: file.wad}}, sha256: {SHA}}}"
+    fn hbc_resolves_a_semver_using_the_release_digest_or_a_supplied_hash() -> Result<()> {
+        for (version, name, sha256, digest) in [
+            (
+                "2.3.4",
+                "hbc-reborn-2.3.4-OHBC.wad",
+                "",
+                format!("\"sha256:{SHA}\""),
             ),
+            (
+                "1.12.1",
+                "hbc-1.12.1-OHBC.wad",
+                &format!(", sha256: {SHA}"),
+                "null".to_owned(),
+            ),
+        ] {
+            let (recipe, _) = read(
+                &format!("menu: 4.3E\nhbc: {{reborn: {{version: {version}{sha256}}}}}"),
+                None,
+            )?;
+            let hbc = recipe.hbc.unwrap();
+            let (wad, checksum) = hbc.resolve(|url, _| {
+                if url.starts_with("https://api.github.com/") {
+                    assert!(url.ends_with(&format!("/releases/tags/v{version}")));
+                    Ok(format!(
+                        r#"{{"assets":[{{"name":"other.wad"}},{{"name":"{name}","digest":{digest}}}]}}"#
+                    ).into_bytes())
+                } else {
+                    assert!(url.ends_with(&format!("/v{version}/{name}")));
+                    Ok(vec![0; 0x40])
+                }
+            })?;
+            assert_eq!(&*wad, &[0; 0x40]);
+            assert_eq!(checksum, SHA.parse()?);
+        }
+        let (recipe, _) = read("menu: 4.3E\nhbc: {reborn: {version: 2.3.4}}", None)?;
+        let hbc = recipe.hbc.unwrap();
+        for metadata in [
+            r#"{"assets":[{"name":"hbc-reborn-2.3.4-LULZ.wad"}]}"#,
+            r#"{"assets":[{"name":"hbc-reborn-2.3.4-OHBC.wad"}]}"#,
+        ] {
+            assert!(
+                hbc.resolve(|url, _| {
+                    assert!(url.starts_with("https://api.github.com/"));
+                    Ok(metadata.as_bytes().to_vec())
+                })
+                .is_err()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hbc_variants_keep_one_typed_payload() -> Result<()> {
+        let (recipe, _) = read(
+            &format!("menu: 4.3E\nhbc: {{custom: {{source: {{path: file.wad}}, sha256: {SHA}}}}}"),
             None,
         )?;
         assert!(
             matches!(recipe.hbc, Some(Hbc::Custom { source: Data::Path(path), .. }) if path == Path::new("./file.wad"))
         );
-        read(
+        let (recipe, _) = read(
             &format!(
-                "menu: 4.3E\nhbc: {{variant: custom, source: {{inline: !!binary /wAB}}, sha256: {SHA}}}"
+                "menu: 4.3E\nhbc: {{custom: {{source: {{inline: !!binary /wAB}}, sha256: {SHA}}}}}"
             ),
             None,
         )?;
-
+        let Some(Hbc::Custom { source, .. }) = recipe.hbc else {
+            panic!("expected the custom HBC variant");
+        };
+        assert_eq!(&*source.resolve(0..=usize::MAX, no_fetch)?, &[255, 0, 1]);
         for fields in [
-            "variant: reborn, version: 1.99.0".to_owned(),
-            "variant: classic".to_owned(),
-            "variant: custom, source: {path: file.wad}".to_owned(),
-            format!("variant: reborn, version: 1.16.0, sha256: {SHA}"),
-            format!("variant: custom, version: 1.16.0, source: {{path: file.wad}}, sha256: {SHA}"),
+            "reborn: {version: '1.2'}".to_owned(),
+            "classic: {}".to_owned(),
+            "custom: {source: {path: file.wad}}".to_owned(),
+            format!("custom: {{version: 1.16.0, source: {{path: file.wad}}, sha256: {SHA}}}"),
+            "reborn: {version: 1.16.0, source: {path: file.wad}}".to_owned(),
             format!(
-                "variant: reborn, version: 1.16.0, source: {{path: file.wad}}, sha256: {expected}"
+                "reborn: {{version: 1.16.0}}, custom: {{source: {{path: file.wad}}, sha256: {SHA}}}"
             ),
         ] {
             assert!(

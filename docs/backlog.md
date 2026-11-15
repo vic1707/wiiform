@@ -6,7 +6,7 @@
   SHA-256. An exact installed match emits a warning. A conflicting title fails
   the build. Nintendo-signed IOS WADs use the same title entry, including IOS9
   v1034 for the OoT speedrun setup.
-- The `hbc` recipe entry installs pinned HBC Reborn OHBC releases or a
+- The `hbc` recipe entry installs verified HBC Reborn OHBC releases or a
   hash-pinned custom HBC WAD before Priiloader configuration.
 - Wii d2x WADs have explicit slot, base, and revision checks. Stock stub
   replacement is opt-in and limited to verified Nintendo stubs in slots 249

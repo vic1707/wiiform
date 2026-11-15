@@ -55,16 +55,16 @@ titles:
 
 # Optional Homebrew Channel, installed before Priiloader.
 # hbc:
-#   variant: reborn
-#   version: "1.16.0" # Or 1.12.1, 1.13.0, 1.14.0, 1.15.0. Downloads the OHBC WAD.
-#   # sha256 may confirm the digest pinned for this release.
+#   reborn:
+#     version: "1.16.0" # Semver of a release with a retail OHBC WAD.
+#     # sha256 is optional. Wiiform uses the GitHub asset digest by default.
 #
-# For a custom HBC WAD, use variant: custom with source and a required sha256.
+# A custom HBC WAD requires its SHA-256.
 # hbc:
-#   variant: custom
-#   source:
-#     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
-#   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+#   custom:
+#     source:
+#       path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
+#     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
   settings:

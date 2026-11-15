@@ -106,22 +106,26 @@ Each application replaces the settings and disables unspecified hacks.
 
 ```yaml
 hbc:
-  variant: reborn
-  version: "1.16.0"
+  reborn:
+    version: "1.16.0"
 ```
 
-Wiiform downloads the retail OHBC WAD from the selected release and verifies
-its pinned SHA-256. The available releases are 1.12.1, 1.13.0, 1.14.0, 1.15.0,
-and 1.16.0. Supply an optional `sha256` to confirm the pinned digest.
+Give `version` as a semantic version. Wiiform looks up the corresponding
+GitHub release and downloads its retail OHBC WAD. It verifies the GitHub
+asset’s SHA-256 by default. Add `sha256` under `reborn` to pin the exact WAD
+in your recipe.
 `WIIFORM_NUS_OFFLINE` governs Nintendo downloads only. [HBC Reborn releases](https://github.com/Monsterray/hbc-reborn/releases)
 
 ```yaml
 hbc:
-  variant: custom
-  source:
-    path: wads/my-homebrew-channel.wad
-  sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  custom:
+    source:
+      path: wads/my-homebrew-channel.wad
+    sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 ```
+
+If you used the earlier `hbc.variant` form, move its fields under `hbc.reborn`
+or `hbc.custom`.
 
 A custom WAD requires its SHA-256. The source may be a recipe-relative path,
 inline binary, or an HTTPS URL. Wiiform validates the package and checks its
