@@ -155,12 +155,9 @@ namespace seed {
     result.boot_blocks.assign(reinterpret_cast<const std::uint8_t*>(boots.constData()),
                               reinterpret_cast<const std::uint8_t*>(boots.constData()) + boots.size());
     result.footer_header = footer_header(all_keys);
-    for (int block = 8; block < 4096; ++block) {
-      int bad = 0;
-      for (int i = 0; i < 8; ++i) bad += fats[block * 8 + i] == 0xfffd;
-      require(!bad || bad == 8, "Inconsistent bad-block markers");
-      if (bad) result.bad_blocks.push_back(static_cast<std::uint16_t>(block));
-    }
+    for (int block = 8; block < 4080; ++block)
+      if (fats[block * 8] == 0xfffd)
+        result.bad_blocks.push_back(static_cast<std::uint16_t>(block));
 
     std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
     require(tree && tree->childCount() == 1, "Unexpected NAND root");

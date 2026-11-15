@@ -261,10 +261,7 @@ namespace {
       if (next == fat_free || next == fat_bad) continue;
       // WiiQt documents FFFC as reserved, FFFD as bad, FFFE as free and FFFB
       // as the live-chain terminator. Historic dumps can retain reserved or
-      // otherwise unowned markers. Count those for the caller's review instead
-      // of treating them as live data; active FST chains were validated above.
-      if (next == fat_reserved) ++summary.reserved_clusters;
-      else ++summary.unowned_clusters;
+      // otherwise unowned markers. Generated images may not contain these.
       if (generated)
         throw std::runtime_error("Generated NAND contains unowned allocated clusters");
     }

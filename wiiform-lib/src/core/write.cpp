@@ -77,6 +77,8 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
           "Cannot authenticate the stock NAND");
   inspect::verify_filesystem(reopened, true, layout.active_metadata);
   inspect::verify_stock(reopened, profile.area);
+  require(reopened.GetData("/title/00000001/00000002/data/setting.txt") == profile.settings,
+          "Generated System Menu settings do not match the validated seed");
   return identity;
 }
 
