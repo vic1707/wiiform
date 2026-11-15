@@ -6,7 +6,7 @@
 namespace wiiform::read {
   auto extract_seed(std::span<const std::uint8_t> nand,
                     std::span<const std::uint8_t> sidecar_keys) -> SeedParts {
-    core::detail::ensure_qcore_application();
+    const core::detail::ApiCall call;
     return seed::extract(nand, sidecar_keys);
   }
 }

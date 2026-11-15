@@ -8,6 +8,9 @@
 #include <vector>
 
 namespace wiiform::core {
+  // Call on the QCoreApplication thread. If no application exists, make the
+  // first call on the main thread so Wiiform can create one there.
+  // Overlapping calls fail because WiiQt uses a process-wide AES schedule.
   // The caller owns the buffers. Validation rejections precede writes; discard
   // the working buffer if an exception occurs after a write has started.
   // An empty NUS cache path keeps downloads in memory. Offline requests

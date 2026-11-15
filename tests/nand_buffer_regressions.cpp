@@ -13,6 +13,7 @@
 #include <QTreeWidgetItem>
 #include <uidmap.h>
 #include <algorithm>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -226,6 +227,9 @@ int main(int argc, char** argv) {
       return 0;
     }
     check(argc == 1, "Usage: nand-buffer-regressions [--make-fixtures DIR]");
+    std::async(std::launch::async, [] {
+      rejects([] { wiiform::core::remove_title({}, 0); }, "QCoreApplication thread");
+    }).get();
     QTemporaryDir temporary(QDir::current().filePath("build/nand-buffer-regressions-XXXXXX"));
     check(temporary.isValid(), "Cannot create buffer regression directory");
     const auto nand_path = QDir(temporary.path()).filePath("nand.bin");

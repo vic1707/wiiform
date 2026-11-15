@@ -47,7 +47,7 @@ auto prepare_backupmii(std::span<std::uint8_t> image, const StockIdentity& expec
   auto footer = image.last(footer_bytes);
   require(digest_matches(image.first(0x108000), expected.boot_area), "NAND boot area differs from the verified seed");
   require(digest_matches(footer, expected.original_footer), "NAND key footer differs from the verified seed");
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   const auto layout = inspect::validate_layout(image, true);
   nand_buffer::Device device{std::span<const std::uint8_t>(image)};
   NandBin nand;

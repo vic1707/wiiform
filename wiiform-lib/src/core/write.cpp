@@ -55,7 +55,7 @@ namespace {
 auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
                   const std::string& nus_cache_dir, Menu menu, BootPolicy boot_policy,
                   bool offline) -> StockIdentity {
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   const auto cache = qstring(nus_cache_dir, "Cache path must be UTF-8");
   require(nand.size() == nand_size && seed.keys.size() == 0x400 &&
               seed.boot_blocks.size() == 0x108000,
@@ -83,13 +83,13 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
 }
 
 void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings) {
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   sysconf::initialize(nand, settings);
 }
 
 void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,
                        std::uint64_t title_id, std::uint16_t version, bool offline) {
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
   title_install::install_nus_title(nand, qstring(nus_cache_dir, "Cache path must be UTF-8"),
                                    title_id, version, offline);
@@ -97,20 +97,20 @@ void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cach
 
 auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                  const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad {
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   const auto [id, region] = title_install::install_wad(nand, wad, expected_sha256, policy);
   return {id, region};
 }
 
 void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   title_remove::remove_channel(nand, title_id);
 }
 
 void apply_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app,
                      std::span<const std::uint8_t> hacks_hash_ini, const PriiloaderSettings& settings,
                      std::span<const Hack> enabled_hacks) {
-  detail::ensure_qcore_application();
+  const detail::ApiCall call;
   priiloader::apply(nand, app, hacks_hash_ini, settings, enabled_hacks);
 }
 
