@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use std::{
     borrow::Cow,
+    ops::RangeInclusive,
     path::{Path, PathBuf},
 };
 
@@ -10,6 +11,8 @@ use serde::Deserialize;
 
 use super::Sha256;
 use crate::{Data, ResolvedPath, yaml::Binary};
+
+pub(crate) const WAD_BOUNDS: RangeInclusive<usize> = 0x40..=0x2100_0000;
 
 /// One WAD source and the SHA-256 of its exact bytes.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -47,7 +50,7 @@ impl<Options> Wad<Options> {
         fetch: impl FnOnce(&str, usize) -> Result<Vec<u8>>,
     ) -> Result<(Cow<'_, [u8]>, &[u8; 32])> {
         Ok((
-            self.source.resolve(0x40..=0x2100_0000, fetch)?,
+            self.source.resolve(WAD_BOUNDS, fetch)?,
             self.sha256.as_bytes(),
         ))
     }

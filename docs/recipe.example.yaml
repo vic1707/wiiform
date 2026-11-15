@@ -53,6 +53,19 @@ titles:
 #       revision: 65535 # TMD revision of the WAD.
 #       replace_stock_stub: true # Allows replacing the verified 249/250 v65280 stub.
 
+# Optional Homebrew Channel, installed before Priiloader.
+# hbc:
+#   variant: reborn
+#   version: "1.16.0" # Or 1.12.1, 1.13.0, 1.14.0, 1.15.0. Downloads the OHBC WAD.
+#   # sha256 may confirm the digest pinned for this release.
+#
+# For a custom HBC WAD, use variant: custom with source and a required sha256.
+# hbc:
+#   variant: custom
+#   source:
+#     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
+#   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
   settings:
     # Every configurable Priiloader setting is written. Omitted keys use the

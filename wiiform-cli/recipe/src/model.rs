@@ -5,7 +5,7 @@ use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{Cios, Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
+use crate::{Cios, Hbc, Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -25,6 +25,9 @@ pub struct Recipe {
     /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
     #[serde(default)]
     pub cios: Vec<Cios>,
+    /// Optional Homebrew Channel from a pinned Reborn release or a custom WAD.
+    #[serde(default)]
+    pub hbc: Option<Hbc>,
     /// Optional pinned Priiloader install with settings and hacks.
     #[serde(default)]
     pub priiloader: Option<Priiloader>,
@@ -60,6 +63,9 @@ impl Recipe {
         }
         for cios in &mut recipe.cios {
             cios.rebase(directory);
+        }
+        if let Some(hbc) = &mut recipe.hbc {
+            hbc.rebase(directory);
         }
         Ok((recipe, remove))
     }
@@ -110,6 +116,53 @@ mod tests {
 
     fn no_fetch(_: &str, _: usize) -> Result<Vec<u8>> {
         panic!("local payload resolution should not fetch")
+    }
+
+    #[test]
+    fn hbc_variants_require_exact_release_or_custom_source() -> Result<()> {
+        let (recipe, _) = read("menu: 4.3E\nhbc: {variant: reborn, version: 1.16.0}", None)?;
+        let (_, digest) = recipe.hbc.unwrap().resolve(|url, _| {
+            assert!(url.ends_with("/v1.16.0/hbc-reborn-1.16.0-OHBC.wad"));
+            Ok(vec![0; 0x40])
+        })?;
+        let expected = "81ed7e395f586a3e4c20a84c86de99d074ba8cbb55dd6b479f259631a71f4850";
+        assert_eq!(digest, expected.parse()?);
+        read(
+            &format!("menu: 4.3E\nhbc: {{variant: reborn, version: 1.16.0, sha256: {expected}}}"),
+            None,
+        )?;
+        let (recipe, _) = read(
+            &format!(
+                "menu: 4.3E\nhbc: {{variant: custom, source: {{path: file.wad}}, sha256: {SHA}}}"
+            ),
+            None,
+        )?;
+        assert!(
+            matches!(recipe.hbc, Some(Hbc::Custom { source: Data::Path(path), .. }) if path == Path::new("./file.wad"))
+        );
+        read(
+            &format!(
+                "menu: 4.3E\nhbc: {{variant: custom, source: {{inline: !!binary /wAB}}, sha256: {SHA}}}"
+            ),
+            None,
+        )?;
+
+        for fields in [
+            "variant: reborn, version: 1.99.0".to_owned(),
+            "variant: classic".to_owned(),
+            "variant: custom, source: {path: file.wad}".to_owned(),
+            format!("variant: reborn, version: 1.16.0, sha256: {SHA}"),
+            format!("variant: custom, version: 1.16.0, source: {{path: file.wad}}, sha256: {SHA}"),
+            format!(
+                "variant: reborn, version: 1.16.0, source: {{path: file.wad}}, sha256: {expected}"
+            ),
+        ] {
+            assert!(
+                read(&format!("menu: 4.3E\nhbc: {{{fields}}}"), None).is_err(),
+                "{fields}"
+            );
+        }
+        Ok(())
     }
 
     #[test]

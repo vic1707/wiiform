@@ -6,6 +6,7 @@ pub mod bridge {
     enum WadPolicy {
         Standard,
         LegacyChannel,
+        HomebrewChannel,
     }
 
     #[repr(u8)]

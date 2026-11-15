@@ -159,6 +159,13 @@ fn build_with(
             .warn_if_already_present();
     }
 
+    if let Some(hbc) = &recipe.hbc {
+        let installed =
+            native::install_hbc(&mut nand, hbc).context("cannot install Homebrew Channel")?;
+        installed.warn_if_already_present();
+        warn_region(&installed, recipe.menu);
+    }
+
     if let Some((config, (app, definitions))) = priiloader {
         native::apply_priiloader(
             &mut nand,

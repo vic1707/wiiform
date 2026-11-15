@@ -15,6 +15,7 @@ pub use removal::{RemovalInput, RemovalName};
 pub use sha256::Sha256;
 pub use title_id::TitleId;
 
+pub(crate) use wad::WAD_BOUNDS;
 pub use wad::Wad;
 
 /// WAD signature requirements.

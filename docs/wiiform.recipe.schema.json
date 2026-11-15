@@ -10,6 +10,17 @@
         "$ref": "#/$defs/Cios"
       }
     },
+    "hbc": {
+      "description": "Optional Homebrew Channel from a pinned Reborn release or a custom WAD.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Hbc"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "menu": {
       "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
       "$ref": "#/$defs/Menu"
@@ -354,6 +365,62 @@
       },
       "additionalProperties": false
     },
+    "Hbc": {
+      "description": "Homebrew Channel to install before Priiloader is configured.",
+      "oneOf": [
+        {
+          "description": "Download a pinned HBC Reborn release with the OHBC title ID.",
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "description": "Optional confirmation of the built-in release digest.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "variant": {
+              "type": "string",
+              "const": "reborn"
+            },
+            "version": {
+              "$ref": "#/$defs/RebornVersion"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "variant",
+            "version"
+          ]
+        },
+        {
+          "description": "Install a user-supplied, hash-pinned Homebrew Channel WAD.",
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "$ref": "#/$defs/Sha256"
+            },
+            "source": {
+              "$ref": "#/$defs/Data"
+            },
+            "variant": {
+              "type": "string",
+              "const": "custom"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "variant",
+            "source",
+            "sha256"
+          ]
+        }
+      ]
+    },
     "Language": {
       "description": "Wii first-run language value written to SYSCONF.",
       "type": "string",
@@ -513,6 +580,16 @@
         }
       },
       "additionalProperties": false
+    },
+    "RebornVersion": {
+      "type": "string",
+      "enum": [
+        "1.12.1",
+        "1.13.0",
+        "1.14.0",
+        "1.15.0",
+        "1.16.0"
+      ]
     },
     "RemovalInput": {
       "description": "One removal entry as written in a recipe: a known name or quoted title ID.",

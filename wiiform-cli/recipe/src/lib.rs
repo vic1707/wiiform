@@ -3,6 +3,7 @@
 
 mod data;
 mod files;
+mod hbc;
 mod model;
 pub mod priiloader;
 mod schema;
@@ -12,6 +13,7 @@ pub mod yaml;
 
 pub use data::Data;
 pub use files::{ResolvedPath, open_regular_file, read_bounded};
+pub use hbc::Hbc;
 pub use model::Recipe;
 pub use priiloader::{
     Autoboot, HackSettings, MountPoint, Priiloader, PriiloaderHack, PriiloaderSettings, ReturnTo,

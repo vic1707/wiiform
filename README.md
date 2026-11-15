@@ -102,6 +102,37 @@ When running from a checkout, run `mise run assets:priiloader` once before
 using a Priiloader recipe. Use `priiloader: {}` to install with pinned defaults.
 Each application replaces the settings and disables unspecified hacks.
 
+### Homebrew Channel
+
+```yaml
+hbc:
+  variant: reborn
+  version: "1.16.0"
+```
+
+Wiiform downloads the retail OHBC WAD from the selected release and verifies
+its pinned SHA-256. The available releases are 1.12.1, 1.13.0, 1.14.0, 1.15.0,
+and 1.16.0. Supply an optional `sha256` to confirm the pinned digest.
+`WIIFORM_NUS_OFFLINE` governs Nintendo downloads only. [HBC Reborn releases](https://github.com/Monsterray/hbc-reborn/releases)
+
+```yaml
+hbc:
+  variant: custom
+  source:
+    path: wads/my-homebrew-channel.wad
+  sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+```
+
+A custom WAD requires its SHA-256. The source may be a recipe-relative path,
+inline binary, or an HTTPS URL. Wiiform validates the package and checks its
+title ID against the Homebrew Channel IDs recognized by Priiloader before
+writing it. The title installs before Priiloader settings are applied, so
+`autoboot: homebrew_channel` can use it.
+
+The original HackMii HBC 1.1.2 is available through its Wii-side installer.
+A built-in recipe variant would require a verified offline package from that
+release. [Official HackMii Installer](https://bootmii.org/download/)
+
 ### cIOS packages
 
 Use `cios` entries for prebuilt, hash-pinned Wii d2x WADs. Each entry gives

@@ -5,7 +5,8 @@ use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    Aspect, Cios, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy, Title,
+    Aspect, Cios, HackSettings, Hbc, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy,
+    Title,
 };
 use crate::seed::StockSeed;
 
@@ -106,6 +107,16 @@ pub fn install_wad(nand: &mut [u8], title: &Title) -> Result<InstalledWad> {
         SignaturePolicy::AllowUnsigned => ffi::WadPolicy::LegacyChannel,
     };
     Ok(ffi::install_wad(nand, &wad, sha256, policy)?)
+}
+
+pub fn install_hbc(nand: &mut [u8], hbc: &Hbc) -> Result<InstalledWad> {
+    let (wad, digest) = hbc.resolve(fetch_https)?;
+    Ok(ffi::install_wad(
+        nand,
+        &wad,
+        digest.as_bytes(),
+        ffi::WadPolicy::HomebrewChannel,
+    )?)
 }
 
 pub fn install_cios(nand: &mut [u8], cios: &Cios) -> Result<InstalledWad> {
