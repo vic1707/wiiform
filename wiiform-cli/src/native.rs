@@ -58,7 +58,7 @@ pub fn apply_system_settings(nand: &mut [u8], menu: Menu, setup: &Setup) -> Resu
     Ok(ffi::apply_system_settings(
         nand,
         &ffi::SystemSettings {
-            nickname: setup.nickname.as_str(),
+            nickname: setup.nickname.as_ref(),
             language: setup.language_for(menu).as_u8(),
             country: setup.country_for(menu).as_u8(),
             sensor_bar_above: setup.sensor_bar == SensorBar::Above,

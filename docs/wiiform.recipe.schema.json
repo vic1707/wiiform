@@ -71,7 +71,7 @@
       ]
     },
     "Binary": {
-      "description": "Bytes encoded as a YAML !!binary scalar.",
+      "description": "Bytes stored as a YAML `!!binary` scalar.",
       "type": "string",
       "contentEncoding": "base64"
     },
@@ -310,6 +310,12 @@
         "usb"
       ]
     },
+    "Nickname": {
+      "description": "Nonblank console nickname with 1–10 printable BMP characters.",
+      "type": "string",
+      "maxLength": 10,
+      "minLength": 1
+    },
     "Priiloader": {
       "description": "Priiloader installation and configuration.",
       "type": "object",
@@ -515,10 +521,8 @@
         },
         "nickname": {
           "description": "Console nickname. Defaults to the Wii's factory name.",
-          "type": "string",
-          "default": "Wii",
-          "maxLength": 10,
-          "minLength": 1
+          "$ref": "#/$defs/Nickname",
+          "default": "Wii"
         },
         "sensor_bar": {
           "description": "Physical sensor bar position. Defaults to above the display.",

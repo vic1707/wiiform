@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use serde::{Deserialize, Serialize, Serializer};
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_saphyr::MergeKeyPolicy;
 
 pub const MAX_EVENTS: usize = 20_000;
 pub const MAX_DEPTH: usize = 24;
 
 /// Bytes stored as a YAML `!!binary` scalar.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Binary(pub Vec<u8>);
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct Binary(
+    #[serde(
+        serialize_with = "serialize_binary",
+        deserialize_with = "deserialize_binary"
+    )]
+    #[schemars(with = "String", extend("contentEncoding" = "base64"))]
+    pub Vec<u8>,
+);
 
 impl AsRef<[u8]> for Binary {
     fn as_ref(&self) -> &[u8] {
@@ -15,39 +24,16 @@ impl AsRef<[u8]> for Binary {
     }
 }
 
-impl schemars::JsonSchema for Binary {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "Binary".into()
-    }
-
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "string",
-            "contentEncoding": "base64",
-            "description": "Bytes encoded as a YAML !!binary scalar."
-        })
-    }
+fn serialize_binary<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_bytes(bytes)
 }
 
-impl Serialize for Binary {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_bytes(&self.0)
+fn deserialize_binary<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
+    let serde_saphyr::Tagged(bytes, tag) = serde_saphyr::Tagged::deserialize(deserializer)?;
+    if tag.as_deref() != Some("tag:yaml.org,2002:binary") {
+        return Err(serde::de::Error::custom("expected a YAML !!binary scalar"));
     }
-}
-
-impl<'de> Deserialize<'de> for Binary {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        let tagged = serde_saphyr::Tagged::<Vec<u8>>::deserialize(deserializer)?;
-        if tagged.1.as_deref() != Some("tag:yaml.org,2002:binary") {
-            return Err(serde::de::Error::custom("expected a YAML !!binary scalar"));
-        }
-        Ok(Self(tagged.0))
-    }
+    Ok(bytes)
 }
 
 pub fn options() -> serde_saphyr::Options {
