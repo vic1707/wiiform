@@ -15,4 +15,6 @@ namespace title_install {
   auto install_cios(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
                     const wiiform::Sha256& expected_sha256,
                     const wiiform::CiosOptions& options) -> wiiform::InstalledWad;
+  auto preserve_homebrew_channel(std::span<std::uint8_t> image,
+                                 std::span<const std::uint8_t> backup) -> wiiform::InstalledWad;
 }

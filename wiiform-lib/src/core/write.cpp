@@ -117,6 +117,12 @@ auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wa
   return title_install::install_cios(nand, wad, expected_sha256, options);
 }
 
+auto preserve_homebrew_channel(std::span<std::uint8_t> nand,
+                               std::span<const std::uint8_t> backup) -> InstalledWad {
+  const detail::ApiCall call;
+  return title_install::preserve_homebrew_channel(nand, backup);
+}
+
 void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
   const detail::ApiCall call;
   title_remove::remove_channel(nand, title_id);

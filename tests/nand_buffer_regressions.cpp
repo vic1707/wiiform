@@ -433,6 +433,23 @@ namespace {
                       "not an authentic Nintendo stub",
                       "Replacing a non-stock cIOS changed the NAND buffer");
   }
+
+  void test_homebrew_source_rejections(const QString& temporary_path) {
+    const auto nand_path = QDir(temporary_path).filePath("hbc-source-empty-nand.bin");
+    create_empty_nand(nand_path);
+    auto image = read_bytes(nand_path, nand_file_size);
+
+    rejects_unchanged(image, [&] {
+      wiiform::core::preserve_homebrew_channel(image, image);
+    }, "Backup does not contain original Homebrew Channel",
+       "Missing HBC source title changed the NAND buffer");
+
+    auto other_console = image;
+    other_console[0x21000000 + 0x124] ^= 1;
+    rejects_unchanged(image, [&] {
+      wiiform::core::preserve_homebrew_channel(image, other_console);
+    }, "different Wii", "Mismatched HBC source identity changed the NAND buffer");
+  }
 }
 
 int main(int argc, char** argv) {
@@ -469,6 +486,7 @@ int main(int argc, char** argv) {
     test_wad_installation(temporary.path());
     test_shared_wad_matching(temporary.path());
     test_cios_installation(temporary.path());
+    test_homebrew_source_rejections(temporary.path());
     std::cout << "NAND buffer capacity, rejection, and WAD matching checks passed\n";
     return 0;
   } catch (const std::exception& error) {
