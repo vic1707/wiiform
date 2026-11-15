@@ -84,7 +84,7 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
 
 void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings) {
   const detail::ApiCall call;
-  sysconf::initialize(nand, settings);
+  wii_sysconf::initialize(nand, settings);
 }
 
 void install_nus_title(std::span<std::uint8_t> nand, const std::string& nus_cache_dir,

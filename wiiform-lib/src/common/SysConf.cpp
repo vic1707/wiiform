@@ -12,7 +12,7 @@
 namespace {
   constexpr int header_size = 6;
   constexpr int footer_size = 4;
-  constexpr int footer_offset = sysconf::size - footer_size;
+  constexpr int footer_offset = wii_sysconf::size - footer_size;
   constexpr int lookup_start = 0x3fae;
 
   struct DisplayEntry {
@@ -157,7 +157,7 @@ namespace {
   }
 
   auto encode_new_sysconf(const std::vector<EntryToWrite>& entries) -> QByteArray {
-    QByteArray bytes(sysconf::size, '\0');
+    QByteArray bytes(wii_sysconf::size, '\0');
     bytes.replace(0, 4, "SCv0");
     write_u16(bytes, 4, static_cast<int>(entries.size()));
     int offset = header_size + (static_cast<int>(entries.size()) + 1) * 2;
@@ -183,9 +183,9 @@ namespace {
 
 } // namespace
 
-namespace sysconf {
+namespace wii_sysconf {
   auto create(const wiiform::SystemSettings& requested, const QString& menu_region) -> QByteArray {
     return encode_new_sysconf(generated_entries(requested, menu_region));
   }
 
-} // namespace sysconf
+} // namespace wii_sysconf

@@ -21,7 +21,7 @@ namespace {
   }
 }
 
-namespace sysconf {
+namespace wii_sysconf {
   void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings) {
     working_image::Image working(image);
     const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());

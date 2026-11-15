@@ -5,6 +5,6 @@
 #include <cstdint>
 #include <span>
 
-namespace sysconf {
+namespace wii_sysconf {
   void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings);
 }

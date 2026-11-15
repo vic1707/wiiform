@@ -6,9 +6,9 @@
 #include <wiiform/types.hpp>
 #include <cstdint>
 
-namespace sysconf {
+namespace wii_sysconf {
   constexpr int size = 0x4000;
   constexpr auto path = "/shared2/sys/SYSCONF";
 
   auto create(const wiiform::SystemSettings& settings, const QString& menu_region) -> QByteArray;
-} // namespace sysconf
+} // namespace wii_sysconf

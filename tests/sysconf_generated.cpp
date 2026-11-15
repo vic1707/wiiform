@@ -75,8 +75,8 @@ namespace {
     const auto language = menu == "JPN" ? Language::ja : Language::en;
     const wiiform::SystemSettings requested{"Setup", language, country, false, true, true, true};
 
-    const auto bytes = sysconf::create(requested, menu);
-    check(bytes.size() == sysconf::size, "Generated SYSCONF has the wrong size");
+    const auto bytes = wii_sysconf::create(requested, menu);
+    check(bytes.size() == wii_sysconf::size, "Generated SYSCONF has the wrong size");
     check(bytes.startsWith("SCv0") && bytes.mid(bytes.size() - 4) == "SCed",
           "Generated SYSCONF has invalid sentinels");
     check(entry_payload(bytes, "IPL.CD") == byte_value(1),
@@ -92,7 +92,7 @@ namespace {
           "Generated sensor-bar position is incorrect");
 
     const wiiform::SystemSettings alternate{"Alternate", language, country, true, false, false, false};
-    const auto alternate_bytes = sysconf::create(alternate, menu);
+    const auto alternate_bytes = wii_sysconf::create(alternate, menu);
     check(entry_payload(alternate_bytes, "IPL.CD") == byte_value(1),
           "Alternate SYSCONF must mark first-time setup complete");
     check_nickname(entry_payload(alternate_bytes, "IPL.NIK"), QStringLiteral("Alternate"));
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
 
     const wiiform::SystemSettings invalid{"Wii", wiiform::Language::en, 1, true, false, false, false};
     try {
-      (void)sysconf::create(invalid, QStringLiteral("EUR"));
+      (void)wii_sysconf::create(invalid, QStringLiteral("EUR"));
       throw std::runtime_error("SYSCONF accepted a country incompatible with its menu");
     } catch (const std::runtime_error& error) {
       check(std::string_view(error.what()) == "Country code does not match the requested menu region",
