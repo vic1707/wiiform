@@ -12,17 +12,16 @@ remove:
   # - "0001000248414650"
 
 # A setup mapping completes first-run setup. Use {} for all defaults.
-# Omit setup or set it to null to run the Wii setup wizard, even with display settings.
+# Omit setup or set it to null to run the Wii setup wizard.
 setup:
   nickname: "Speed Wii" # Defaults to "Wii".
   language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.
   country: GB # Two-letter country code. Defaults to GB (E), US (U), or JP (J). Quote "NO".
   sensor_bar: above # above or below; defaults to above.
-
-display:
-  aspect: "16:9" # Defaults to "4:3".
-  progressive: true # Enables 480p where supported, off by default. fix_480p is a separate hack.
-  pal60: false # Off by default.
+  display:
+    aspect: "16:9" # Defaults to "4:3".
+    progressive: true # Enables 480p where supported, off by default. fix_480p is a separate hack.
+    pal60: false # Off by default.
 
 titles:
   - source:

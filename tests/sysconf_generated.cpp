@@ -80,15 +80,6 @@ namespace {
               alternate_display.pal60 == false,
           "Alternate generated display fields did not round-trip");
 
-    auto pending_setup = requested;
-    pending_setup.setup_complete = false;
-    const auto pending_bytes = sysconf::create(pending_setup, menu);
-    check(entry_payload(pending_bytes, "IPL.CD") == QByteArray(1, '\0') &&
-              sysconf::read_settings(pending_bytes).setup_complete == false,
-          "Display-only settings must leave first-time setup pending");
-    check(sysconf::read_display(pending_bytes).widescreen == true,
-          "Pending first-time setup must retain the requested display settings");
-
     const auto country_payload = entry_payload(bytes, "IPL.SADR");
     check(country_payload.size() == 0x1008, "Generated country payload has the wrong size");
     check(static_cast<std::uint8_t>(country_payload.at(0)) == country,

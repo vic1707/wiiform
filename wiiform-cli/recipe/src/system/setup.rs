@@ -2,7 +2,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{CountryCode, Language, Menu, Nickname};
+use super::{CountryCode, Display, Language, Menu, Nickname};
 
 /// First-run setup values written to SYSCONF.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -18,6 +18,8 @@ pub struct Setup {
     pub country: Option<CountryCode>,
     /// Physical sensor bar position. Defaults to above the display.
     pub sensor_bar: SensorBar,
+    /// Display settings. Omit this mapping to use the display defaults.
+    pub display: Display,
 }
 
 impl Setup {

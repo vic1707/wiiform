@@ -128,14 +128,9 @@ fn build_with(
             .with_context(|| format!("cannot remove title {id:016x}"))?;
     }
 
-    if recipe.setup.is_some() || recipe.display.is_some() {
-        native::apply_system_settings(
-            &mut nand,
-            recipe.menu,
-            recipe.setup.as_ref(),
-            recipe.display.as_ref(),
-        )
-        .context("cannot generate system settings")?;
+    if let Some(setup) = &recipe.setup {
+        native::apply_system_settings(&mut nand, recipe.menu, setup)
+            .context("cannot generate system settings")?;
     }
 
     for (index, title) in recipe.titles.iter().enumerate() {

@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    Aspect, Display, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy,
-    Title, WAD_SIZE,
+    Aspect, HackSettings, Menu, PriiloaderSettings, SensorBar, Setup, SignaturePolicy, Title,
+    WAD_SIZE,
 };
 use crate::seed::StockSeed;
 
@@ -53,22 +53,8 @@ pub fn create_stock(
     )?)
 }
 
-pub fn apply_system_settings(
-    nand: &mut [u8],
-    menu: Menu,
-    setup: Option<&Setup>,
-    display: Option<&Display>,
-) -> Result<()> {
-    let setup_complete = setup.is_some();
-    let default_setup;
-    let setup = match setup {
-        Some(setup) => setup,
-        None => {
-            default_setup = Setup::default();
-            &default_setup
-        }
-    };
-    let display = display.copied().unwrap_or_default();
+pub fn apply_system_settings(nand: &mut [u8], menu: Menu, setup: &Setup) -> Result<()> {
+    let display = setup.display;
     Ok(ffi::apply_system_settings(
         nand,
         &ffi::SystemSettings {
@@ -79,7 +65,6 @@ pub fn apply_system_settings(
             widescreen: display.aspect == Aspect::SixteenNine,
             progressive: display.progressive,
             pal60: display.pal60,
-            setup_complete,
         },
     )?)
 }

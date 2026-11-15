@@ -5,7 +5,7 @@ use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{Display, Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
+use crate::{Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -19,9 +19,6 @@ pub struct Recipe {
     /// Omit this section or use null to run the Wii setup wizard.
     #[serde(default)]
     pub setup: Option<Setup>,
-    /// Optional display settings. An empty mapping uses the defaults.
-    #[serde(default)]
-    pub display: Option<Display>,
     /// WADs to install from a file or inline bytes.
     #[serde(default)]
     pub titles: Vec<Title>,
@@ -180,6 +177,28 @@ mod tests {
     }
 
     #[test]
+    fn display_is_part_of_first_run_setup() -> Result<()> {
+        for yaml in ["menu: 4.3E", "menu: 4.3E\nsetup: null"] {
+            assert!(read(yaml, None)?.0.setup.is_none());
+        }
+        assert_eq!(
+            read("menu: 4.3E\nsetup: {}", None)?.0.setup,
+            Some(Setup::default())
+        );
+
+        let (recipe, _) = read(
+            "menu: 4.3E\nsetup: {display: {aspect: '16:9', progressive: true}}",
+            None,
+        )?;
+        let setup = recipe.setup.context("expected setup settings")?;
+        assert_eq!(setup.display.aspect, crate::Aspect::SixteenNine);
+        assert!(setup.display.progressive);
+        assert!(!setup.display.pal60);
+        assert!(read("menu: 4.3E\ndisplay: {}", None).is_err());
+        Ok(())
+    }
+
+    #[test]
     fn priiloader_accepts_only_settings_and_hacks() -> Result<()> {
         let (recipe, _) = read(
             "menu: 4.3E\npriiloader: {settings: {stop_disc: true}, hacks: {fix_480p: true}}",
@@ -196,10 +215,6 @@ mod tests {
 
         let (recipe, _) = read("menu: 4.3E\npriiloader: null", None)?;
         assert!(recipe.priiloader.is_none());
-        let (recipe, _) = read("menu: 4.3E\nsetup: null", None)?;
-        assert!(recipe.setup.is_none());
-        let (recipe, _) = read("menu: 4.3E\ndisplay: null", None)?;
-        assert!(recipe.display.is_none());
         assert!(read("menu: 4.3E\npriiloader: {app: override.app}", None).is_err());
         Ok(())
     }

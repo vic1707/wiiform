@@ -74,9 +74,10 @@ The cache stores only files that pass Wii title signature and content checks.
 
 The output must be a new directory. A successful build publishes `nand.bin`
 and its matching BootMii `keys.bin` together. A `setup` mapping completes
-first-run setup using your values and defaults for omitted fields. Use
-`setup: {}` to apply all defaults. Omit `setup` or set it to `null` to run the
-Wii setup wizard, even if you provide display settings. Pair Wii Remotes
+first-run setup using your values and defaults for omitted fields. Put display
+options such as the aspect ratio under `setup.display`. Use `setup: {}` to
+apply all defaults. Omit `setup` or set it to `null` to run the Wii setup wizard.
+Pair Wii Remotes
 again after restoring a prepared image.
 
 Wiiform uses the pinned Priiloader assets included in the release archive.

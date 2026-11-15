@@ -89,17 +89,16 @@ CI generates the schema and checks it against the committed copy under
 ## Update an existing recipe
 
 Move keys under the old `system:` block up one indentation level. Keep
-`menu`, `remove`, `setup`, `display`, `titles`, and `priiloader` as top-level
-keys. Move each WAD's `path` or `inline` under `source`. Keep `sha256` and
+`menu`, `remove`, `setup`, `titles`, and `priiloader` as top-level keys.
+Move `display` under `setup`. Move each WAD's `path` or `inline` under `source`. Keep `sha256` and
 `signature_policy` beside `source`. WAD paths resolve relative to the recipe.
 For inline data, use `inline: !!binary |` followed by indented base64. Either source
 requires a SHA-256 of the raw WAD bytes. For a WAD that the recipe deliberately
 permits without a Nintendo signature, use `signature_policy: allow-unsigned`.
 Regenerate earlier unreleased seeds with the current `wii-seed`.
-Remove `--reference` from scripts. Setup and display options now generate
-SYSCONF using recipe values and menu defaults. A `setup` mapping completes
-first-run setup. Omit it or set it to null to keep the wizard enabled, including
-when a `display` mapping is present. Use a two-letter country code
+Remove `--reference` from scripts. A `setup` mapping, including any
+`setup.display` options, generates SYSCONF and completes first-run setup.
+Omit `setup` or set it to null to keep the wizard enabled. Use a two-letter country code
 such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
 parsers interpret it as a boolean. Replace quoted Wii codes such as "110"
 with the corresponding ISO code. Pair Wii Remotes after restore.

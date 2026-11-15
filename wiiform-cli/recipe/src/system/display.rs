@@ -22,10 +22,7 @@ impl FromStr for Aspect {
     }
 }
 
-/// Display configuration written to SYSCONF.
-///
-/// An empty mapping applies display defaults. A display section on its own
-/// leaves the Wii setup wizard enabled.
+/// Display configuration applied during first-run setup.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Display {

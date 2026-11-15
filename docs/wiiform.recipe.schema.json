@@ -3,18 +3,6 @@
   "title": "Recipe",
   "type": "object",
   "properties": {
-    "display": {
-      "description": "Optional display settings. An empty mapping uses the defaults.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Display"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
     "menu": {
       "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
       "$ref": "#/$defs/Menu"
@@ -192,7 +180,7 @@
       ]
     },
     "Display": {
-      "description": "Display configuration written to SYSCONF.\n\nAn empty mapping applies display defaults. A display section on its own\nleaves the Wii setup wizard enabled.",
+      "description": "Display configuration applied during first-run setup.",
       "type": "object",
       "properties": {
         "aspect": {
@@ -504,6 +492,15 @@
               "type": "null"
             }
           ]
+        },
+        "display": {
+          "description": "Display settings. Omit this mapping to use the display defaults.",
+          "$ref": "#/$defs/Display",
+          "default": {
+            "aspect": "4:3",
+            "pal60": false,
+            "progressive": false
+          }
         },
         "language": {
           "description": "Setup language, constrained by the effective menu region.",
