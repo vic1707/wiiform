@@ -450,18 +450,18 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "nnn"
-version = "1.2.6"
+version = "1.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64b32e54f43f8fb745f1a058569d2a13bc01b6f68c20592ddb19d231f571dce5"
+checksum = "9e99db8744388e7f094df68e10c14220689e8e6d01aa29862acfd01926627005"
 dependencies = [
  "nnn-macros",
 ]
 
 [[package]]
 name = "nnn-macros"
-version = "1.2.6"
+version = "1.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a66e29f710d4aa2e8bc92e7fe05880d9aa752af02756894635c89d2f2b0d343d"
+checksum = "e9d48a89c06b21d68cd7ee236350ffa7a9a921b70f3c94b57f2edca3c6c9476d"
 dependencies = [
  "proc-macro2",
  "quote",

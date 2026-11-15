@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
     attrs(doc = "Nonblank console nickname with 1–10 printable BMP characters."),
     derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize),
     nnn_derive(TryFrom, AsRef),
+    default = "Wii".to_owned(),
     validators(custom(with = valid_nickname, error = InvalidNickname))
 )]
 pub struct Nickname(String);
@@ -34,13 +35,6 @@ impl std::str::FromStr for Nickname {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::try_from(value.to_owned())
-    }
-}
-
-// nnn 1.2.6's generated default test reuses the inner value after moving it.
-impl Default for Nickname {
-    fn default() -> Self {
-        Self::try_from("Wii".to_owned()).expect("built-in Wii nickname is valid")
     }
 }
 
