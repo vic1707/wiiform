@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::{collections::HashSet, io::Read, path::Path};
+use std::{
+    collections::HashSet,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{Cios, Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HomebrewChannel {
+    /// Same-console NAND backup with an embedded footer and original HBC 1.1.2.
+    /// Relative paths resolve from the recipe directory.
+    pub backup: PathBuf,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -25,6 +37,9 @@ pub struct Recipe {
     /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
     #[serde(default)]
     pub cios: Vec<Cios>,
+    /// Preserve the original HackMii Homebrew Channel from a backup of this Wii.
+    #[serde(default)]
+    pub homebrew_channel: Option<HomebrewChannel>,
     /// Optional pinned Priiloader install with settings and hacks.
     #[serde(default)]
     pub priiloader: Option<Priiloader>,
@@ -60,6 +75,9 @@ impl Recipe {
         }
         for cios in &mut recipe.cios {
             cios.rebase(directory);
+        }
+        if let Some(channel) = &mut recipe.homebrew_channel {
+            channel.backup = directory.join(&channel.backup);
         }
         Ok((recipe, remove))
     }

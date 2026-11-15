@@ -159,6 +159,12 @@ fn build_with(
             .warn_if_already_present();
     }
 
+    if let Some(channel) = &recipe.homebrew_channel {
+        native::preserve_homebrew_channel(&mut nand, &channel.backup)
+            .context("cannot preserve the original Homebrew Channel")?
+            .warn_if_already_present();
+    }
+
     if let Some((config, (app, definitions))) = priiloader {
         native::apply_priiloader(
             &mut nand,

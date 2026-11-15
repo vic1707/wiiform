@@ -124,6 +124,7 @@ pub mod bridge {
             expected_sha256: &[u8; 32],
             options: &CiosOptions,
         ) -> Result<InstalledWad>;
+        fn preserve_homebrew_channel(nand: &mut [u8], backup: &[u8]) -> Result<InstalledWad>;
         fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
         fn apply_priiloader(
             nand: &mut [u8],

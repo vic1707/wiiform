@@ -125,6 +125,26 @@ same slot and package checks as the recipe. See the
 guide](https://github.com/wiidev/d2x-cios/wiki/How-to-install-d2x-cIOSs-on-your-Wii)
 for package preparation.
 
+### Original Homebrew Channel
+
+Set `homebrew_channel.backup` to a NAND backup from the Wii that supplied the
+seed, taken after installing HBC 1.1.2 with the official HackMii Installer.
+The backup needs its embedded key footer. Wiiform verifies and copies the
+original channel title, ticket and contents, and keeps stock IOS58. This runs
+before Priiloader configuration, so you can set its autoboot to
+`homebrew_channel`.
+
+```yaml
+homebrew_channel:
+  backup: backups/this-wii-nand.bin
+```
+
+A build that preserves HBC reads another 528 MiB for the backup. The backup
+stays local and its saves and personal settings are outside this operation.
+If the Wii has never had HBC 1.1.2 installed, use the [official HackMii
+Installer](https://bootmii.org/download/) on the Wii and take a new backup.
+An older HBC title must be updated on the Wii to use this option.
+
 ### Seed input
 
 The seed contains plaintext console key material. Save the output privately.

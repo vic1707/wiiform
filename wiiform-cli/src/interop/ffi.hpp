@@ -30,6 +30,7 @@ namespace wiiform::ffi {
                    WadPolicy policy) -> InstalledWad;
   auto install_cios(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
                     const CiosOptions& options) -> InstalledWad;
+  auto preserve_homebrew_channel(Nand nand, Bytes backup) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);
   void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
                        const PriiloaderSettings& settings, Bytes enabled_hacks);
