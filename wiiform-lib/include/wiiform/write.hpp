@@ -23,6 +23,8 @@ namespace wiiform::core {
                          std::uint64_t title_id, std::uint16_t version, bool offline);
   auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                    const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad;
+  auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
+                    const Sha256& expected_sha256, const CiosOptions& options) -> InstalledWad;
   void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id);
   void apply_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app,
                          std::span<const std::uint8_t> hacks_hash_ini, const PriiloaderSettings& settings,

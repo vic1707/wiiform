@@ -101,6 +101,12 @@ auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad
   return title_install::install_wad(nand, wad, expected_sha256, policy);
 }
 
+auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
+                  const Sha256& expected_sha256, const CiosOptions& options) -> InstalledWad {
+  const detail::ApiCall call;
+  return title_install::install_cios(nand, wad, expected_sha256, options);
+}
+
 void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
   const detail::ApiCall call;
   title_remove::remove_channel(nand, title_id);

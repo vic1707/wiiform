@@ -30,14 +30,22 @@ namespace {
     return qFromBigEndian<quint32>(bytes.constData() + offset);
   }
 
-}
+  enum class PackageMode { standard, legacy_channel, d2x_cios };
 
-namespace wad_package {
-  auto read(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
-            wiiform::WadPolicy policy) -> ValidatedTitleJob {
-    using wiiform::WadPolicy;
-    require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
-    const bool legacy = policy == WadPolicy::legacy_channel;
+  auto valid_cios_header(const QByteArray& content, std::uint8_t expected_base) -> bool {
+    // d2x's ciosmaps.xml writes IOSINFO at the start of the first local module.
+    return content.size() >= 0x30 && u32(content, 0x00) == 0x1ee7c105 &&
+        u32(content, 0x04) == 1 && u32(content, 0x08) != 0 &&
+        u32(content, 0x0c) == expected_base &&
+        content.mid(0x10, 4) == QByteArray("d2x\0", 4);
+  }
+
+  auto read_package(std::span<const std::uint8_t> input,
+                    const wiiform::Sha256& expected_sha256,
+                    PackageMode mode,
+                    const wiiform::CiosOptions* cios_options) -> ValidatedTitleJob {
+    const bool legacy = mode == PackageMode::legacy_channel;
+    const bool cios = mode == PackageMode::d2x_cios;
     require(input.size() >= wad_header_size && input.size() <= max_wad_size,
             "WAD file size is outside supported bounds");
     // QByteArray::fromRawData is a view whose lifetime is bounded by this call.
@@ -88,12 +96,14 @@ namespace wad_package {
     const auto type = tmd.Tid() >> 32;
     const auto slot = static_cast<quint32>(tmd.Tid());
     const bool wii_ios = type == 0x00000001 && slot >= 3 && slot <= 253;
-    require(type == 0x00010001 || (!legacy && (type == 0x00010002 || wii_ios)),
-            legacy ? "Unsigned WAD policy supports only downloadable channels"
-                   : "WAD install supports Wii channels and IOS slots 3 through 253");
+    require(cios ? (wii_ios && slot == cios_options->slot)
+                 : (type == 0x00010001 || (!legacy && (type == 0x00010002 || wii_ios))),
+            cios ? "WAD does not match requested cIOS slot"
+                 : (legacy ? "Unsigned WAD policy supports only downloadable channels"
+                           : "WAD install supports Wii channels and IOS slots 3 through 253"));
     const int key_index = static_cast<uchar>(ticket_bytes[0x1f1]);
     require(key_index == 0 || (legacy && key_index > 2), "Unsupported WAD ticket common-key index");
-    if (!legacy)
+    if (!legacy && !cios)
       require(check_cert_chain(tmd_bytes) == ERROR_SUCCESS && check_cert_chain(ticket_bytes) == ERROR_SUCCESS,
               "WAD ticket and TMD must be genuinely Nintendo-signed");
     if (key_index != 0) {
@@ -109,6 +119,9 @@ namespace wad_package {
     NusJob job;
     job.tid = tmd.Tid();
     job.version = tmd.Version();
+    if (cios)
+      require(job.version == cios_options->revision,
+              "WAD does not match requested cIOS revision");
     job.decrypt = false;
     job.data << tmd_bytes << ticket_bytes;
     const auto padded_data_size = align(data_size);
@@ -127,7 +140,35 @@ namespace wad_package {
     // physical section still reaches the same aligned footer offset.
     require(consumed == padded_data_size && (data_size == consumed || data_size == last_content_end),
             "WAD content sizes do not match its data section");
-    return validate_title(std::move(job), QStringLiteral("WAD content validation failed"));
+    auto validated = validate_title(std::move(job), QStringLiteral("WAD content validation failed"));
+    if (cios) {
+      require(tmd.Type(0) == 1,
+              "d2x IOSINFO must be in the first local TMD content");
+      require(valid_cios_header(validated.get().data[2], cios_options->base),
+              "WAD does not contain a valid d2x IOSINFO header for the requested base");
+    }
+    return validated;
+  }
+
+}
+
+namespace wad_package {
+  auto read(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
+            wiiform::WadPolicy policy) -> ValidatedTitleJob {
+    using wiiform::WadPolicy;
+    require(policy == WadPolicy::standard || policy == WadPolicy::legacy_channel, "Unsupported WAD signature policy");
+    return read_package(input, expected_sha256,
+                        policy == WadPolicy::legacy_channel ? PackageMode::legacy_channel : PackageMode::standard,
+                        nullptr);
+  }
+
+  auto read_cios(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
+                 const wiiform::CiosOptions& options) -> ValidatedTitleJob {
+    require(options.slot >= 248 && options.slot <= 251,
+            "Supported d2x cIOS slots are 248 through 251");
+    require(options.base == 38 || options.base == 56 || options.base == 57 || options.base == 58,
+            "Supported d2x cIOS bases are 38, 56, 57, and 58");
+    return read_package(input, expected_sha256, PackageMode::d2x_cios, &options);
   }
 
 }

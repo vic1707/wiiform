@@ -52,16 +52,23 @@ namespace {
   }
 
   auto make_wad(char content_byte = 'w', quint16 version = wad_title_version,
-                quint64 title_id = wad_title_id, quint16 content_type = 1) -> QByteArray {
-    const QByteArray content(2 * 1024 * 1024, content_byte);
+                quint64 title_id = wad_title_id, quint16 content_type = 1,
+                quint16 content_index = 7,
+                const QByteArray& first_content = {}, quint8 tmd_marker = 0) -> QByteArray {
+    QByteArray content(2 * 1024 * 1024, content_byte);
+    if (!first_content.isEmpty()) {
+      check(first_content.size() <= content.size(), "Synthetic first content header is too large");
+      content.replace(0, first_content.size(), first_content);
+    }
     QByteArray tmd(0x1e4 + 0x24, '\0');
     put32(tmd, 0, ES_SIG_RSA2048);
+    tmd[0x183] = static_cast<char>(tmd_marker);
     put64(tmd, 0x18c, title_id);
     qToBigEndian<quint16>(version, reinterpret_cast<uchar*>(tmd.data() + 0x1dc));
     qToBigEndian<quint16>(1, reinterpret_cast<uchar*>(tmd.data() + 0x1de));
     auto* record = reinterpret_cast<uchar*>(tmd.data() + 0x1e4);
     qToBigEndian<quint32>(0x40, record);
-    qToBigEndian<quint16>(7, record + 4);
+    qToBigEndian<quint16>(content_index, record + 4);
     qToBigEndian<quint16>(content_type, record + 6);
     qToBigEndian<quint64>(content.size(), record + 8);
     tmd.replace(0x1f4, 20, GetSha1(content));
@@ -89,6 +96,25 @@ namespace {
            PaddedByteArray(tmd, 0x40) + encrypted + footer;
   }
 
+  auto make_iosinfo(quint8 base, quint32 version = 11,
+                    const QByteArray& name = "d2x", const QByteArray& suffix = "beta3") -> QByteArray {
+    QByteArray record(48, '\0');
+    put32(record, 0, 0x1ee7c105);
+    put32(record, 4, 1);
+    put32(record, 8, version);
+    put32(record, 12, base);
+    record.replace(16, qMin(name.size(), 16), name.left(16));
+    record.replace(32, qMin(suffix.size(), 16), suffix.left(16));
+    return record;
+  }
+
+  auto make_cios_wad(quint8 slot = 249, quint8 base = 56, quint16 revision = 65535,
+                     quint8 marker = 0, bool valid_iosinfo = true,
+                     const QByteArray& suffix = "beta3") -> QByteArray {
+    const auto info = valid_iosinfo ? make_iosinfo(base, 11, "d2x", suffix) : QByteArray(48, '\0');
+    return make_wad('c', revision, 0x0000000100000000ull | slot, 1, 0, info, marker);
+  }
+
   auto wad_digest(const QByteArray& wad) -> wiiform::Sha256 {
     const auto hash = QCryptographicHash::hash(wad, QCryptographicHash::Sha256);
     wiiform::Sha256 result{};
@@ -106,6 +132,20 @@ namespace {
         QByteArray::fromRawData(reinterpret_cast<const char*>(image.data()),
                                 static_cast<int>(image.size())),
         QCryptographicHash::Sha256);
+  }
+
+  template<class Operation>
+  void rejects_unchanged(std::span<std::uint8_t> image, Operation operation,
+                         const char* expected_text, const char* message) {
+    const auto before = buffer_digest(image);
+    try {
+      operation();
+    } catch (const std::exception& error) {
+      check(std::string(error.what()).find(expected_text) != std::string::npos, error.what());
+      check(before == buffer_digest(image), message);
+      return;
+    }
+    throw std::runtime_error("Expected the native cIOS operation to reject the request");
   }
 
   auto file_digest(const QString& path) -> QByteArray {
@@ -173,6 +213,16 @@ namespace {
     write_bytes(wad_path, wad);
     const auto hash = QCryptographicHash::hash(wad, QCryptographicHash::Sha256).toHex();
     write_bytes(output.filePath("fixture.wad.sha256"), hash + '\n');
+  }
+
+  auto make_cios_fixture(const QString& directory) -> void {
+    check(QDir().mkpath(directory), "Cannot create cIOS fixture directory");
+    const QDir output(directory);
+    const auto wad = make_cios_wad();
+    write_bytes(output.filePath("cios.wad"), wad);
+    write_bytes(output.filePath("cios.wad.sha256"),
+                QCryptographicHash::hash(wad, QCryptographicHash::Sha256).toHex() + '\n');
+    create_empty_nand(output.filePath("empty-nand.bin"));
   }
 
   void test_capacity_helpers(std::span<std::uint8_t> image) {
@@ -331,6 +381,58 @@ namespace {
     rejects([&] { install(second_wad); }, "Installed title content conflicts with WAD");
     check(before_corrupt == buffer_digest(image), "Invalid shared content changed during WAD reapplication");
   }
+
+  void test_cios_installation(const QString& temporary_path) {
+    const auto nand_path = QDir(temporary_path).filePath("cios-empty-nand.bin");
+    create_empty_nand(nand_path);
+    auto image = read_bytes(nand_path, nand_file_size);
+    const auto wad = make_cios_wad();
+    const wiiform::CiosOptions options{249, 56, 65535, false};
+    const auto install = [&](const QByteArray& package, const wiiform::CiosOptions& target) {
+      return wiiform::core::install_cios(image, wad_bytes(package), wad_digest(package), target);
+    };
+
+    const auto installed = install(wad, options);
+    check(installed.title_id == 0x00000001000000f9ull && installed.version == 65535 &&
+              !installed.already_present,
+          "Fresh cIOS install returned the wrong title identity or outcome");
+    const auto after_install = buffer_digest(image);
+    const auto matched = install(wad, options);
+    check(matched.title_id == installed.title_id && matched.version == installed.version &&
+              matched.already_present,
+          "Exact cIOS reapplication was not reported as already installed");
+    check(after_install == buffer_digest(image), "Exact cIOS reapplication changed the NAND buffer");
+
+    const auto conflict = make_cios_wad(249, 56, 65535, 0, true, "beta4");
+    rejects_unchanged(image, [&] { install(conflict, options); }, "Installed title",
+                      "Conflicting cIOS WAD changed the NAND buffer");
+
+    const wiiform::CiosOptions wrong_slot{250, 56, 65535, false};
+    rejects_unchanged(image, [&] { install(wad, wrong_slot); },
+                      "WAD does not match requested cIOS slot",
+                      "Wrong-slot cIOS WAD changed the NAND buffer");
+    const wiiform::CiosOptions wrong_base{249, 58, 65535, false};
+    rejects_unchanged(image, [&] { install(wad, wrong_base); },
+                      "valid d2x IOSINFO header for the requested base",
+                      "Wrong-base cIOS WAD changed the NAND buffer");
+    const wiiform::CiosOptions wrong_revision{249, 56, 21010, false};
+    rejects_unchanged(image, [&] { install(wad, wrong_revision); },
+                      "WAD does not match requested cIOS revision",
+                      "Wrong-revision cIOS WAD changed the NAND buffer");
+
+    const auto vwii = make_cios_wad(249, 56, 65535, 1);
+    rejects_unchanged(image, [&] { install(vwii, options); }, "vWii WADs are unsupported",
+                      "vWii cIOS WAD changed the NAND buffer");
+    const auto no_iosinfo = make_cios_wad(249, 56, 65535, 0, false);
+    rejects_unchanged(image, [&] { install(no_iosinfo, options); },
+                      "valid d2x IOSINFO header for the requested base",
+                      "cIOS WAD without IOSINFO changed the NAND buffer");
+
+    const wiiform::CiosOptions replace{249, 56, 65535, true};
+    rejects_unchanged(image, [&] { install(conflict, replace); },
+                      "not an authentic Nintendo stub",
+                      "Replacing a non-stock cIOS changed the NAND buffer");
+  }
 }
 
 int main(int argc, char** argv) {
@@ -344,8 +446,13 @@ int main(int argc, char** argv) {
       create_empty_nand(QString::fromLocal8Bit(argv[2]));
       return 0;
     }
+    if (argc == 3 && QString::fromLocal8Bit(argv[1]) == "--make-cios-fixture") {
+      make_cios_fixture(QString::fromLocal8Bit(argv[2]));
+      return 0;
+    }
     check(argc == 1,
-          "Usage: nand-buffer-regressions [--make-fixtures DIR] [--make-empty-fixture PATH]");
+          "Usage: nand-buffer-regressions [--make-fixtures DIR] [--make-empty-fixture PATH] "
+          "[--make-cios-fixture DIR]");
     std::async(std::launch::async, [] {
       rejects([] { wiiform::core::remove_title({}, 0); }, "QCoreApplication thread");
     }).get();
@@ -361,6 +468,7 @@ int main(int argc, char** argv) {
     }
     test_wad_installation(temporary.path());
     test_shared_wad_matching(temporary.path());
+    test_cios_installation(temporary.path());
     std::cout << "NAND buffer capacity, rejection, and WAD matching checks passed\n";
     return 0;
   } catch (const std::exception& error) {

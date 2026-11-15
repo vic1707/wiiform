@@ -71,15 +71,18 @@ namespace working_image {
   }
 
   void require_capacity(NandBin& nand, const QTreeWidgetItem* root, int orphan_entries,
-                        int needed_entries, quint64 needed_clusters) {
+                        int needed_entries, quint64 needed_clusters,
+                        int released_entries, quint64 released_clusters) {
     constexpr int fst_slot_count = 0x17ff;
     const auto used_entries = count_fst_entries(root) + orphan_entries;
-    if (used_entries > fst_slot_count || needed_entries > fst_slot_count - used_entries)
+    if (released_entries < 0 || released_entries > used_entries ||
+        used_entries - released_entries > fst_slot_count ||
+        needed_entries > fst_slot_count - (used_entries - released_entries))
       throw std::runtime_error("Insufficient free NAND FST entries");
     const auto fats = nand.GetFats();
     if (fats.size() != 0x8000) throw std::runtime_error("Invalid NAND allocation table");
     const auto free_clusters = static_cast<quint64>(std::count(fats.cbegin(), fats.cend(), 0xfffe));
-    if (needed_clusters >= free_clusters)
+    if (needed_clusters >= free_clusters + released_clusters)
       throw std::runtime_error("Insufficient NAND space (one cluster is reserved)");
   }
 }

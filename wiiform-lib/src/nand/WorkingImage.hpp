@@ -20,5 +20,6 @@ namespace working_image {
   auto entry_id(const QTreeWidgetItem* item) -> quint16;
   auto read_authenticated_file(NandBin& nand, const QTreeWidgetItem* item, quint64 maximum) -> QByteArray;
   void require_capacity(NandBin& nand, const QTreeWidgetItem* root, int orphan_entries,
-                        int needed_entries, quint64 needed_clusters);
+                        int needed_entries, quint64 needed_clusters,
+                        int released_entries = 0, quint64 released_clusters = 0);
 }

@@ -50,6 +50,13 @@ namespace wiiform {
     Sha256 original_footer;
   };
 
+  struct CiosOptions {
+    std::uint8_t slot;
+    std::uint8_t base;
+    std::uint16_t revision;
+    bool replace_stock_stub;
+  };
+
   struct InstalledWad {
     std::uint64_t title_id;
     std::uint16_t region;
