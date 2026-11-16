@@ -123,9 +123,11 @@ the encoded original settings. Wiiform verifies these before retargeting the
 settings to the requested menu. Optional `info` shows the recognized BootMii
 status and readable footer header.
 
-The footer digest covers the original padding and header bytes. BackupMii
-preparation normalizes a recognized NAND Dumper header after matching its
-console ID against OTP. The build publishes the resulting footer as `keys.bin`.
+The seed digest covers the original footer, including its text header and
+padding. Stock creation writes a BackupMii text header using the OTP console
+ID and emits a warning if the header changed. The binary key data and its
+padding remain byte-identical to the seed. The build publishes the verified
+NAND footer as `keys.bin`.
 Use `wiiform --seed -` to read plaintext YAML from stdin.
 
 ## Release archive and mise

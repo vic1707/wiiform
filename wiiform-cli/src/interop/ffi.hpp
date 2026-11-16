@@ -32,5 +32,5 @@ namespace wiiform::ffi {
   void remove_title(Nand nand, std::uint64_t title_id);
   void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
                        const PriiloaderSettings& settings, Bytes enabled_hacks);
-  auto prepare_backupmii(Nand nand, const StockIdentity& expected) -> rust::Vec<std::uint8_t>;
+  void verify_generated_nand(Bytes nand, const StockIdentity& expected);
 }

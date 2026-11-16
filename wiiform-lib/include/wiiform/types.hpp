@@ -47,7 +47,8 @@ namespace wiiform {
 
   struct StockIdentity {
     Sha256 boot_area;
-    Sha256 original_footer;
+    Sha256 footer;
+    bool backupmii_header_replaced;
   };
 
   struct CiosOptions {

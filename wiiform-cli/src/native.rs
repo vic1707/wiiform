@@ -165,6 +165,6 @@ pub fn apply_priiloader(
     )?)
 }
 
-pub fn prepare_backupmii(nand: &mut [u8], expected: &StockIdentity) -> Result<Vec<u8>> {
-    Ok(ffi::prepare_backupmii(nand, expected)?)
+pub fn verify_generated_nand(nand: &[u8], expected: &StockIdentity) -> Result<()> {
+    Ok(ffi::verify_generated_nand(nand, expected)?)
 }

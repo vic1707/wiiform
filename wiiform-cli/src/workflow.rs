@@ -121,6 +121,9 @@ fn build_with(
         .transpose()?;
     let (mut nand, identity) =
         create_stock(&options, &recipe).context("cannot create stock NAND")?;
+    if identity.backupmii_header_replaced {
+        eprintln!("warning: replaced the seed's key footer header with a BackupMii header");
+    }
 
     let removals: Vec<_> = removals.iter().map(|id| id.as_u64()).collect();
     for &id in &removals {
@@ -177,9 +180,8 @@ fn build_with(
         .context("cannot install or configure Priiloader")?;
     }
 
-    let keys = native::prepare_backupmii(&mut nand, &identity)
-        .context("cannot prepare BackupMii footer")?;
-    publish_bundle(&nand, &keys, &options.output)
+    native::verify_generated_nand(&nand, &identity).context("cannot verify generated NAND")?;
+    publish_bundle(&nand, &options.output)
 }
 
 fn warn_region(wad: &InstalledWad, menu: Menu) {
@@ -295,7 +297,7 @@ pub fn publish_edit(nand: &[u8], output: &Path) -> Result<()> {
     rename_noreplace(&candidate, output).context("cannot publish edited NAND")
 }
 
-fn publish_bundle(nand: &[u8], keys: &[u8], output: &Path) -> Result<()> {
+fn publish_bundle(nand: &[u8], output: &Path) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wiiform-")
         .permissions(fs::Permissions::from_mode(0o700))
@@ -304,7 +306,8 @@ fn publish_bundle(nand: &[u8], keys: &[u8], output: &Path) -> Result<()> {
     fs::create_dir(&bundle)?;
     fs::set_permissions(&bundle, fs::Permissions::from_mode(0o700))?;
     write_private(&bundle.join("nand.bin"), nand).context("cannot write NAND")?;
-    write_private(&bundle.join("keys.bin"), keys).context("cannot write keys sidecar")?;
+    write_private(&bundle.join("keys.bin"), &nand[native::RAW_NAND_BYTES..])
+        .context("cannot write keys sidecar")?;
     File::open(&bundle)?.sync_all()?;
     rename_noreplace(&bundle, output).context("cannot publish NAND restore bundle")
 }
@@ -409,7 +412,8 @@ mod tests {
                 nand,
                 StockIdentity {
                     boot_area: [0; 32],
-                    original_footer: [0; 32],
+                    footer: [0; 32],
+                    backupmii_header_replaced: false,
                 },
             ))
         })

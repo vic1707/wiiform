@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 namespace wiiform::core {
   // Call on the QCoreApplication thread. If no application exists, make the
@@ -15,6 +14,7 @@ namespace wiiform::core {
   // the working buffer if an exception occurs after a write has started.
   // An empty NUS cache path keeps downloads in memory. Offline requests
   // require a populated cache.
+  // Writes a canonical BackupMii header using the console ID in the seed's OTP.
   auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
                     const std::string& nus_cache_dir, Menu menu, BootPolicy boot_policy,
                     bool offline) -> StockIdentity;
@@ -29,7 +29,6 @@ namespace wiiform::core {
   void apply_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app,
                          std::span<const std::uint8_t> hacks_hash_ini, const PriiloaderSettings& settings,
                          std::span<const Hack> enabled_hacks);
-  auto prepare_backupmii(std::span<std::uint8_t> nand, const StockIdentity& expected)
-      -> std::vector<std::uint8_t>;
+  void verify_generated_nand(std::span<const std::uint8_t> nand, const StockIdentity& expected);
 
 }

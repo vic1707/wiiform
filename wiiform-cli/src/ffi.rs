@@ -48,7 +48,8 @@ pub mod bridge {
 
     struct StockIdentity {
         boot_area: [u8; 32],
-        original_footer: [u8; 32],
+        footer: [u8; 32],
+        backupmii_header_replaced: bool,
     }
 
     struct ConsoleSettings {
@@ -132,6 +133,6 @@ pub mod bridge {
             settings: &PriiloaderSettings,
             enabled_hacks: &[u8],
         ) -> Result<()>;
-        fn prepare_backupmii(nand: &mut [u8], expected: &StockIdentity) -> Result<Vec<u8>>;
+        fn verify_generated_nand(nand: &[u8], expected: &StockIdentity) -> Result<()>;
     }
 }

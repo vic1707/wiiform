@@ -4,13 +4,6 @@
 
 namespace wiiform::ffi {
 namespace {
-  auto rust_bytes(std::span<const std::uint8_t> bytes) -> rust::Vec<std::uint8_t> {
-    rust::Vec<std::uint8_t> result;
-    result.reserve(bytes.size());
-    for (const auto byte : bytes) result.push_back(byte);
-    return result;
-  }
-
   template<class T>
   auto span(const rust::Slice<T>& bytes) -> std::span<T> {
     return {bytes.data(), bytes.size()};
@@ -54,7 +47,7 @@ auto create_stock(const StockSeed& source, Nand nand, rust::Str cache,
   const auto result = core::create_stock(seed, span(nand), std::string(cache),
       static_cast<wiiform::Menu>(options.menu), static_cast<wiiform::BootPolicy>(options.boot_policy),
       options.offline);
-  return {result.boot_area, result.original_footer};
+  return {result.boot_area, result.footer, result.backupmii_header_replaced};
 }
 
 void apply_system_settings(Nand nand, const SystemSettings& settings) {
@@ -102,8 +95,7 @@ void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
   core::apply_priiloader(span(nand), span(app), span(definitions), overrides, requested);
 }
 
-auto prepare_backupmii(Nand nand, const StockIdentity& expected) -> rust::Vec<std::uint8_t> {
-  const auto keys = core::prepare_backupmii(span(nand), {expected.boot_area, expected.original_footer});
-  return rust_bytes(keys);
+void verify_generated_nand(Bytes nand, const StockIdentity& expected) {
+  core::verify_generated_nand(span(nand), {expected.boot_area, expected.footer, expected.backupmii_header_replaced});
 }
 }
