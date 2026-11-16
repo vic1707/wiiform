@@ -2,5 +2,11 @@
 members = ["wiiform-cli", "wiiform-cli/recipe"]
 resolver = "3"
 
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde-saphyr = "=2.1.1"
+
 [workspace.lints.clippy]
 all = "deny"

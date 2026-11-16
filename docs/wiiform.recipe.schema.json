@@ -115,22 +115,39 @@
         "target"
       ]
     },
+    "CiosBase": {
+      "description": "Stock IOS a d2x cIOS is built on.",
+      "type": "integer",
+      "format": "uint8",
+      "enum": [
+        38,
+        56,
+        57,
+        58
+      ],
+      "maximum": 255,
+      "minimum": 0
+    },
+    "CiosSlot": {
+      "description": "IOS slot a cIOS may be installed to.",
+      "type": "integer",
+      "format": "uint8",
+      "enum": [
+        248,
+        249,
+        250,
+        251
+      ],
+      "maximum": 255,
+      "minimum": 0
+    },
     "CiosTarget": {
       "description": "Expected identity and replacement policy for a prebuilt Wii d2x WAD.",
       "type": "object",
       "properties": {
         "base": {
           "description": "Base IOS declared by the d2x payload.",
-          "type": "integer",
-          "format": "uint8",
-          "enum": [
-            38,
-            56,
-            57,
-            58
-          ],
-          "maximum": 255,
-          "minimum": 0
+          "$ref": "#/$defs/CiosBase"
         },
         "replace_stock_stub": {
           "description": "Permit replacement of the verified Nintendo stub in slot 249 or 250.",
@@ -146,10 +163,7 @@
         },
         "slot": {
           "description": "Destination IOS slot (248–251).",
-          "type": "integer",
-          "format": "uint8",
-          "maximum": 251,
-          "minimum": 248
+          "$ref": "#/$defs/CiosSlot"
         }
       },
       "additionalProperties": false,

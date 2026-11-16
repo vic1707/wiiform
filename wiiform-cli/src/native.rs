@@ -269,8 +269,8 @@ impl Session {
         target: &CiosTarget,
     ) -> Result<InstalledWad> {
         let options = ffi::CiosOptions {
-            slot: target.slot,
-            base: target.base,
+            slot: target.slot.get(),
+            base: target.base.get(),
             revision: target.revision,
             replace_stock_stub: target.replace_stock_stub,
         };

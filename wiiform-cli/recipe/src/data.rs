@@ -9,29 +9,27 @@ use anyhow::{Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::read_bounded;
+use crate::{read_bounded, yaml::Binary};
 
 /// Data supplied by one local file, inline in a recipe, or over HTTPS.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum Data<T> {
+pub enum Data {
     /// Local path, relative to the recipe.
     Path(PathBuf),
     /// Data carried in the recipe itself.
-    Inline(T),
+    Inline(Binary),
     /// HTTPS URL for the raw file.
     Url(String),
 }
 
-impl<T> Data<T> {
+impl Data {
     pub(crate) fn rebase(&mut self, directory: &Path) {
         if let Self::Path(path) = self {
             *path = directory.join(&*path);
         }
     }
-}
 
-impl<T: AsRef<[u8]>> Data<T> {
     pub fn resolve(
         &self,
         bounds: RangeInclusive<usize>,

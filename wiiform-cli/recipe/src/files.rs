@@ -3,6 +3,7 @@ use std::{
     fs::{File, Metadata, OpenOptions},
     io::Read,
     ops::RangeInclusive,
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -47,11 +48,8 @@ impl clap::builder::ValueParserFactory for ResolvedPath {
 pub fn open_regular_file(path: &Path) -> Result<(File, Metadata)> {
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NONBLOCK);
-    }
+    // Opening a FIFO or device must not block before it is rejected below.
+    options.custom_flags(libc::O_NONBLOCK);
     let file = options
         .open(path)
         .with_context(|| format!("cannot open {}", path.display()))?;

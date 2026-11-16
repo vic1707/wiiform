@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::Sha256;
-use crate::{Data, ResolvedPath, yaml::Binary};
+use crate::{Data, ResolvedPath};
 
 pub(crate) const WAD_BOUNDS: RangeInclusive<usize> = 0x40..=0x2100_0000;
 
@@ -19,7 +19,7 @@ pub(crate) const WAD_BOUNDS: RangeInclusive<usize> = 0x40..=0x2100_0000;
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "{Options}")]
 pub struct Wad<Options> {
-    pub(crate) source: Data<Binary>,
+    pub(crate) source: Data,
     /// SHA-256 of the exact WAD bytes.
     sha256: Sha256,
     // Keep source as a direct field so serde-saphyr can read the !!binary tag.

@@ -149,7 +149,7 @@ fn build_with(
     }
 
     // Everything the recipe needs is loaded before the long stock build starts.
-    let (recipe, removals) = Recipe::load(&options.recipe, options.menu)?;
+    let recipe = Recipe::load(&options.recipe, options.menu)?;
     let priiloader = recipe
         .priiloader
         .as_ref()
@@ -192,7 +192,7 @@ fn build_with(
     let (mut nand, identity) =
         create_stock(&session, &recipe).context("cannot create stock NAND")?;
 
-    for &id in &removals {
+    for &id in &recipe.removals {
         session
             .remove_title(&mut nand, id)
             .with_context(|| format!("cannot remove title {id}"))?;
@@ -209,7 +209,7 @@ fn build_with(
             .install_wad(&mut nand, wad, sha256, *kind)
             .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
-            !removals.contains(&installed.title_id),
+            !recipe.removals.contains(&installed.title_id),
             "recipe both removes and installs title {}",
             installed.title_id
         );

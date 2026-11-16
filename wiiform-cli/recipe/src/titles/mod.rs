@@ -10,7 +10,7 @@ mod wad;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub use cios::{Cios, CiosOptions, CiosTarget};
+pub use cios::{Cios, CiosBase, CiosOptions, CiosSlot, CiosTarget};
 pub use removal::{RemovalInput, RemovalName};
 pub use sha256::Sha256;
 pub use title_id::TitleId;

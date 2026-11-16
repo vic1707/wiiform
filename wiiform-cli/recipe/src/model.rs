@@ -7,34 +7,49 @@ use serde::Deserialize;
 
 use crate::{Cios, Hbc, Menu, Priiloader, RemovalInput, ResolvedPath, Setup, Title, TitleId};
 
+// The recipe as its author writes it. Not a doc comment: it would become the schema description.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Recipe {
+#[schemars(rename = "Recipe")]
+pub(crate) struct RecipeFile {
     /// Stock System Menu target (4.3E, 4.3U, or 4.3J).
-    pub menu: Menu,
+    menu: Menu,
     /// Channels to remove. Names expand using the effective menu's region.
     #[serde(default)]
     remove: Vec<RemovalInput>,
     /// Supply a mapping to complete first-run setup with these settings and defaults.
     /// Omit this section or use null to run the Wii setup wizard.
     #[serde(default)]
-    pub setup: Option<Setup>,
+    setup: Option<Setup>,
     /// WADs to install from a local file, inline bytes, or an HTTPS URL.
     #[serde(default)]
-    pub titles: Vec<Title>,
+    titles: Vec<Title>,
     /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
     #[serde(default)]
-    pub cios: Vec<Cios>,
+    cios: Vec<Cios>,
     /// Optional Homebrew Channel from a tagged Reborn release or a custom WAD.
     #[serde(default)]
-    pub hbc: Option<Hbc>,
+    hbc: Option<Hbc>,
     /// Optional pinned Priiloader install with settings and hacks.
     #[serde(default)]
+    priiloader: Option<Priiloader>,
+}
+
+/// A recipe checked against its effective menu, with removals expanded to
+/// title IDs and local paths resolved against the recipe's directory.
+#[derive(Debug)]
+pub struct Recipe {
+    pub menu: Menu,
+    pub removals: Vec<TitleId>,
+    pub setup: Option<Setup>,
+    pub titles: Vec<Title>,
+    pub cios: Vec<Cios>,
+    pub hbc: Option<Hbc>,
     pub priiloader: Option<Priiloader>,
 }
 
 impl Recipe {
-    pub fn load(path: &ResolvedPath, menu_override: Option<Menu>) -> Result<(Self, Vec<TitleId>)> {
+    pub fn load(path: &ResolvedPath, menu_override: Option<Menu>) -> Result<Self> {
         let path = path.as_ref();
         Self::read(
             crate::open_regular_file(path)?.0,
@@ -44,32 +59,44 @@ impl Recipe {
         )
     }
 
-    fn read(
-        input: impl Read,
-        directory: &Path,
-        menu_override: Option<Menu>,
-    ) -> Result<(Self, Vec<TitleId>)> {
-        let mut recipe: Self =
+    fn read(input: impl Read, directory: &Path, menu_override: Option<Menu>) -> Result<Self> {
+        let mut file: RecipeFile =
             serde_saphyr::from_reader_with_options(input, crate::yaml::options())
                 .context("invalid recipe YAML")?;
-        let mut remove = recipe.validate_menu(recipe.menu)?;
-        if let Some(menu) = menu_override.filter(|menu| *menu != recipe.menu) {
-            remove = recipe.validate_menu(menu)?;
-            recipe.menu = menu;
+        // The declared menu must be valid on its own, even when it is overridden.
+        let mut removals = file.validate_menu(file.menu)?;
+        if let Some(menu) = menu_override.filter(|menu| *menu != file.menu) {
+            removals = file.validate_menu(menu)?;
+            file.menu = menu;
+        }
+        let mut slots = HashSet::new();
+        for cios in &file.cios {
+            let slot = cios.options.target.slot;
+            ensure!(slots.insert(slot), "recipe lists cIOS slot {slot} twice");
         }
 
-        for title in &mut recipe.titles {
+        for title in &mut file.titles {
             title.rebase(directory);
         }
-        for cios in &mut recipe.cios {
+        for cios in &mut file.cios {
             cios.rebase(directory);
         }
-        if let Some(hbc) = &mut recipe.hbc {
+        if let Some(hbc) = &mut file.hbc {
             hbc.rebase(directory);
         }
-        Ok((recipe, remove))
+        Ok(Self {
+            menu: file.menu,
+            removals,
+            setup: file.setup,
+            titles: file.titles,
+            cios: file.cios,
+            hbc: file.hbc,
+            priiloader: file.priiloader,
+        })
     }
+}
 
+impl RecipeFile {
     fn validate_menu(&self, menu: Menu) -> Result<Vec<TitleId>> {
         if let Some(setup) = &self.setup {
             ensure!(
@@ -111,7 +138,9 @@ mod tests {
     const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     fn read(yaml: &str, menu: Option<Menu>) -> Result<(Recipe, Vec<TitleId>)> {
-        Recipe::read(yaml.as_bytes(), Path::new("."), menu)
+        let recipe = Recipe::read(yaml.as_bytes(), Path::new("."), menu)?;
+        let removals = recipe.removals.clone();
+        Ok((recipe, removals))
     }
 
     fn no_fetch(_: &str, _: usize) -> Result<Vec<u8>> {
@@ -312,7 +341,7 @@ mod tests {
             format!("menu: 4.3E\ntitles: [{{source: {{path: linked.wad}}, sha256: {SHA}}}]"),
         )?;
         let recipe_path = ResolvedPath::try_from(recipe_path)?;
-        let (recipe, _) = Recipe::load(&recipe_path, None)?;
+        let recipe = Recipe::load(&recipe_path, None)?;
         let source = &recipe.titles[0].source;
         assert!(matches!(source, Data::Path(path) if path.ends_with("linked.wad")));
         let (bytes, sha256) = recipe.titles[0].resolve(no_fetch)?;
@@ -320,7 +349,7 @@ mod tests {
         assert_eq!(sha256.as_bytes(), &[0xaa; 32]);
         for bad in [".", "missing.wad"] {
             let yaml = format!("menu: 4.3E\ntitles: [{{source: {{path: {bad}}}, sha256: {SHA}}}]");
-            let (recipe, _) = Recipe::read(yaml.as_bytes(), &dir, None)?;
+            let recipe = Recipe::read(yaml.as_bytes(), &dir, None)?;
             assert!(recipe.titles[0].resolve(no_fetch).is_err());
         }
         fs::remove_dir_all(dir)?;
@@ -389,5 +418,21 @@ mod tests {
         assert!(recipe.priiloader.is_none());
         assert!(read("menu: 4.3E\npriiloader: {app: override.app}", None).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn cios_slots_and_bases_are_checked_when_the_recipe_is_read() {
+        let cios = |slot: u8, base: u8| {
+            format!(
+                "{{source: {{inline: !!binary /wAB}}, sha256: {SHA}, target: {{slot: {slot}, base: {base}, revision: 1}}}}"
+            )
+        };
+        let recipe =
+            |entries: &[String]| read(&format!("menu: 4.3E\ncios: [{}]", entries.join(", ")), None);
+        assert!(recipe(&[cios(249, 56), cios(250, 57)]).is_ok());
+        assert!(recipe(&[cios(247, 56)]).is_err());
+        assert!(recipe(&[cios(249, 55)]).is_err());
+        let duplicate = recipe(&[cios(249, 56), cios(249, 57)]).unwrap_err();
+        assert!(format!("{duplicate:#}").contains("twice"), "{duplicate:#}");
     }
 }

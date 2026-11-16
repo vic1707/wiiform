@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use semver::Version;
 use serde::Deserialize;
 
-use crate::{Data, Sha256, titles::WAD_BOUNDS, yaml::Binary};
+use crate::{Data, Sha256, titles::WAD_BOUNDS};
 
 const REPO: &str = "Monsterray/hbc-reborn";
 
@@ -23,10 +23,7 @@ pub enum Hbc {
         sha256: Option<Sha256>,
     },
     /// Install a user-supplied, hash-pinned Homebrew Channel WAD.
-    Custom {
-        source: Data<Binary>,
-        sha256: Sha256,
-    },
+    Custom { source: Data, sha256: Sha256 },
 }
 
 #[derive(Deserialize)]
