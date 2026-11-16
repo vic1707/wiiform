@@ -2,15 +2,9 @@ package("wiiqt-nand")
   set_description("WiiQt NAND support")
   set_homepage("https://github.com/vic1707/wiiqt-tools")
   set_license("GPL-2.0-only")
-  add_urls("https://github.com/vic1707/wiiqt-tools.git")
-  add_versions("0.1.3", "42536a2c3becf384687a64a3d9ddadad435dc22b")
-  add_versions("0.1.5", "42536a2c3becf384687a64a3d9ddadad435dc22b")
-  add_patches("0.1.3", path.join(os.scriptdir(), "patches", "wiiqt-read-only.patch"),
-              "7c0eb3912a3628535d763e03528c0456467f4fac577c7639aeae67ef3396d3f6")
-  add_patches("0.1.5", path.join(os.scriptdir(), "patches", "wiiqt-read-only.patch"),
-              "7c0eb3912a3628535d763e03528c0456467f4fac577c7639aeae67ef3396d3f6")
-  add_patches("0.1.5", path.join(os.scriptdir(), "patches", "wiiqt-buffer-device.patch"),
-              "0ed93ea99d267672fb9507fb572aae81ea610ed4120efe481116cf67578879da")
+  -- WIIQT_GIT_URL points the build at a local checkout of the fork while developing against it.
+  add_urls(os.getenv("WIIQT_GIT_URL") or "https://github.com/vic1707/wiiqt-tools.git")
+  add_versions("0.2.0", "4eca605e85b15b1c92b978a46f3cb68d105f7e42")
   add_configs("qt_sdk", {description = "Detected Qt SDK and version", type = "string", readonly = true})
   add_links("wiiqt-nand")
 
@@ -30,11 +24,9 @@ package("wiiqt-nand")
     os.mkdir(builddir)
     local args = {
       path.absolute("WiiQt/nand.pro"), "CONFIG-=debug_and_release",
-      "SOURCES+=" .. path.absolute("WiiQt/sharedcontentmap.cpp"),
       "CONFIG-=" .. (package:is_debug() and "release" or "debug"),
       "CONFIG+=" .. (package:is_debug() and "debug" or "release")
     }
-    table.insert(args, "DEFINES+=NAND_BIN_CAN_WRITE")
     os.vrunv(qmake.program, args, {curdir = builddir})
     import("package.tools.make").build(package, {}, {curdir = builddir})
     os.cp(path.join(builddir, "libwiiqt-nand.a"), package:installdir("lib"))

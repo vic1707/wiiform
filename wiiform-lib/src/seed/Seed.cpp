@@ -5,14 +5,12 @@
 #include <WorkingImage.hpp>
 #include <BootFlags.hpp>
 #include <nandbin.h>
+#include <tools.h>
 
 #include <QCryptographicHash>
 #include <QTreeWidgetItem>
-#include <QtEndian>
 
-#include <array>
 #include <cstring>
-#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -41,41 +39,6 @@ namespace {
     return result;
   }
 
-  auto crypt_settings(QByteArray data) -> QByteArray {
-    auto end = data.size();
-    while (end && data[end - 1] == '\0') --end;
-    quint32 key = 0x73b5dbfa;
-    for (int i = 0; i < end; ++i) {
-      data[i] = data[i] ^ static_cast<char>(key & 0xff);
-      key = (key << 1) | (key >> 31);
-    }
-    return data;
-  }
-
-  auto bootmii_15_marker(const QByteArray& boots, int first_block) -> bool {
-    constexpr int page_size = 0x840;
-    constexpr int data_size = 0x800;
-    constexpr int pages_per_block = 64;
-    constexpr int block_size = data_size * pages_per_block;
-    if (boots.size() != boot_size || first_block < 0 || first_block >= 8) return false;
-
-    QByteArray first(block_size, '\0');
-    for (int page = 0; page < pages_per_block; ++page) {
-      const auto source = (first_block * pages_per_block + page) * page_size;
-      first.replace(page * data_size, data_size, boots.constData() + source, data_size);
-    }
-    const auto* header = first.constData();
-    const auto header_size = qFromBigEndian<quint32>(header);
-    const quint64 cert_size = qFromBigEndian<quint32>(header + 8);
-    const quint64 ticket_size = qFromBigEndian<quint32>(header + 12);
-    const quint64 tmd_size = qFromBigEndian<quint32>(header + 16);
-    const quint64 tmd_offset = quint64(header_size) + cert_size + ticket_size;
-    if (header_size != 0x20 || tmd_size == 0 || tmd_offset > quint64(first.size()) ||
-        tmd_size > quint64(first.size()) - tmd_offset)
-      return false;
-    return first.mid(static_cast<int>(tmd_offset), static_cast<int>(tmd_size)).contains("BM1.5");
-  }
-
   auto footer_header(const QByteArray& keys) -> std::string {
     int size = 0;
     while (size < 0x100 && keys[size] != '\0' && static_cast<unsigned char>(keys[size]) >= 0x20 &&
@@ -100,12 +63,12 @@ namespace seed {
     }
     require(plain.size() <= 256, "Canonical console settings exceed setting.txt capacity");
     plain.append(QByteArray(256 - plain.size(), '\0'));
-    return crypt_settings(plain);
+    return SettingTxtCrypt(plain);
   }
 
   auto decode_settings(const QByteArray& raw) -> wiiform::ConsoleSettings {
     require(raw.size() == 256, "Expected a 256-byte setting.txt");
-    auto plain = crypt_settings(raw);
+    auto plain = SettingTxtCrypt(raw);
     const auto end = plain.indexOf('\0');
     require(end >= 0, "setting.txt has no NUL terminator");
     plain.truncate(end);
@@ -179,8 +142,7 @@ namespace seed {
       all_copies_stock &= stock;
       if (stock && (info.state & BOOT_2_USED_TO_BOOT) && !(info.state & BOOT_2_MARKED_BAD)) stock_primary = true;
       if (state == "fakesigned" && (info.state & BOOT_2_TMD_FAKESIGNED) &&
-          (info.version == BOOTMII_11 || info.version == BOOTMII_13 ||
-           (info.version == BOOTMII_UNK && bootmii_15_marker(boots, info.firstBlock))) &&
+          (info.version == BOOTMII_11 || info.version == BOOTMII_13 || info.version == BOOTMII_15) &&
           !(info.state & BOOT_2_MARKED_BAD))
         detected_bootmii = true;
     }

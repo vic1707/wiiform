@@ -55,8 +55,9 @@ GUI and hardware evidence, or an existing NUS cache and authorized console
 inputs. Its seed and recipe examples describe the older implementation.
 
 Use the `wiiqt-tools` fork for allocator, NAND layout, or dependency
-investigation. Check the pinned revision and the applied `xmake/patches/`
-before drawing conclusions from the fork's current branch. Xmake obtains the
+investigation. Check the pinned revision before drawing conclusions from
+the fork's current branch. WiiQt changes are commits in the fork; set
+`WIIQT_GIT_URL` to a local checkout's `.git` to build against them. Xmake obtains the
 pinned dependency for regular builds. [Xmake pin](../../../xmake/wiiqt-nand.lua)
 
 Use the directories and symlink targets the owner has approved. Keep original

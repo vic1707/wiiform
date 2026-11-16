@@ -40,8 +40,10 @@ c++ -std=c++20 -I"$WIIFORM_HOME/include" example.cpp \
 The project-owned C++ library wraps the following areas:
 
 - **WiiQt** provides the NAND filesystem, title access and related console
-  formats. The xmake package pins the `vic1707/wiiqt-tools` fork at commit
-  `42536a2c3becf384687a64a3d9ddadad435dc22b` with local patches for read-only file access and a random-access buffer backend.
+  formats, the NUS title lists and the setting.txt cipher. The xmake package
+  pins a commit of the `vic1707/wiiqt-tools` fork, which carries read-only file
+  access and a random-access buffer backend. Set `WIIQT_GIT_URL` to a local
+  checkout's `.git` directory to build against unpublished fork commits.
 - **Wiiform C++ code** owns the narrow library API, boot validation, seed
   extraction, stock image creation, title operations, WAD validation and install,
   SYSCONF writes, Priiloader files/settings, and BackupMii footer/key-sidecar
