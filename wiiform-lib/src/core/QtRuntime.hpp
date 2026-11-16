@@ -34,13 +34,21 @@ namespace wiiform::core::detail {
         active.clear();
         throw;
       }
+      // WiiQt narrates its work through qDebug and qWarning. Failures reach the caller as exceptions,
+      // so that chatter is dropped for the duration of a call unless WIIFORM_QT_MESSAGES is set.
+      if (!qEnvironmentVariableIsSet("WIIFORM_QT_MESSAGES"))
+        previous_handler = qInstallMessageHandler([](QtMsgType, const QMessageLogContext&, const QString&) {});
     }
 
     ApiCall(const ApiCall&) = delete;
     auto operator=(const ApiCall&) -> ApiCall& = delete;
-    ~ApiCall() { active.clear(); }
+    ~ApiCall() {
+      if (!qEnvironmentVariableIsSet("WIIFORM_QT_MESSAGES")) qInstallMessageHandler(previous_handler);
+      active.clear();
+    }
 
   private:
     inline static std::atomic_flag active;
+    QtMessageHandler previous_handler = nullptr;
   };
 }

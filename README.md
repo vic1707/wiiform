@@ -66,6 +66,9 @@ timeout and the same size limit as a local WAD. Use a local `path` or
 `inline` for a network-free build. `WIIFORM_NUS_OFFLINE` controls only
 Nintendo title downloads.
 
+WiiQt's own diagnostic messages are hidden; set `WIIFORM_QT_MESSAGES=1` to see
+them when investigating a failure.
+
 Use the `titles` list for downloadable channels and Nintendo-signed system
 channels or Wii IOS WADs for slots 3–253. The `allow-unsigned` policy applies to
 downloadable channels. Each entry verifies an exact installed match or installs
