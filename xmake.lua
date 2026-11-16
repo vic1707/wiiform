@@ -5,7 +5,6 @@ set_languages("cxx20")
 add_rules("mode.release", "mode.debug")
 
 includes("xmake/wiiqt-nand.lua")
-includes("xmake/priiloader.lua")
 add_requires("wiiqt-nand 0.2.0")
 
 local private_headers = {
