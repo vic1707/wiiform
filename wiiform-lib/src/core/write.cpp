@@ -95,13 +95,13 @@ auto create_stock(const StockSeed& seed, std::span<std::uint8_t> nand,
 }
 
 void verify_generated_nand(std::span<const std::uint8_t> nand, const StockIdentity& expected) {
+  const detail::ApiCall call;
   require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
   require(digest(view(nand.first(boot_area_size))) == expected.boot_area,
           "NAND boot area differs from the verified seed");
   require(digest(view(nand.last(footer_size))) == expected.footer,
           "NAND key footer differs from the stock build");
 
-  const detail::ApiCall call;
   const auto layout = inspect::validate_layout(nand, true);
   nand_buffer::Device device{nand};
   NandBin reopened;

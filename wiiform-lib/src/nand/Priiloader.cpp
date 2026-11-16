@@ -157,8 +157,9 @@ namespace {
       if (!existing) {
         ++needed_entries;
         needed_clusters += new_clusters;
-      } else if (file.replace) {
-        ++needed_entries;
+      } else {
+        // A replaced file is recreated before its old entry is reusable; one rewritten in place only grows.
+        if (file.replace) ++needed_entries;
         bool size_ok = false;
         const auto old_size = existing->text(2).toULongLong(&size_ok, 16);
         require(size_ok, "Invalid Priiloader configuration file size");
