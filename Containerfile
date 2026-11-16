@@ -6,7 +6,7 @@ FROM ghcr.io/jdx/mise:2026.11.8-debian AS builder
 RUN . /etc/os-release && test "$VERSION_ID" = 13 \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl git patchelf pax-utils python3 \
+        build-essential ca-certificates curl git libncurses6 patchelf pax-utils python3 \
         qt5-qmake qtbase5-dev xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
