@@ -140,31 +140,14 @@ struct ConsoleSettingsSerde {
     game: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+/// Notes for the reader of a seed. Builds do not use them.
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SeedInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    bootmii_boot2: Option<BootMiiState>,
+    bootmii_boot2: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     footer_header: Option<String>,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum BootMiiState {
-    Detected,
-    Stock,
-    Unknown,
-}
-
-impl From<ffi::BootMiiState> for BootMiiState {
-    fn from(state: ffi::BootMiiState) -> Self {
-        match state {
-            ffi::BootMiiState::Detected => Self::Detected,
-            ffi::BootMiiState::Stock => Self::Stock,
-            _ => Self::Unknown,
-        }
-    }
 }
 
 fn digest(bytes: impl AsRef<[u8]>) -> Sha256 {
@@ -198,6 +181,11 @@ fn encode_xz(boot: &[u8]) -> Result<Vec<u8>> {
 
 /// Write native extraction data as the stable plaintext seed YAML format.
 fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
+    let bootmii = match parts.bootmii {
+        ffi::BootMiiState::Detected => "detected",
+        ffi::BootMiiState::Stock => "stock",
+        _ => "unknown",
+    };
     let manifest = SeedManifest {
         keys: KeyFooter {
             sha256: digest(&parts.keys),
@@ -213,7 +201,7 @@ fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
             fields: parts.settings,
         },
         info: Some(SeedInfo {
-            bootmii_boot2: Some(parts.bootmii.into()),
+            bootmii_boot2: Some(bootmii.to_owned()),
             footer_header: (!parts.footer_header.is_empty()).then_some(parts.footer_header),
         }),
     };
