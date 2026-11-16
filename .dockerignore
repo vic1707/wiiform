@@ -9,3 +9,4 @@ target/
 *.nand.bin
 keys.bin
 nand.bin
+vendor/

@@ -88,7 +88,7 @@ directory operation after the last native check succeeds.
 `mise run test` runs the C++ tests (`xmake test`), rustfmt, Clippy and the
 Rust tests. One Rust test compares the committed JSON Schema under `docs/`
 with the recipe types; `mise run schema` rewrites the file. `mise run image`
-builds the container images. Every task is a few lines in `.mise.toml`.
+builds the container images. Every task is a few lines in `mise-tasks.toml`.
 
 ## Update an existing recipe
 

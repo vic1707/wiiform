@@ -23,7 +23,7 @@ mise run test
 
 `mise run build` builds the C++ library with xmake, then the Rust commands with
 Cargo, and puts them in `build/bin/`. `mise tasks` lists the tasks; they are
-all defined in `.mise.toml`.
+all defined in `mise-tasks.toml`.
 
 ```sh
 build/bin/wiiform --help
