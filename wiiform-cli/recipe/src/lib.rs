@@ -20,7 +20,9 @@ pub use priiloader::{
     ShutdownTo,
 };
 pub use schema::json_schema;
-pub use system::{Aspect, CountryCode, Display, Language, Menu, Nickname, SensorBar, Setup};
+pub use system::{
+    Aspect, CountryCode, Display, Language, Menu, Nickname, Region, SensorBar, Setup,
+};
 pub use titles::{
     Cios, CiosOptions, CiosTarget, RemovalInput, RemovalName, Sha256, SignaturePolicy, Title,
     TitleId, TitleOptions, Wad,

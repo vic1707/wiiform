@@ -3,12 +3,13 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    native, priiloader_payload,
+    native::{Nand, Session, WadKind},
+    priiloader_payload,
     recipe::{
         Cios, CiosOptions, CiosTarget, HackSettings, PriiloaderSettings, ResolvedPath, Sha256,
-        SignaturePolicy, Title, TitleId, TitleOptions, read_bounded,
+        Title, TitleId, TitleOptions,
     },
-    workflow::{nus_environment, prepare_nus_cache, publish_edit, validate_output},
+    workflow::{NusCache, publish_edit, validate_output, warn_if_already_present},
 };
 
 #[derive(Parser)]
@@ -27,10 +28,12 @@ struct ImagePaths {
 }
 
 impl ImagePaths {
-    fn edit(self, operation: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
+    /// Runs one edit on a copy of the input and publishes it only if the edit succeeds.
+    fn edit(self, operation: impl FnOnce(&Session, &mut Nand) -> Result<()>) -> Result<()> {
         validate_output(&self.output)?;
-        let mut nand = read_bounded(self.input.as_ref(), native::NAND_BYTES..=native::NAND_BYTES)?;
-        operation(&mut nand)?;
+        let session = Session::acquire()?;
+        let mut nand = Nand::read(self.input.as_ref())?;
+        operation(&session, &mut nand)?;
         publish_edit(&nand, &self.output)
     }
 }
@@ -98,10 +101,10 @@ fn run(cli: Cli) -> Result<()> {
             title_id,
             version,
         } => {
-            let (cache, offline) = nus_environment()?;
-            image.edit(|nand| {
-                prepare_nus_cache(&cache, offline)?;
-                native::install_nus_title(nand, &cache, title_id.as_u64(), version, offline)
+            let cache = NusCache::from_environment()?;
+            image.edit(|session, nand| {
+                cache.prepare()?;
+                session.install_nus_title(nand, &cache, title_id, version)
             })
         }
         Command::InstallWad {
@@ -110,14 +113,15 @@ fn run(cli: Cli) -> Result<()> {
             sha256,
             allow_unverified_signatures,
         } => {
-            let signature_policy = if allow_unverified_signatures {
-                SignaturePolicy::AllowUnsigned
+            let kind = if allow_unverified_signatures {
+                WadKind::LegacyChannel
             } else {
-                SignaturePolicy::Nintendo
+                WadKind::Standard
             };
-            let title = Title::from_argument(wad, sha256, TitleOptions { signature_policy })?;
-            image.edit(|nand| {
-                native::install_wad(nand, &title)?.warn_if_already_present();
+            let title = Title::from_argument(wad, sha256, TitleOptions::default())?;
+            let (wad, sha256) = title.resolve(wiiform::fetch)?;
+            image.edit(|session, nand| {
+                warn_if_already_present(&session.install_wad(nand, &wad, sha256, kind)?);
                 Ok(())
             })
         }
@@ -128,13 +132,15 @@ fn run(cli: Cli) -> Result<()> {
             target,
         } => {
             let cios = Cios::from_argument(wad, sha256, CiosOptions { target })?;
-            image.edit(|nand| {
-                native::install_cios(nand, &cios)?.warn_if_already_present();
+            let (wad, sha256) = cios.resolve(wiiform::fetch)?;
+            image.edit(|session, nand| {
+                let installed = session.install_cios(nand, &wad, sha256, &cios.options.target)?;
+                warn_if_already_present(&installed);
                 Ok(())
             })
         }
         Command::RemoveTitle { image, title_id } => {
-            image.edit(|nand| native::remove_title(nand, title_id.as_u64()))
+            image.edit(|session, nand| session.remove_title(nand, title_id))
         }
         Command::InstallPriiloader {
             image,
@@ -142,7 +148,11 @@ fn run(cli: Cli) -> Result<()> {
             hacks,
         } => {
             let (app, definitions) = priiloader_payload::load()?;
-            image.edit(|nand| native::apply_priiloader(nand, &app, &definitions, &settings, &hacks))
+            image.edit(|session, nand| {
+                session.install_priiloader(nand, &app)?;
+                session.configure_priiloader(nand, &settings)?;
+                session.set_priiloader_hacks(nand, &definitions, &hacks)
+            })
         }
     }
 }

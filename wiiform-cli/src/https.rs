@@ -29,7 +29,7 @@ fn allowed_url(url: &Url) -> bool {
         && url.fragment().is_none()
 }
 
-pub(crate) fn fetch(url: &str, limit: usize) -> Result<Vec<u8>> {
+pub fn fetch(url: &str, limit: usize) -> Result<Vec<u8>> {
     let url = Url::parse(url).context("invalid package URL")?;
     ensure!(
         allowed_url(&url),

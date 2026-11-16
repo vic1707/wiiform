@@ -191,66 +191,92 @@ namespace {
   }
 }
 
-namespace priiloader {
-  void apply(std::span<std::uint8_t> image, std::span<const std::uint8_t> app_bytes,
-             std::span<const std::uint8_t> definition_bytes,
-             const wiiform::PriiloaderSettings& settings,
-             std::span<const wiiform::Hack> enabled_hacks) {
-    require(app_bytes.empty() || app_bytes.size() == release_app_size,
-            "Expected the extracted Priiloader 0.10.0 Wii app");
-    const auto app = QByteArray::fromRawData(reinterpret_cast<const char*>(app_bytes.data()),
-                                             static_cast<int>(app_bytes.size()));
-    require(app.isEmpty() || priiloader::is_release_app(app),
-            "Priiloader app SHA-256 does not match the pinned release");
-
-    working_image::Image working(image);
-    auto& nand = working.nand;
-    inspect::verify_filesystem(nand, false, working.layout.active_metadata);
-    const auto evidence = inspect::priiloader_evidence(nand);
-    const bool installing = evidence.layout == inspect::PriiloaderLayout::StockBoot;
-    require(installing || evidence.layout == inspect::PriiloaderLayout::Installed,
-            "Priiloader preparation needs a stock System Menu or an existing Priiloader layout");
-    const int version = menu_version(evidence);
-
-    QMap<QString, PendingFile> files;
-    if (installing) {
-      require(!app.isEmpty(), "Installing Priiloader requires the pinned app payload");
-      inspect::verify_stock_titles(
-          nand, {{0x100000002ull, static_cast<quint16>(version)}, {0x100000050ull, 6944}});
-      require_clean_menu_data(nand);
-      const auto& app_path = evidence.boot_app_path;
-      const auto& backup_path = evidence.backup_app_path;
-      require(!backup_path.isEmpty(),
-              "System Menu boot CID does not support the Wii Priiloader backup layout");
-      for (const auto& path : {backup_path, original_tmd_path, content + "ticket"})
-        require(!find_path(nand, path), "Priiloader installer backup or ticket already exists");
-      const auto tmd = read_authenticated_file(nand, find_path(nand, tmd_path), tmd_limit);
-      const auto original = read_authenticated_file(nand, find_path(nand, app_path), menu_app_limit);
-      const auto ticket = authentic_ticket(nand, tmd);
-      files["backup_app"] = {backup_path, original};
-      files["backup_tmd"] = {original_tmd_path, tmd, 0};
-      files["boot_app"] = {app_path, app, NAND_RW, true};
-      files["ticket"] = {content + "ticket", ticket};
-      files["tmd"] = {tmd_path, patched_tmd(tmd, app), 0, true};
-    } else {
-      require_installed_menu(nand, evidence);
+namespace {
+  // One Priiloader operation on a filesystem that authenticates completely.
+  struct Operation {
+    explicit Operation(std::span<std::uint8_t> buffer) : image(buffer), working(buffer) {
+      inspect::verify_filesystem(working.nand, false, working.layout.active_metadata);
+      evidence = inspect::priiloader_evidence(working.nand);
+      require(evidence.layout == inspect::PriiloaderLayout::StockBoot ||
+                  evidence.layout == inspect::PriiloaderLayout::Installed,
+              "Priiloader preparation needs a stock System Menu or an existing Priiloader layout");
+      version = menu_version(evidence);
     }
 
+    void require_installed() { require_installed_menu(working.nand, evidence); }
+
+    void commit() {
+      check_buffer_capacity(working.nand, working.layout.orphan_entries, files);
+      if (files.isEmpty()) return;
+      persist_buffer(working.nand, files);
+      verify_readback_buffer(image, files);
+    }
+
+    std::span<std::uint8_t> image;
+    working_image::Image working;
+    inspect::PriiloaderEvidence evidence;
+    int version = 0;
+    QMap<QString, PendingFile> files;
+  };
+}
+
+namespace priiloader {
+  void install(std::span<std::uint8_t> image, std::span<const std::uint8_t> app_bytes) {
+    require(app_bytes.size() == release_app_size, "Expected the extracted Priiloader 0.10.0 Wii app");
+    const auto app = QByteArray::fromRawData(reinterpret_cast<const char*>(app_bytes.data()),
+                                             static_cast<int>(app_bytes.size()));
+    require(priiloader::is_release_app(app), "Priiloader app SHA-256 does not match the pinned release");
+
+    Operation operation(image);
+    auto& nand = operation.working.nand;
+    const auto& evidence = operation.evidence;
+    if (evidence.layout == inspect::PriiloaderLayout::Installed) {
+      // Already installed: confirm it is this release and leave the image untouched.
+      operation.require_installed();
+      return;
+    }
+    inspect::verify_stock_titles(
+        nand, {{0x100000002ull, static_cast<quint16>(operation.version)}, {0x100000050ull, 6944}});
+    require_clean_menu_data(nand);
+    const auto& app_path = evidence.boot_app_path;
+    const auto& backup_path = evidence.backup_app_path;
+    require(!backup_path.isEmpty(),
+            "System Menu boot CID does not support the Wii Priiloader backup layout");
+    for (const auto& path : {backup_path, original_tmd_path, content + "ticket"})
+      require(!find_path(nand, path), "Priiloader installer backup or ticket already exists");
+    const auto tmd = read_authenticated_file(nand, find_path(nand, tmd_path), tmd_limit);
+    const auto original = read_authenticated_file(nand, find_path(nand, app_path), menu_app_limit);
+    const auto ticket = authentic_ticket(nand, tmd);
+    auto& files = operation.files;
+    files["backup_app"] = {backup_path, original};
+    files["backup_tmd"] = {original_tmd_path, tmd, 0};
+    files["boot_app"] = {app_path, app, NAND_RW, true};
+    files["ticket"] = {content + "ticket", ticket};
+    files["tmd"] = {tmd_path, patched_tmd(tmd, app), 0, true};
+    operation.commit();
+  }
+
+  void configure(std::span<std::uint8_t> image, const wiiform::PriiloaderSettings& settings) {
+    Operation operation(image);
+    operation.require_installed();
+    auto& nand = operation.working.nand;
     const auto settings_entry = find_path(nand, settings_path);
-    // Start from pinned 0.10.0 defaults on every application, replacing prior
-    // settings deterministically, including fields hidden by the recipe API.
+    // Every field is written, including the ones the recipe does not expose,
+    // so the result does not depend on earlier settings.
     const auto settings_bytes = encode_settings(settings);
     check_destinations(nand, settings);
     if (!settings_entry || read_authenticated_file(nand, settings_entry, 32) != settings_bytes) {
-      files["settings"] = {settings_path, settings_bytes, NAND_RW, false,
-                            settings_entry ? settings_entry->index : quint16(0)};
+      operation.files["settings"] = {settings_path, settings_bytes, NAND_RW, false,
+                                     settings_entry ? settings_entry->index : quint16(0)};
     }
+    operation.commit();
+  }
 
-    plan_hacks(nand, version, definition_bytes, enabled_hacks, files);
-
-    check_buffer_capacity(nand, working.layout.orphan_entries, files);
-    if (files.isEmpty()) return;
-    persist_buffer(nand, files);
-    verify_readback_buffer(image, files);
+  void set_hacks(std::span<std::uint8_t> image, std::span<const std::uint8_t> definitions,
+                 std::span<const wiiform::Hack> enabled_hacks) {
+    Operation operation(image);
+    operation.require_installed();
+    plan_hacks(operation.working.nand, operation.version, definitions, enabled_hacks, operation.files);
+    operation.commit();
   }
 }

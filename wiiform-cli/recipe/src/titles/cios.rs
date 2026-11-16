@@ -2,7 +2,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::Wad;
+use super::{TitleId, Wad};
 
 /// Expected identity and replacement policy for a prebuilt Wii d2x WAD.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -27,8 +27,8 @@ pub struct CiosTarget {
 }
 
 impl CiosTarget {
-    pub const fn title_id(&self) -> u64 {
-        0x0000_0001_0000_0000 | self.slot as u64
+    pub const fn title_id(&self) -> TitleId {
+        TitleId::known(0x0000_0001_0000_0000 | self.slot as u64)
     }
 }
 

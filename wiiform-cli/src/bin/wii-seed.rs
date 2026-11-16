@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::{io, process::ExitCode};
 use wiiform::{
-    native,
+    native::{KEYS_BYTES, Nand, RAW_NAND_BYTES, Session},
     recipe::{ResolvedPath, read_bounded},
 };
 
@@ -27,22 +27,23 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let (nand, sidecar) = match cli.keys {
-        Some(keys) => (
-            read_bounded(
-                cli.backup.as_ref(),
-                native::RAW_NAND_BYTES..=native::RAW_NAND_BYTES,
-            )
-            .context("--keys requires a footerless NAND backup")?,
-            read_bounded(keys.as_ref(), 0x400..=0x400)
-                .context("keys footer must be exactly 1024 bytes")?,
-        ),
-        None => (
-            read_bounded(cli.backup.as_ref(), native::NAND_BYTES..=native::NAND_BYTES)
-                .context("expected an embedded footer; for a footerless backup pass --keys FILE")?,
-            Vec::new(),
-        ),
+    let session = Session::acquire()?;
+    let seed = match cli.keys {
+        Some(keys) => {
+            let nand = read_bounded(cli.backup.as_ref(), RAW_NAND_BYTES..=RAW_NAND_BYTES)
+                .context("--keys requires a footerless NAND backup")?;
+            let keys: Box<[u8; KEYS_BYTES]> = read_bounded(keys.as_ref(), KEYS_BYTES..=KEYS_BYTES)
+                .context("keys footer must be exactly 1024 bytes")?
+                .into_boxed_slice()
+                .try_into()
+                .expect("the read is bounded to the footer size");
+            session.extract_seed(&nand, Some(&keys))?
+        }
+        None => {
+            let nand = Nand::read(cli.backup.as_ref())
+                .context("expected an embedded footer; for a footerless backup pass --keys FILE")?;
+            session.extract_seed(nand.as_bytes(), None)?
+        }
     };
-    native::extract_seed(&nand, &sidecar, io::stdout().lock())?;
-    Ok(())
+    seed.write(io::stdout().lock())
 }

@@ -246,7 +246,7 @@ mod tests {
             Ok(vec![7; 0x40])
         })?;
         assert_eq!(&*bytes, &[7; 0x40]);
-        assert_eq!(sha256, &[0xaa; 32]);
+        assert_eq!(sha256.as_bytes(), &[0xaa; 32]);
         assert!(recipe.titles[0].resolve(|_, _| Ok(vec![])).is_err());
         Ok(())
     }
@@ -265,7 +265,7 @@ mod tests {
         let cios = format!("menu: 4.3E\ncios: [{{{inline}, sha256: {SHA}, {target}}}]");
         let (recipe, _) = read(&cios, None)?;
         assert_eq!(
-            recipe.cios[0].options.target.title_id(),
+            recipe.cios[0].options.target.title_id().as_u64(),
             0x0000_0001_0000_00f9
         );
         assert_eq!(
@@ -317,7 +317,7 @@ mod tests {
         assert!(matches!(source, Data::Path(path) if path.ends_with("linked.wad")));
         let (bytes, sha256) = recipe.titles[0].resolve(no_fetch)?;
         assert_eq!(bytes.as_ref(), contents);
-        assert_eq!(sha256, &[0xaa; 32]);
+        assert_eq!(sha256.as_bytes(), &[0xaa; 32]);
         for bad in [".", "missing.wad"] {
             let yaml = format!("menu: 4.3E\ntitles: [{{source: {{path: {bad}}}, sha256: {SHA}}}]");
             let (recipe, _) = Recipe::read(yaml.as_bytes(), &dir, None)?;

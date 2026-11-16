@@ -11,13 +11,14 @@ use rustix::fs::{CWD, RenameFlags, renameat_with};
 use tempfile::Builder;
 
 use crate::{
-    native::{self, InstalledWad, StockIdentity},
+    https::fetch,
+    native::{InstalledWad, Nand, Session, StockIdentity, WadKind},
     priiloader_payload,
-    recipe::{Menu, Recipe, ResolvedPath, open_regular_file},
+    recipe::{Menu, Recipe, Region, ResolvedPath, SignaturePolicy, open_regular_file},
     seed::StockSeed,
 };
 
-pub use native::BootPolicy;
+pub use crate::native::{BootPolicy, NusCache};
 
 #[derive(Clone, Debug)]
 pub enum SeedInput {
@@ -42,106 +43,174 @@ pub struct BuildOptions {
     pub seed: SeedInput,
     pub recipe: ResolvedPath,
     pub output: PathBuf,
-    pub cache: PathBuf,
-    pub offline: bool,
+    pub cache: NusCache,
     pub boot_policy: BootPolicy,
     pub menu: Option<Menu>,
 }
 
-/// NUS uses memory-only downloads by default. Set `WIIFORM_NUS_CACHE` to reuse
-/// authenticated files across builds, and `WIIFORM_NUS_OFFLINE=1` to require
-/// that cache to contain every requested file.
-pub fn nus_environment() -> Result<(PathBuf, bool)> {
-    let cache = std::env::var_os("WIIFORM_NUS_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let offline = match std::env::var("WIIFORM_NUS_OFFLINE") {
-        Ok(value) if value == "1" || value.eq_ignore_ascii_case("true") => true,
-        Ok(value) if value == "0" || value.eq_ignore_ascii_case("false") => false,
-        Ok(_) => bail!("WIIFORM_NUS_OFFLINE must be 1, 0, true, or false"),
-        Err(std::env::VarError::NotPresent) => false,
-        Err(error) => return Err(error.into()),
-    };
-    ensure!(
-        !offline || !cache.as_os_str().is_empty(),
-        "WIIFORM_NUS_OFFLINE requires WIIFORM_NUS_CACHE"
-    );
-    Ok((cache, offline))
+impl NusCache {
+    /// NUS uses memory-only downloads by default. Set `WIIFORM_NUS_CACHE` to reuse
+    /// authenticated files across builds, and `WIIFORM_NUS_OFFLINE=1` to require
+    /// that cache to contain every requested file.
+    pub fn from_environment() -> Result<Self> {
+        let offline = match std::env::var("WIIFORM_NUS_OFFLINE") {
+            Ok(value) if value == "1" || value.eq_ignore_ascii_case("true") => true,
+            Ok(value) if value == "0" || value.eq_ignore_ascii_case("false") => false,
+            Ok(_) => bail!("WIIFORM_NUS_OFFLINE must be 1, 0, true, or false"),
+            Err(std::env::VarError::NotPresent) => false,
+            Err(error) => return Err(error.into()),
+        };
+        match std::env::var_os("WIIFORM_NUS_CACHE").filter(|path| !path.is_empty()) {
+            Some(path) => Ok(Self::Directory {
+                path: resolve_cache(Path::new(&path))?,
+                offline,
+            }),
+            None => {
+                ensure!(!offline, "WIIFORM_NUS_OFFLINE requires WIIFORM_NUS_CACHE");
+                Ok(Self::Memory)
+            }
+        }
+    }
+
+    /// Creates the cache directory, or checks that an offline one exists.
+    pub fn prepare(&self) -> Result<()> {
+        match self {
+            Self::Memory => Ok(()),
+            Self::Directory {
+                path,
+                offline: true,
+            } => {
+                ensure!(
+                    path.is_dir(),
+                    "offline NUS cache must be an existing directory"
+                );
+                Ok(())
+            }
+            Self::Directory { path, .. } => {
+                fs::create_dir_all(path).context("cannot create NUS cache")
+            }
+        }
+    }
 }
 
 pub fn build(options: &BuildOptions) -> Result<()> {
-    build_with(options, |options, recipe| {
-        let seed = match &options.seed {
+    build_with(options, |session, recipe| {
+        let mut seed = match &options.seed {
             SeedInput::Stdin => StockSeed::from_reader(io::stdin().lock()),
             SeedInput::File(path) => StockSeed::from_reader(open_regular_file(path.as_ref())?.0),
         }?;
-        prepare_nus_cache(&options.cache, options.offline)?;
-        let mut nand = allocate_nand()?;
-        let identity = native::create_stock(
-            &seed,
-            &mut nand,
-            &options.cache,
+        options.cache.prepare()?;
+        create_stock(
+            session,
+            &mut seed,
             recipe.menu,
             options.boot_policy,
-            options.offline,
-        )?;
-        Ok((nand, identity))
+            &options.cache,
+        )
     })
+}
+
+/// Builds the image a factory-fresh console of this menu's region would have.
+fn create_stock(
+    session: &Session,
+    seed: &mut StockSeed,
+    menu: Menu,
+    boot_policy: BootPolicy,
+    cache: &NusCache,
+) -> Result<(Nand, StockIdentity)> {
+    if seed.write_backupmii_header()? {
+        eprintln!("warning: replaced the seed's key footer header with a BackupMii header");
+    }
+    let mut nand = Nand::zeroed()?;
+    let identity = session.initialize_image(&mut nand, seed, menu, boot_policy)?;
+    for (title_id, version) in session.stock_titles(menu)? {
+        session
+            .install_nus_title(&mut nand, cache, title_id, version)
+            .with_context(|| format!("cannot install stock title {title_id} v{version}"))?;
+    }
+    session.verify_stock(&nand, seed, menu)?;
+    Ok((nand, identity))
 }
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&BuildOptions, &Recipe) -> Result<(Vec<u8>, StockIdentity)>,
+    create_stock: impl FnOnce(&Session, &Recipe) -> Result<(Nand, StockIdentity)>,
 ) -> Result<()> {
+    let session = Session::acquire()?;
     validate_output(&options.output)?;
-    let parent = output_parent(&options.output)?;
-    let output = parent
-        .canonicalize()?
-        .join(options.output.file_name().context("output needs a name")?);
-    let cache = if options.cache.as_os_str().is_empty() {
-        PathBuf::new()
-    } else {
-        resolve_cache(&options.cache)?
-    };
-    let options = BuildOptions {
-        cache,
-        ..options.clone()
-    };
-    if !options.cache.as_os_str().is_empty() {
+    if let NusCache::Directory { path, .. } = &options.cache {
+        let output = output_parent(&options.output)?
+            .canonicalize()?
+            .join(options.output.file_name().context("output needs a name")?);
         ensure!(
-            !options.cache.starts_with(&output),
+            !path.starts_with(&output),
             "cache cannot be inside the output bundle"
         );
     }
+
+    // Everything the recipe needs is loaded before the long stock build starts.
     let (recipe, removals) = Recipe::load(&options.recipe, options.menu)?;
     let priiloader = recipe
         .priiloader
         .as_ref()
         .map(|config| priiloader_payload::load().map(|assets| (config, assets)))
         .transpose()?;
-    let (mut nand, identity) =
-        create_stock(&options, &recipe).context("cannot create stock NAND")?;
-    if identity.backupmii_header_replaced {
-        eprintln!("warning: replaced the seed's key footer header with a BackupMii header");
-    }
+    let titles = recipe
+        .titles
+        .iter()
+        .enumerate()
+        .map(|(index, title)| {
+            let kind = match title.options.signature_policy {
+                SignaturePolicy::Nintendo => WadKind::Standard,
+                SignaturePolicy::AllowUnsigned => WadKind::LegacyChannel,
+            };
+            title
+                .resolve(fetch)
+                .map(|(wad, sha256)| (wad, sha256, kind))
+                .with_context(|| format!("cannot read titles[{index}] WAD"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let cios = recipe
+        .cios
+        .iter()
+        .map(|cios| {
+            let target = &cios.options.target;
+            cios.resolve(fetch)
+                .map(|(wad, sha256)| (wad, sha256, target))
+                .with_context(|| format!("cannot read the cIOS WAD for slot {}", target.slot))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let hbc = recipe
+        .hbc
+        .as_ref()
+        .map(|hbc| {
+            hbc.resolve(fetch)
+                .context("cannot get the Homebrew Channel")
+        })
+        .transpose()?;
 
-    let removals: Vec<_> = removals.iter().map(|id| id.as_u64()).collect();
+    let (mut nand, identity) =
+        create_stock(&session, &recipe).context("cannot create stock NAND")?;
+
     for &id in &removals {
-        native::remove_title(&mut nand, id)
-            .with_context(|| format!("cannot remove title {id:016x}"))?;
+        session
+            .remove_title(&mut nand, id)
+            .with_context(|| format!("cannot remove title {id}"))?;
     }
 
     if let Some(setup) = &recipe.setup {
-        native::apply_system_settings(&mut nand, recipe.menu, setup)
+        session
+            .apply_system_settings(&mut nand, recipe.menu, setup)
             .context("cannot generate system settings")?;
     }
 
-    for (index, title) in recipe.titles.iter().enumerate() {
-        let installed = native::install_wad(&mut nand, title)
+    for (index, (wad, sha256, kind)) in titles.iter().enumerate() {
+        let installed = session
+            .install_wad(&mut nand, wad, sha256, *kind)
             .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
             !removals.contains(&installed.title_id),
-            "recipe both removes and installs title {:016x}",
+            "recipe both removes and installs title {}",
             installed.title_id
         );
         ensure!(
@@ -149,88 +218,69 @@ fn build_with(
                 .cios
                 .iter()
                 .any(|cios| cios.options.target.title_id() == installed.title_id),
-            "recipe lists a title WAD and a cIOS for the same slot ({:016x})",
+            "recipe lists a title WAD and a cIOS for the same slot ({})",
             installed.title_id
         );
-        installed.warn_if_already_present();
-        warn_region(&installed, recipe.menu);
+        report_installed(&installed, recipe.menu);
     }
 
-    for cios in &recipe.cios {
-        native::install_cios(&mut nand, cios)
-            .with_context(|| format!("cannot configure cIOS slot {}", cios.options.target.slot))?
-            .warn_if_already_present();
+    for (wad, sha256, target) in &cios {
+        let installed = session
+            .install_cios(&mut nand, wad, sha256, target)
+            .with_context(|| format!("cannot configure cIOS slot {}", target.slot))?;
+        warn_if_already_present(&installed);
     }
 
-    if let Some(hbc) = &recipe.hbc {
-        let installed =
-            native::install_hbc(&mut nand, hbc).context("cannot install Homebrew Channel")?;
-        installed.warn_if_already_present();
-        warn_region(&installed, recipe.menu);
+    if let Some((wad, sha256)) = &hbc {
+        let installed = session
+            .install_wad(&mut nand, wad, sha256, WadKind::HomebrewChannel)
+            .context("cannot install Homebrew Channel")?;
+        report_installed(&installed, recipe.menu);
     }
 
-    if let Some((config, (app, definitions))) = priiloader {
-        native::apply_priiloader(
-            &mut nand,
-            &app,
-            &definitions,
-            &config.settings,
-            &config.hacks,
-        )
-        .context("cannot install or configure Priiloader")?;
+    if let Some((config, (app, definitions))) = &priiloader {
+        session
+            .install_priiloader(&mut nand, app)
+            .context("cannot install Priiloader")?;
+        session
+            .configure_priiloader(&mut nand, &config.settings)
+            .context("cannot configure Priiloader")?;
+        session
+            .set_priiloader_hacks(&mut nand, definitions, &config.hacks)
+            .context("cannot set Priiloader hacks")?;
     }
 
-    native::verify_generated_nand(&nand, &identity).context("cannot verify generated NAND")?;
+    session
+        .verify_generated_nand(&nand, &identity)
+        .context("cannot verify generated NAND")?;
     publish_bundle(&nand, &options.output)
 }
 
-fn warn_region(wad: &InstalledWad, menu: Menu) {
-    if !matches!(wad.title_id >> 32, 0x0001_0001 | 0x0001_0002) {
+pub fn warn_if_already_present(wad: &InstalledWad) {
+    if wad.already_present {
+        eprintln!(
+            "warning: title {} v{} is already installed and verified",
+            wad.title_id, wad.version
+        );
+    }
+}
+
+fn report_installed(wad: &InstalledWad, menu: Menu) {
+    warn_if_already_present(wad);
+    // Only channels are region-locked by the System Menu.
+    if !matches!(wad.title_id.kind(), 0x0001_0001 | 0x0001_0002) {
         return;
     }
-    let expected = match menu {
-        Menu::J43 => 0,
-        Menu::U43 => 1,
-        Menu::E43 => 2,
-    };
-    if wad.region != expected && wad.region != 3 {
-        let region = match wad.region {
-            0 => "Japan",
-            1 => "USA",
-            2 => "PAL",
-            4 => "Korea",
-            _ => "unknown region",
-        };
+    if wad.region != Some(menu.region()) && wad.region != Some(Region::Free) {
+        let region = wad.region.map_or("an unknown region".to_owned(), |region| {
+            format!("{region:?}")
+        });
         eprintln!(
-            "warning: WAD {:016x} declares {region} ({}). Launching on {} may require a region-free System Menu.",
+            "warning: WAD {} declares {region}. Launching on {} may require a region-free System Menu.",
             wad.title_id,
-            wad.region,
             menu.as_str(),
         );
     }
-}
-
-fn allocate_nand() -> Result<Vec<u8>> {
-    let mut nand = Vec::new();
-    nand.try_reserve_exact(native::NAND_BYTES)
-        .context("cannot allocate NAND buffer")?;
-    nand.resize(native::NAND_BYTES, 0);
-    Ok(nand)
-}
-
-pub fn prepare_nus_cache(cache: &Path, offline: bool) -> Result<()> {
-    if cache.as_os_str().is_empty() {
-        return Ok(());
-    }
-    if offline {
-        ensure!(
-            cache.is_dir(),
-            "offline NUS cache must be an existing directory"
-        );
-    } else {
-        fs::create_dir_all(cache).context("cannot create NUS cache")?;
-    }
-    Ok(())
 }
 
 fn resolve_cache(path: &Path) -> Result<PathBuf> {
@@ -287,18 +337,18 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn publish_edit(nand: &[u8], output: &Path) -> Result<()> {
+pub fn publish_edit(nand: &Nand, output: &Path) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wii-nand-")
         .permissions(fs::Permissions::from_mode(0o700))
         .tempdir_in(output_parent(output)?)
         .context("cannot create a staging directory next to the output")?;
     let candidate = staging.path().join("nand.bin");
-    write_private(&candidate, nand).context("cannot write edited NAND")?;
+    write_private(&candidate, nand.as_bytes()).context("cannot write edited NAND")?;
     publish(&candidate, output).context("cannot publish edited NAND")
 }
 
-fn publish_bundle(nand: &[u8], output: &Path) -> Result<()> {
+fn publish_bundle(nand: &Nand, output: &Path) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wiiform-")
         .permissions(fs::Permissions::from_mode(0o700))
@@ -307,9 +357,8 @@ fn publish_bundle(nand: &[u8], output: &Path) -> Result<()> {
     let bundle = staging.path().join("bundle");
     fs::create_dir(&bundle).context("cannot create the staging bundle")?;
     fs::set_permissions(&bundle, fs::Permissions::from_mode(0o700))?;
-    write_private(&bundle.join("nand.bin"), nand).context("cannot write NAND")?;
-    write_private(&bundle.join("keys.bin"), &nand[native::RAW_NAND_BYTES..])
-        .context("cannot write keys sidecar")?;
+    write_private(&bundle.join("nand.bin"), nand.as_bytes()).context("cannot write NAND")?;
+    write_private(&bundle.join("keys.bin"), nand.keys()).context("cannot write keys sidecar")?;
     File::open(&bundle)?.sync_all()?;
     publish(&bundle, output).context("cannot publish NAND restore bundle")
 }
@@ -324,7 +373,6 @@ fn publish(source: &Path, target: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::read_bounded;
     use sha2::{Digest, Sha256};
     use std::{
         io::{BufRead, BufReader},
@@ -337,10 +385,14 @@ mod tests {
         let expected = work.path().canonicalize()?.join("cache/contents");
         let path = resolve_cache(&work.path().join("missing/../cache/contents"))?;
         assert_eq!(path, expected);
-        assert!(prepare_nus_cache(&path, true).is_err());
-        prepare_nus_cache(&path, false)?;
+        let cache = |offline| NusCache::Directory {
+            path: path.clone(),
+            offline,
+        };
+        assert!(cache(true).prepare().is_err());
+        cache(false).prepare()?;
         assert!(path.is_dir());
-        prepare_nus_cache(&path, true)
+        cache(true).prepare()
     }
 
     #[test]
@@ -406,21 +458,12 @@ mod tests {
             seed: SeedInput::File(seed.clone().try_into()?),
             recipe: recipe.try_into()?,
             output: output.clone(),
-            cache: fixture,
-            offline: true,
+            cache: NusCache::Memory,
             boot_policy: BootPolicy::Stock,
             menu: None,
         };
         let failure = build_with(&options, |_, _| {
-            let nand = read_bounded(&image, native::NAND_BYTES..=native::NAND_BYTES)?;
-            Ok((
-                nand,
-                StockIdentity {
-                    boot_area: [0; 32],
-                    footer: [0; 32],
-                    backupmii_header_replaced: false,
-                },
-            ))
+            Ok((Nand::read(&image)?, StockIdentity::unverifiable()))
         })
         .expect_err("the WAD cannot fit the synthetic NAND");
         assert!(

@@ -14,6 +14,8 @@ namespace nand_build {
     QList<quint16> bad_blocks;
   };
 
+  // The setting.txt AREA value of a menu's region.
+  auto area(wiiform::Menu menu) -> QString;
   auto resolve_profile(const QByteArray& keys, const wiiform::ConsoleSettings& settings,
                        const wiiform::Sha256& settings_sha256,
                        std::span<const std::uint16_t> bad_blocks, wiiform::Menu menu) -> Profile;

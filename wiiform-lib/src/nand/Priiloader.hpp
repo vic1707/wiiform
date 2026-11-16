@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #pragma once
 
-#include <QMap>
-#include <QString>
 #include <wiiform/types.hpp>
 #include <cstdint>
 #include <span>
 
 namespace priiloader {
-  void apply(std::span<std::uint8_t> image, std::span<const std::uint8_t> app,
-             std::span<const std::uint8_t> hack_definitions,
-             const wiiform::PriiloaderSettings& settings,
-             std::span<const wiiform::Hack> enabled_hacks);
+  // Replaces the System Menu boot content with the pinned release, keeping the original
+  // as the backup Priiloader boots. Leaves an image that already has this release alone.
+  void install(std::span<std::uint8_t> image, std::span<const std::uint8_t> app);
+  // Both need an installed Priiloader.
+  void configure(std::span<std::uint8_t> image, const wiiform::PriiloaderSettings& settings);
+  void set_hacks(std::span<std::uint8_t> image, std::span<const std::uint8_t> hack_definitions,
+                 std::span<const wiiform::Hack> enabled_hacks);
 }

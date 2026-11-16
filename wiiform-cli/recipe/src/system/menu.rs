@@ -25,9 +25,42 @@ pub enum Menu {
     J43 = 512,
 }
 
+/// Region code a title declares in its TMD.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum Region {
+    Japan = 0,
+    Usa = 1,
+    Pal = 2,
+    /// Runs on every console.
+    Free = 3,
+    Korea = 4,
+}
+
+impl Region {
+    pub const fn from_code(code: u16) -> Option<Self> {
+        Some(match code {
+            0 => Self::Japan,
+            1 => Self::Usa,
+            2 => Self::Pal,
+            3 => Self::Free,
+            4 => Self::Korea,
+            _ => return None,
+        })
+    }
+}
+
 impl Menu {
     pub const fn version(self) -> u16 {
         self as u16
+    }
+
+    pub const fn region(self) -> Region {
+        match self {
+            Self::E43 => Region::Pal,
+            Self::U43 => Region::Usa,
+            Self::J43 => Region::Japan,
+        }
     }
 
     pub fn as_str(self) -> &'static str {

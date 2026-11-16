@@ -20,6 +20,15 @@ namespace {
 }
 
 namespace nand_build {
+  auto area(wiiform::Menu menu) -> QString {
+    switch (menu) {
+      case wiiform::Menu::e43: return "EUR";
+      case wiiform::Menu::u43: return "USA";
+      case wiiform::Menu::j43: return "JPN";
+    }
+    throw std::runtime_error("Unsupported System Menu version");
+  }
+
   auto resolve_profile(const QByteArray& keys, const wiiform::ConsoleSettings& source_settings,
                        const wiiform::Sha256& settings_sha256,
                        std::span<const std::uint16_t> bad_blocks, wiiform::Menu menu) -> Profile {
@@ -45,14 +54,11 @@ namespace nand_build {
             "Korean-key console is unsupported by this stock profile");
 
     auto target = source_settings;
-    QString area;
-    switch (menu) {
-      case wiiform::Menu::e43: target.area = "EUR"; target.game = "EU"; target.video = "PAL"; area = "EUR"; break;
-      case wiiform::Menu::u43: target.area = "USA"; target.game = "US"; target.video = "NTSC"; area = "USA"; break;
-      case wiiform::Menu::j43: target.area = "JPN"; target.game = "JP"; target.video = "NTSC"; area = "JPN"; break;
-      default: throw std::runtime_error("Unsupported System Menu version");
-    }
-    Profile profile{area, seed::encode_settings(target), {}};
+    const auto target_area = area(menu);
+    target.area = target_area.toStdString();
+    target.game = menu == wiiform::Menu::e43 ? "EU" : menu == wiiform::Menu::u43 ? "US" : "JP";
+    target.video = menu == wiiform::Menu::e43 ? "PAL" : "NTSC";
+    Profile profile{target_area, seed::encode_settings(target), {}};
     QSet<quint16> seen;
     for (const auto block : bad_blocks) {
       require(block >= 8 && block < 4080 && !seen.contains(block), "Invalid or duplicate NAND bad block");

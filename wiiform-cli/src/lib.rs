@@ -2,6 +2,7 @@
 pub mod cli;
 mod ffi;
 mod https;
+pub use https::fetch;
 pub mod native;
 
 pub mod priiloader_payload;

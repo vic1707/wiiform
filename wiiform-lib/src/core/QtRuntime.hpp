@@ -6,7 +6,7 @@
 #include <atomic>
 #include <stdexcept>
 
-namespace wiiform::core::detail {
+namespace wiiform::detail {
   inline void ensure_qcore_application() {
     auto* application = QCoreApplication::instance();
     if (!application) {

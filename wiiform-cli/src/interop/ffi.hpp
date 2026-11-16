@@ -2,35 +2,40 @@
 #pragma once
 
 #include "rust/cxx.h"
+#include <wiiform/types.hpp>
 #include <array>
 #include <cstdint>
 
+// Translates CXX's types to the library's. Nothing here decides anything.
 namespace wiiform::ffi {
-  enum class WadPolicy : std::uint8_t;
   struct SystemSettings;
   struct PriiloaderSettings;
-  struct StockOptions;
   struct StockIdentity;
   struct CiosOptions;
   struct InstalledWad;
   struct StockSeed;
   struct SeedParts;
+  struct TitleVersion;
+  struct NusCache;
 
   using Bytes = rust::Slice<const std::uint8_t>;
   using Nand = rust::Slice<std::uint8_t>;
+  using Digest = std::array<std::uint8_t, 32>;
 
   auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts;
-  auto create_stock(const StockSeed& seed, Nand nand, rust::Str cache,
-                    const StockOptions& options) -> StockIdentity;
-  void apply_system_settings(Nand nand, const SystemSettings& settings);
-  void install_nus_title(Nand nand, rust::Str cache, std::uint64_t title_id,
-                         std::uint16_t version, bool offline);
-  auto install_wad(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
-                   WadPolicy policy) -> InstalledWad;
-  auto install_cios(Nand nand, Bytes wad, const std::array<std::uint8_t, 32>& sha256,
-                    const CiosOptions& options) -> InstalledWad;
-  void remove_title(Nand nand, std::uint64_t title_id);
-  void apply_priiloader(Nand nand, Bytes app, Bytes definitions,
-                       const PriiloaderSettings& settings, Bytes enabled_hacks);
+  auto stock_titles(Menu menu) -> rust::Vec<TitleVersion>;
+  void verify_stock(Bytes nand, const StockSeed& seed, Menu menu);
   void verify_generated_nand(Bytes nand, const StockIdentity& expected);
+
+  auto write_backupmii_header(Nand keys) -> bool;
+  auto initialize_image(Nand nand, const StockSeed& seed, Menu menu, BootPolicy boot_policy) -> StockIdentity;
+  void install_nus_title(Nand nand, TitleVersion title);
+  void install_cached_nus_title(Nand nand, const NusCache& cache, TitleVersion title);
+  auto install_wad(Nand nand, Bytes wad, const Digest& sha256, WadPolicy policy) -> InstalledWad;
+  auto install_cios(Nand nand, Bytes wad, const Digest& sha256, const CiosOptions& options) -> InstalledWad;
+  void remove_title(Nand nand, std::uint64_t title_id);
+  void apply_system_settings(Nand nand, const SystemSettings& settings);
+  void install_priiloader(Nand nand, Bytes app);
+  void configure_priiloader(Nand nand, const PriiloaderSettings& settings);
+  void set_priiloader_hacks(Nand nand, Bytes definitions, rust::Slice<const Hack> enabled_hacks);
 }

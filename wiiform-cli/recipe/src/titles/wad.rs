@@ -48,10 +48,7 @@ impl<Options> Wad<Options> {
     pub fn resolve(
         &self,
         fetch: impl FnOnce(&str, usize) -> Result<Vec<u8>>,
-    ) -> Result<(Cow<'_, [u8]>, &[u8; 32])> {
-        Ok((
-            self.source.resolve(WAD_BOUNDS, fetch)?,
-            self.sha256.as_bytes(),
-        ))
+    ) -> Result<(Cow<'_, [u8]>, &Sha256)> {
+        Ok((self.source.resolve(WAD_BOUNDS, fetch)?, &self.sha256))
     }
 }

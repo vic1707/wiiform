@@ -267,7 +267,7 @@ namespace {
     auto invalid_digest = wad_digest(wad);
     invalid_digest[0] ^= 0xff;
     rejects([&] {
-      wiiform::core::install_wad(image, wad_bytes(wad), invalid_digest,
+      wiiform::install_wad(image, wad_bytes(wad), invalid_digest,
                                  wiiform::WadPolicy::legacy_channel);
     }, "SHA-256");
     check(before == buffer_digest(image), "Invalid WAD digest changed the NAND buffer");
@@ -276,12 +276,12 @@ namespace {
     constexpr int content_offset = 0x40 + 0x40 + 0x2c0 + 0x240;
     invalid_content[content_offset + 20] = char(invalid_content.at(content_offset + 20) ^ 1);
     rejects([&] {
-      wiiform::core::install_wad(image, wad_bytes(invalid_content), wad_digest(invalid_content),
+      wiiform::install_wad(image, wad_bytes(invalid_content), wad_digest(invalid_content),
                                  wiiform::WadPolicy::legacy_channel);
     }, "WAD content validation failed");
     check(before == buffer_digest(image), "Invalid WAD content changed the NAND buffer");
     rejects([&] {
-      wiiform::core::install_wad(image, wad_bytes(wad), wad_digest(wad),
+      wiiform::install_wad(image, wad_bytes(wad), wad_digest(wad),
                                  wiiform::WadPolicy::legacy_channel);
     }, "Insufficient NAND space");
     check(before == buffer_digest(image), "WAD capacity failure changed the NAND buffer");
@@ -292,7 +292,7 @@ namespace {
     const auto before = buffer_digest(image);
     const auto ios = make_wad('i', 1034, 0x0000000100000009ull);
     const auto install = [&](const QByteArray& wad, WadPolicy policy) {
-      return wiiform::core::install_wad(image, wad_bytes(wad), wad_digest(wad), policy);
+      return wiiform::install_wad(image, wad_bytes(wad), wad_digest(wad), policy);
     };
     rejects([&] { install(ios, WadPolicy::standard); }, "must be genuinely Nintendo-signed");
     rejects([&] { install(ios, WadPolicy::legacy_channel); }, "only downloadable channels");
@@ -319,7 +319,7 @@ namespace {
     auto image = read_bytes(nand_path, nand_file_size);
     const auto wad = make_wad();
     const auto install = [&](const QByteArray& package) {
-      return wiiform::core::install_wad(image, wad_bytes(package), wad_digest(package),
+      return wiiform::install_wad(image, wad_bytes(package), wad_digest(package),
                                         wiiform::WadPolicy::legacy_channel);
     };
 
@@ -382,7 +382,7 @@ namespace {
     const auto first_wad = make_wad('s', wad_title_version, first_title_id, 0x8001);
     const auto second_wad = make_wad('s', wad_title_version, second_title_id, 0x8001);
     const auto install = [&](const QByteArray& wad) {
-      return wiiform::core::install_wad(image, wad_bytes(wad), wad_digest(wad),
+      return wiiform::install_wad(image, wad_bytes(wad), wad_digest(wad),
                                         wiiform::WadPolicy::legacy_channel);
     };
 
@@ -413,7 +413,7 @@ namespace {
     const auto wad = make_cios_wad();
     const wiiform::CiosOptions options{249, 56, 65535, false};
     const auto install = [&](const QByteArray& package, const wiiform::CiosOptions& target) {
-      return wiiform::core::install_cios(image, wad_bytes(package), wad_digest(package), target);
+      return wiiform::install_cios(image, wad_bytes(package), wad_digest(package), target);
     };
 
     const auto installed = install(wad, options);
@@ -478,7 +478,7 @@ int main(int argc, char** argv) {
           "Usage: nand-buffer-regressions [--make-fixtures DIR] [--make-empty-fixture PATH] "
           "[--make-cios-fixture DIR]");
     std::async(std::launch::async, [] {
-      rejects([] { wiiform::core::remove_title({}, 0); }, "QCoreApplication thread");
+      rejects([] { wiiform::remove_title({}, 0); }, "QCoreApplication thread");
     }).get();
     QTemporaryDir temporary(QDir::current().filePath("build/nand-buffer-regressions-XXXXXX"));
     check(temporary.isValid(), "Cannot create buffer regression directory");

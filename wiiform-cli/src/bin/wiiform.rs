@@ -7,7 +7,7 @@ use clap::{
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     recipe::{Menu, ResolvedPath},
-    workflow::{self, BootPolicy, BuildOptions, SeedInput},
+    workflow::{self, BootPolicy, BuildOptions, NusCache, SeedInput},
 };
 
 #[derive(Debug, Parser)]
@@ -39,13 +39,11 @@ struct Cli {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let (cache, offline) = workflow::nus_environment()?;
     let options = BuildOptions {
         seed: cli.seed,
         recipe: cli.recipe,
         output: cli.output,
-        cache,
-        offline,
+        cache: NusCache::from_environment()?,
         boot_policy: cli.boot_policy,
         menu: cli.menu,
     };

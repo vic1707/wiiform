@@ -40,9 +40,27 @@ impl TryFrom<String> for TitleId {
     }
 }
 
+impl std::fmt::Display for TitleId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{:016x}", self.0)
+    }
+}
+
 impl TitleId {
     pub(crate) const fn known(value: u64) -> Self {
         Self(NonZeroU64::new(value).expect("built-in title IDs are nonzero"))
+    }
+
+    pub const fn new(value: u64) -> Option<Self> {
+        match NonZeroU64::new(value) {
+            Some(id) => Some(Self(id)),
+            None => None,
+        }
+    }
+
+    /// The upper half, which names the kind of title (system, channel, ...).
+    pub const fn kind(self) -> u32 {
+        (self.0.get() >> 32) as u32
     }
 
     pub const fn as_u64(self) -> u64 {

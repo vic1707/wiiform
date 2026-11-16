@@ -9,21 +9,27 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 use wiiform_recipe::{Sha256, yaml::Binary};
 
-use crate::ffi::bridge as ffi;
+use crate::ffi::bridge::{self as ffi, ConsoleSettings};
+use crate::native::{self, BOOT_BYTES, KEYS_BYTES};
 
-const BOOT_BYTES: usize = 0x108000;
-const KEYS_BYTES: usize = 0x400;
 const XZ_MEMORY_KIB: u32 = 128 * 1024;
-
-pub use crate::ffi::bridge::ConsoleSettings;
 
 /// Seed components whose binary digests and compressed boot data were checked.
 pub struct StockSeed {
-    keys: Vec<u8>,
-    boot_blocks: Vec<u8>,
+    keys: Box<[u8; KEYS_BYTES]>,
+    boot_blocks: Box<[u8; BOOT_BYTES]>,
     bad_blocks: Vec<u16>,
     settings: ConsoleSettings,
     settings_sha256: [u8; 32],
+}
+
+/// A seed read from a backup, ready to be written as YAML.
+pub struct ExtractedSeed(pub(crate) ffi::SeedParts);
+
+impl ExtractedSeed {
+    pub fn write<W: Write>(self, writer: W) -> Result<()> {
+        write_seed(writer, self.0)
+    }
 }
 
 impl StockSeed {
@@ -32,19 +38,24 @@ impl StockSeed {
             serde_saphyr::from_reader_with_options(reader, crate::recipe::yaml::options())
                 .map_err(|_| anyhow!("Invalid Wii seed YAML"))?;
 
-        let keys = manifest.keys.footer.0;
+        let keys: Box<[u8; KEYS_BYTES]> = manifest
+            .keys
+            .footer
+            .0
+            .into_boxed_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Seed keys footer has the wrong size"))?;
         ensure!(
-            keys.len() == KEYS_BYTES,
-            "Seed keys footer has the wrong size"
-        );
-        ensure!(
-            digest(&keys) == manifest.keys.sha256,
+            digest(&keys[..]) == manifest.keys.sha256,
             "Keys do not match their SHA-256"
         );
 
-        let boot_blocks = decode_xz(&manifest.boot_blocks.xz.0)?;
+        let boot_blocks: Box<[u8; BOOT_BYTES]> = decode_xz(&manifest.boot_blocks.xz.0)?
+            .into_boxed_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Boot blocks have the wrong size"))?;
         ensure!(
-            digest(&boot_blocks) == manifest.boot_blocks.sha256,
+            digest(&boot_blocks[..]) == manifest.boot_blocks.sha256,
             "Boot blocks do not match their SHA-256"
         );
 
@@ -57,10 +68,16 @@ impl StockSeed {
         })
     }
 
+    /// Replaces the key footer's text header with the canonical BackupMii one,
+    /// which BootMii's restore requires. Returns whether it changed.
+    pub fn write_backupmii_header(&mut self) -> Result<bool> {
+        native::write_backupmii_header(&mut self.keys)
+    }
+
     pub(crate) fn as_native(&self) -> ffi::StockSeed<'_> {
         ffi::StockSeed {
-            keys: &self.keys,
-            boot_blocks: &self.boot_blocks,
+            keys: &self.keys[..],
+            boot_blocks: &self.boot_blocks[..],
             bad_blocks: &self.bad_blocks,
             settings: &self.settings,
             settings_sha256: self.settings_sha256,
@@ -181,7 +198,7 @@ fn encode_xz(boot: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Write native extraction data as the stable plaintext seed YAML format.
-pub fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
+fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
     let manifest = SeedManifest {
         keys: KeyFooter {
             sha256: digest(&parts.keys),

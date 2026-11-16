@@ -1,25 +1,163 @@
 // SPDX-License-Identifier: GPL-2.0-only
+//! The CXX bridge to the Wiiform C++ library.
+//!
+//! The enums are the library's own (`wiiform/types.hpp`): CXX checks at compile
+//! time that every variant here has the value it has in C++.
 #[cxx::bridge(namespace = "wiiform::ffi")]
 pub mod bridge {
+    #[namespace = "wiiform"]
+    #[repr(u16)]
+    #[derive(Clone, Copy, Debug)]
+    enum Menu {
+        #[cxx_name = "e43"]
+        E43 = 514,
+        #[cxx_name = "u43"]
+        U43 = 513,
+        #[cxx_name = "j43"]
+        J43 = 512,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum BootPolicy {
+        #[cxx_name = "stock"]
+        Stock = 0,
+        #[cxx_name = "preserve_source"]
+        PreserveSource = 1,
+    }
+
+    #[namespace = "wiiform"]
     #[repr(u8)]
     #[derive(Clone, Copy, Debug)]
     enum WadPolicy {
-        Standard,
-        LegacyChannel,
-        HomebrewChannel,
+        #[cxx_name = "standard"]
+        Standard = 0,
+        #[cxx_name = "legacy_channel"]
+        LegacyChannel = 1,
+        #[cxx_name = "homebrew_channel"]
+        HomebrewChannel = 2,
     }
 
+    #[namespace = "wiiform"]
     #[repr(u8)]
     #[derive(Clone, Copy, Debug)]
     enum BootMiiState {
-        Detected,
-        Stock,
-        Unknown,
+        #[cxx_name = "detected"]
+        Detected = 0,
+        #[cxx_name = "stock"]
+        Stock = 1,
+        #[cxx_name = "unknown"]
+        Unknown = 2,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum Language {
+        #[cxx_name = "ja"]
+        Ja = 0,
+        #[cxx_name = "en"]
+        En = 1,
+        #[cxx_name = "de"]
+        De = 2,
+        #[cxx_name = "fr"]
+        Fr = 3,
+        #[cxx_name = "es"]
+        Es = 4,
+        #[cxx_name = "it"]
+        It = 5,
+        #[cxx_name = "nl"]
+        Nl = 6,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum Autoboot {
+        #[cxx_name = "disabled"]
+        Disabled = 0,
+        #[cxx_name = "homebrew_channel"]
+        HomebrewChannel = 1,
+        #[cxx_name = "bootmii_ios"]
+        BootmiiIos = 2,
+        #[cxx_name = "system_menu"]
+        SystemMenu = 3,
+        #[cxx_name = "file"]
+        File = 4,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum ReturnTo {
+        #[cxx_name = "system_menu"]
+        SystemMenu = 0,
+        #[cxx_name = "priiloader"]
+        Priiloader = 1,
+        #[cxx_name = "autoboot"]
+        Autoboot = 2,
+        #[cxx_name = "file"]
+        File = 3,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum ShutdownTo {
+        #[cxx_name = "none"]
+        None = 0,
+        #[cxx_name = "priiloader"]
+        Priiloader = 1,
+        #[cxx_name = "autoboot"]
+        Autoboot = 2,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum MountPoint {
+        #[cxx_name = "automatic"]
+        Auto = 0,
+        #[cxx_name = "sd"]
+        Sd = 1,
+        #[cxx_name = "usb"]
+        Usb = 2,
+    }
+
+    #[namespace = "wiiform"]
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    enum Hack {
+        #[cxx_name = "fix_480p"]
+        Fix480p = 0,
+        #[cxx_name = "block_online_updates"]
+        BlockOnlineUpdates = 1,
+        #[cxx_name = "block_disc_updates"]
+        BlockDiscUpdates = 2,
+        #[cxx_name = "block_disc_autoboot"]
+        BlockDiscAutoboot = 3,
+        #[cxx_name = "auto_press_a"]
+        AutoPressA = 4,
+        #[cxx_name = "remove_deflicker"]
+        RemoveDeflicker = 5,
+        #[cxx_name = "move_disc_channel"]
+        MoveDiscChannel = 6,
+        #[cxx_name = "remove_nocopy_save_protection"]
+        RemoveNocopySaveProtection = 7,
+        #[cxx_name = "replace_health_screen"]
+        ReplaceHealthScreen = 8,
+        #[cxx_name = "no_background_music"]
+        NoBackgroundMusic = 9,
+        #[cxx_name = "wiimmfi"]
+        Wiimmfi = 10,
+        #[cxx_name = "region_free_everything"]
+        RegionFreeEverything = 11,
     }
 
     struct SystemSettings<'a> {
         nickname: &'a str,
-        language: u8,
+        language: Language,
         country: u8,
         sensor_bar_above: bool,
         widescreen: bool,
@@ -28,10 +166,10 @@ pub mod bridge {
     }
 
     struct PriiloaderSettings {
-        autoboot: u8,
-        return_to: u8,
-        shutdown_to: u8,
-        preferred_mount_point: u8,
+        autoboot: Autoboot,
+        return_to: ReturnTo,
+        shutdown_to: ShutdownTo,
+        preferred_mount_point: MountPoint,
         stop_disc: bool,
         lid_slot_on_error: bool,
         ignore_shutdown_mode: bool,
@@ -40,16 +178,9 @@ pub mod bridge {
         show_rc_updates: bool,
     }
 
-    struct StockOptions {
-        menu: u16,
-        boot_policy: u8,
-        offline: bool,
-    }
-
     struct StockIdentity {
         boot_area: [u8; 32],
         footer: [u8; 32],
-        backupmii_header_replaced: bool,
     }
 
     struct ConsoleSettings {
@@ -95,23 +226,57 @@ pub mod bridge {
         already_present: bool,
     }
 
+    struct TitleVersion {
+        id: u64,
+        version: u16,
+    }
+
+    struct NusCache<'a> {
+        directory: &'a str,
+        offline: bool,
+    }
+
     unsafe extern "C++" {
         include!("ffi.hpp");
 
+        #[namespace = "wiiform"]
+        type Menu;
+        #[namespace = "wiiform"]
+        type BootPolicy;
+        #[namespace = "wiiform"]
+        type WadPolicy;
+        #[namespace = "wiiform"]
+        type BootMiiState;
+        #[namespace = "wiiform"]
+        type Language;
+        #[namespace = "wiiform"]
+        type Autoboot;
+        #[namespace = "wiiform"]
+        type ReturnTo;
+        #[namespace = "wiiform"]
+        type ShutdownTo;
+        #[namespace = "wiiform"]
+        type MountPoint;
+        #[namespace = "wiiform"]
+        type Hack;
+
         fn extract_seed(nand: &[u8], sidecar_keys: &[u8]) -> Result<SeedParts>;
-        fn create_stock(
+        fn stock_titles(menu: Menu) -> Result<Vec<TitleVersion>>;
+        fn verify_stock(nand: &[u8], seed: &StockSeed<'_>, menu: Menu) -> Result<()>;
+        fn verify_generated_nand(nand: &[u8], expected: &StockIdentity) -> Result<()>;
+
+        fn write_backupmii_header(keys: &mut [u8]) -> Result<bool>;
+        fn initialize_image(
+            nand: &mut [u8],
             seed: &StockSeed<'_>,
-            nand: &mut [u8],
-            nus_cache_dir: &str,
-            options: &StockOptions,
+            menu: Menu,
+            boot_policy: BootPolicy,
         ) -> Result<StockIdentity>;
-        fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings<'_>) -> Result<()>;
-        fn install_nus_title(
+        fn install_nus_title(nand: &mut [u8], title: TitleVersion) -> Result<()>;
+        fn install_cached_nus_title(
             nand: &mut [u8],
-            nus_cache_dir: &str,
-            title_id: u64,
-            version: u16,
-            offline: bool,
+            cache: &NusCache<'_>,
+            title: TitleVersion,
         ) -> Result<()>;
         fn install_wad(
             nand: &mut [u8],
@@ -126,13 +291,13 @@ pub mod bridge {
             options: &CiosOptions,
         ) -> Result<InstalledWad>;
         fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
-        fn apply_priiloader(
+        fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings<'_>) -> Result<()>;
+        fn install_priiloader(nand: &mut [u8], app_bytes: &[u8]) -> Result<()>;
+        fn configure_priiloader(nand: &mut [u8], settings: &PriiloaderSettings) -> Result<()>;
+        fn set_priiloader_hacks(
             nand: &mut [u8],
-            app_bytes: &[u8],
             hacks_hash_ini: &[u8],
-            settings: &PriiloaderSettings,
-            enabled_hacks: &[u8],
+            enabled_hacks: &[Hack],
         ) -> Result<()>;
-        fn verify_generated_nand(nand: &[u8], expected: &StockIdentity) -> Result<()>;
     }
 }

@@ -2,7 +2,6 @@
 #pragma once
 
 #include <array>
-#include <optional>
 #include <span>
 #include <string>
 #include <cstdint>
@@ -10,11 +9,13 @@
 
 namespace wiiform {
   enum class BootPolicy : std::uint8_t { stock = 0, preserve_source = 1 };
-  enum class WadPolicy { standard, legacy_channel, homebrew_channel };
+  enum class WadPolicy : std::uint8_t { standard = 0, legacy_channel = 1, homebrew_channel = 2 };
   enum class BootMiiState : std::uint8_t { detected, stock, unknown };
 
   inline constexpr std::size_t raw_nand_size = 0x21000000;
-  inline constexpr std::size_t nand_size = raw_nand_size + 0x400;
+  inline constexpr std::size_t footer_size = 0x400;
+  inline constexpr std::size_t nand_size = raw_nand_size + footer_size;
+  inline constexpr std::size_t boot_area_size = 0x108000;
   using Sha256 = std::array<std::uint8_t, 32>;
 
   enum class Menu : std::uint16_t { e43 = 514, u43 = 513, j43 = 512 };
@@ -45,10 +46,22 @@ namespace wiiform {
     Sha256 settings_sha256;
   };
 
+  // Digests of the two regions that later edits must never change.
   struct StockIdentity {
     Sha256 boot_area;
     Sha256 footer;
-    bool backupmii_header_replaced;
+  };
+
+  struct TitleVersion {
+    std::uint64_t id;
+    std::uint16_t version;
+  };
+
+  // A directory holding Nintendo title files from earlier downloads. Offline, nothing is
+  // downloaded and a title missing from the directory is an error.
+  struct NusCache {
+    std::string directory;
+    bool offline;
   };
 
   struct CiosOptions {

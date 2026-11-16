@@ -11,6 +11,6 @@ mod setup;
 pub use country::CountryCode;
 pub use display::{Aspect, Display};
 pub use language::Language;
-pub use menu::Menu;
+pub use menu::{Menu, Region};
 pub use nickname::Nickname;
 pub use setup::{SensorBar, Setup};

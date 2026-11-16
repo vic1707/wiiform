@@ -39,16 +39,19 @@ c++ -std=c++20 -I"$WIIFORM_HOME/include" example.cpp \
 
 The project-owned C++ library wraps the following areas:
 
-- **WiiQt** provides the NAND filesystem, title access and related console
-  formats, the NUS title lists and the setting.txt cipher. The xmake package
+- **WiiQt** provides the NAND filesystem, title installation, the NUS
+  downloader and title lists, and the setting.txt cipher. The xmake package
   pins a commit of the `vic1707/wiiqt-tools` fork, which carries read-only file
   access and a random-access buffer backend. Set `WIIQT_GIT_URL` to a local
   checkout's `.git` directory to build against unpublished fork commits.
-- **Wiiform C++ code** owns the narrow library API, boot validation, seed
-  extraction, stock image creation, title operations, WAD validation and install,
-  SYSCONF writes, Priiloader files/settings, and BackupMii footer/key-sidecar
-  handling. The CXX adapter is glue; it converts Rust-friendly values into
-  native calls and maps exceptions to Rust errors.
+- **Wiiform C++ code** exposes one function per operation in
+  `wiiform-lib/include/wiiform/` (no Qt, CXX or Rust types): seed extraction,
+  image initialization, single-title install, WAD and cIOS install, channel
+  removal, SYSCONF creation, the three Priiloader steps, the BackupMii header
+  and the verifications. It owns boot validation, WAD policy, capacity
+  planning and the checks around WiiQt. Rust sequences these calls: the stock
+  build is a loop over `stock_titles`. The CXX adapter only converts values;
+  the bridge binds the library's own enums and maps exceptions to Rust errors.
 - **Priiloader** is included as an upstream git submodule for source access and
   the Wii-side installer reference, pinned to commit
   `2b70b3693e9dc3e144db1a73224921d405081663` (0.10.0). Wiiform's host-side

@@ -31,7 +31,7 @@ pub enum SignaturePolicy {
 
 pub type Title = Wad<TitleOptions>;
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema)]
 #[schemars(rename = "Title")]
 pub struct TitleOptions {
     #[serde(default)]
