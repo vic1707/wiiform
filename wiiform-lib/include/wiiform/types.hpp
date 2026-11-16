@@ -8,8 +8,6 @@
 #include <vector>
 
 namespace wiiform {
-  enum class BootPolicy : std::uint8_t { stock = 0, preserve_source = 1 };
-  enum class WadPolicy : std::uint8_t { standard = 0, legacy_channel = 1, homebrew_channel = 2 };
   enum class BootMiiState : std::uint8_t { detected, stock, unknown };
 
   inline constexpr std::size_t raw_nand_size = 0x21000000;

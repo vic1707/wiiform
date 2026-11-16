@@ -20,7 +20,6 @@ namespace wiiform::ffi {
 
   using Bytes = rust::Slice<const std::uint8_t>;
   using Nand = rust::Slice<std::uint8_t>;
-  using Digest = std::array<std::uint8_t, 32>;
 
   auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts;
   auto stock_titles(Menu menu) -> rust::Vec<TitleVersion>;
@@ -28,11 +27,14 @@ namespace wiiform::ffi {
   void verify_generated_nand(Bytes nand, const StockIdentity& expected);
 
   auto write_backupmii_header(Nand keys) -> bool;
-  auto initialize_image(Nand nand, const StockSeed& seed, Menu menu, BootPolicy boot_policy) -> StockIdentity;
+  auto initialize_image(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity;
+  auto initialize_image_with_source_boot(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity;
   void install_nus_title(Nand nand, TitleVersion title);
   void install_cached_nus_title(Nand nand, const NusCache& cache, TitleVersion title);
-  auto install_wad(Nand nand, Bytes wad, const Digest& sha256, WadPolicy policy) -> InstalledWad;
-  auto install_cios(Nand nand, Bytes wad, const Digest& sha256, const CiosOptions& options) -> InstalledWad;
+  auto install_wad(Nand nand, Bytes wad) -> InstalledWad;
+  auto install_unsigned_channel(Nand nand, Bytes wad) -> InstalledWad;
+  auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad;
+  auto install_cios(Nand nand, Bytes wad, const CiosOptions& options) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);
   void apply_system_settings(Nand nand, const SystemSettings& settings);
   void install_priiloader(Nand nand, Bytes app);

@@ -21,16 +21,11 @@ namespace {
     require(setting && nand.SetData(setting, settings) && nand.WriteMetaData(), "Cannot write settings");
   }
 
-  void validate_boot(const QByteArray& boots, inspect::BootPolicy policy) {
-    const auto map_blocks = inspect::verify_boot(boots, policy);
-    inspect::verify_boot_ecc(boots, policy, map_blocks);
-  }
 }
 
 namespace nand_build {
   void initialize_image(std::span<std::uint8_t> image, const QByteArray& keys, const QByteArray& boots,
-                        const Profile& profile, inspect::BootPolicy policy) {
-    validate_boot(boots, policy);
+                        const Profile& profile) {
     UIDmap uid;
     {
       nand_buffer::Device device(image);

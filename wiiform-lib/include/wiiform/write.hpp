@@ -16,17 +16,30 @@ namespace wiiform {
 
   // Formats the buffer as an empty filesystem for this console: boot area, bad blocks,
   // key footer, system directories and the System Menu settings for the menu's region.
-  auto initialize_image(std::span<std::uint8_t> nand, const StockSeed& seed, Menu menu,
-                        BootPolicy boot_policy) -> StockIdentity;
+  // The seed's boot area must be stock: every boot2 copy genuinely signed.
+  auto initialize_image(std::span<std::uint8_t> nand, const StockSeed& seed, Menu menu) -> StockIdentity;
+  // The same, keeping a modified boot area (such as BootMii as boot2) as the seed has it.
+  // It needs redundant boot2 maps.
+  auto initialize_image_with_source_boot(std::span<std::uint8_t> nand, const StockSeed& seed,
+                                         Menu menu) -> StockIdentity;
 
   // Installs one exact, Nintendo-signed title version. Without a cache it is
   // downloaded into memory.
   void install_nus_title(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
                          TitleVersion title);
-  auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
-                   const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad;
+
+  // The WAD installers verify an identical installed title instead of writing it
+  // again, and refuse a different one. None of them checks where the bytes came
+  // from: compare a pinned hash first when that matters.
+  // A Nintendo-signed channel or Wii IOS (slots 3 through 253).
+  auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad;
+  // A downloadable channel that need not be signed.
+  auto install_unsigned_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad;
+  // A Homebrew Channel release, recognized by its title ID.
+  auto install_homebrew_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad;
+  // A Wii d2x cIOS matching the given slot, base and revision.
   auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
-                    const Sha256& expected_sha256, const CiosOptions& options) -> InstalledWad;
+                    const CiosOptions& options) -> InstalledWad;
   // Only the allowlisted Forecast, News, Shop and Photo Channel titles can be removed.
   void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id);
 

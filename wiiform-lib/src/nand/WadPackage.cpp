@@ -27,7 +27,18 @@ namespace {
     return qFromBigEndian<quint32>(bytes.constData() + offset);
   }
 
-  enum class PackageMode { standard, legacy_channel, homebrew_channel, d2x_cios };
+  auto is_wii_ios(quint64 title_id) -> bool {
+    const auto slot = static_cast<quint32>(title_id);
+    return title_id >> 32 == 0x00000001 && slot >= 3 && slot <= 253;
+  }
+
+  struct Rules {
+    // The ticket and TMD carry genuine Nintendo signatures.
+    bool nintendo_signed;
+    // Community packages may select a common key that does not exist while
+    // encrypting with the Wii one.
+    bool legacy_key_index;
+  };
 
   auto valid_cios_header(const QByteArray& content, std::uint8_t expected_base) -> bool {
     // d2x's ciosmaps.xml writes IOSINFO at the start of the first local module.
@@ -37,20 +48,17 @@ namespace {
         content.mid(0x10, 4) == QByteArray("d2x\0", 4);
   }
 
-  auto read_package(std::span<const std::uint8_t> input,
-                    const wiiform::Sha256& expected_sha256,
-                    PackageMode mode,
-                    const wiiform::CiosOptions* cios_options) -> ValidatedTitleJob {
-    const bool legacy = mode == PackageMode::legacy_channel || mode == PackageMode::homebrew_channel;
-    const bool cios = mode == PackageMode::d2x_cios;
+  // Parses and validates what every WAD has in common. `accept_title` is the
+  // caller's own rule about which title this may be; it throws to refuse one.
+  template<class AcceptTitle>
+  auto read_package(std::span<const std::uint8_t> input, Rules rules,
+                    AcceptTitle&& accept_title) -> ValidatedTitleJob {
     require(input.size() >= wad_header_size && input.size() <= max_wad_size,
             "WAD file size is outside supported bounds");
     // QByteArray::fromRawData is a view whose lifetime is bounded by this call.
     // Content buffers copied into NusJob remain owned by the job.
     const auto bytes = QByteArray::fromRawData(reinterpret_cast<const char*>(input.data()),
                                                static_cast<int>(input.size()));
-    require(sha256(bytes) == expected_sha256,
-            "WAD SHA-256 does not match the expected package digest");
     require(u32(bytes, 0) == wad_header_size && u32(bytes, 4) == 0x49730000,
             "Expected a standard installable Wii WAD header");
     require(u32(bytes, 0x0c) == 0, "Unsupported WAD reserved header field");
@@ -89,27 +97,11 @@ namespace {
     // The vWii marker follows the three version bytes in the signed TMD header.
     require(tmd_bytes[0x183] == '\0', "vWii WADs are unsupported");
     Tmd tmd(tmd_bytes);
-    const auto type = tmd.Tid() >> 32;
-    const auto slot = static_cast<quint32>(tmd.Tid());
-    const bool wii_ios = type == 0x00000001 && slot >= 3 && slot <= 253;
-    switch (mode) {
-      case PackageMode::d2x_cios:
-        require(wii_ios && slot == cios_options->slot, "WAD does not match requested cIOS slot");
-        break;
-      case PackageMode::homebrew_channel:
-        require(wiiform::is_homebrew_channel_title(tmd.Tid()), "WAD is not a recognized Homebrew Channel title");
-        break;
-      case PackageMode::legacy_channel:
-        require(type == 0x00010001, "Unsigned WAD policy supports only downloadable channels");
-        break;
-      case PackageMode::standard:
-        require(type == 0x00010001 || type == 0x00010002 || wii_ios,
-                "WAD install supports Wii channels and IOS slots 3 through 253");
-        break;
-    }
+    accept_title(tmd.Tid(), tmd.Version());
     const int key_index = static_cast<uchar>(ticket_bytes[0x1f1]);
-    require(key_index == 0 || (legacy && key_index > 2), "Unsupported WAD ticket common-key index");
-    if (!legacy && !cios)
+    require(key_index == 0 || (rules.legacy_key_index && key_index > 2),
+            "Unsupported WAD ticket common-key index");
+    if (rules.nintendo_signed)
       require(check_cert_chain(tmd_bytes) == ERROR_SUCCESS && check_cert_chain(ticket_bytes) == ERROR_SUCCESS,
               "WAD ticket and TMD must be genuinely Nintendo-signed");
     if (key_index != 0) {
@@ -125,9 +117,6 @@ namespace {
     NusJob job;
     job.tid = tmd.Tid();
     job.version = tmd.Version();
-    if (cios)
-      require(job.version == cios_options->revision,
-              "WAD does not match requested cIOS revision");
     job.decrypt = false;
     job.data << tmd_bytes << ticket_bytes;
     const auto padded_data_size = align(data_size);
@@ -146,39 +135,47 @@ namespace {
     // physical section still reaches the same aligned footer offset.
     require(consumed == padded_data_size && (data_size == consumed || data_size == last_content_end),
             "WAD content sizes do not match its data section");
-    auto validated = validate_title(std::move(job), QStringLiteral("WAD content validation failed"));
-    if (cios) {
-      require(tmd.Type(0) == 1,
-              "d2x IOSINFO must be in the first local TMD content");
-      require(valid_cios_header(validated.get().data[2], cios_options->base),
-              "WAD does not contain a valid d2x IOSINFO header for the requested base");
-    }
-    return validated;
+    return validate_title(std::move(job), QStringLiteral("WAD content validation failed"));
   }
 
 }
 
 namespace wad_package {
-  auto read(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
-            wiiform::WadPolicy policy) -> ValidatedTitleJob {
-    using wiiform::WadPolicy;
-    PackageMode mode;
-    switch (policy) {
-      case WadPolicy::standard: mode = PackageMode::standard; break;
-      case WadPolicy::legacy_channel: mode = PackageMode::legacy_channel; break;
-      case WadPolicy::homebrew_channel: mode = PackageMode::homebrew_channel; break;
-      default: throw std::runtime_error("Unsupported WAD signature policy");
-    }
-    return read_package(input, expected_sha256, mode, nullptr);
+  auto read(std::span<const std::uint8_t> input) -> ValidatedTitleJob {
+    return read_package(input, {.nintendo_signed = true, .legacy_key_index = false}, [](quint64 title_id, quint16) {
+      const auto type = title_id >> 32;
+      require(type == 0x00010001 || type == 0x00010002 || is_wii_ios(title_id),
+              "WAD install supports Wii channels and IOS slots 3 through 253");
+    });
   }
 
-  auto read_cios(std::span<const std::uint8_t> input, const wiiform::Sha256& expected_sha256,
-                 const wiiform::CiosOptions& options) -> ValidatedTitleJob {
+  auto read_unsigned_channel(std::span<const std::uint8_t> input) -> ValidatedTitleJob {
+    return read_package(input, {.nintendo_signed = false, .legacy_key_index = true}, [](quint64 title_id, quint16) {
+      require(title_id >> 32 == 0x00010001, "Unsigned WADs are supported for downloadable channels only");
+    });
+  }
+
+  auto read_homebrew_channel(std::span<const std::uint8_t> input) -> ValidatedTitleJob {
+    return read_package(input, {.nintendo_signed = false, .legacy_key_index = true}, [](quint64 title_id, quint16) {
+      require(wiiform::is_homebrew_channel_title(title_id), "WAD is not a recognized Homebrew Channel title");
+    });
+  }
+
+  auto read_cios(std::span<const std::uint8_t> input, const wiiform::CiosOptions& options) -> ValidatedTitleJob {
     require(options.slot >= 248 && options.slot <= 251,
             "Supported d2x cIOS slots are 248 through 251");
     require(options.base == 38 || options.base == 56 || options.base == 57 || options.base == 58,
             "Supported d2x cIOS bases are 38, 56, 57, and 58");
-    return read_package(input, expected_sha256, PackageMode::d2x_cios, &options);
+    auto validated = read_package(input, {.nintendo_signed = false, .legacy_key_index = false},
+                                  [&](quint64 title_id, quint16 version) {
+      require(is_wii_ios(title_id) && static_cast<quint32>(title_id) == options.slot,
+              "WAD does not match requested cIOS slot");
+      require(version == options.revision, "WAD does not match requested cIOS revision");
+    });
+    const auto& job = validated.get();
+    require(Tmd(job.data[0]).Type(0) == 1, "d2x IOSINFO must be in the first local TMD content");
+    require(valid_cios_header(job.data[2], options.base),
+            "WAD does not contain a valid d2x IOSINFO header for the requested base");
+    return validated;
   }
-
 }

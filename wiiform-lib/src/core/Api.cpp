@@ -8,6 +8,7 @@
 #include <SysConfWrite.hpp>
 #include <Factory.hpp>
 #include <Install.hpp>
+#include <WadPackage.hpp>
 #include <Inspection.hpp>
 #include <Layout.hpp>
 #include <NandBuffer.hpp>
@@ -37,14 +38,6 @@ namespace {
   auto view(std::span<const std::uint8_t> value) -> QByteArray {
     require(value.size() <= std::size_t(std::numeric_limits<int>::max()), "Input exceeds supported size");
     return QByteArray::fromRawData(reinterpret_cast<const char*>(value.data()), int(value.size()));
-  }
-
-  auto native_boot_policy(BootPolicy value) -> inspect::BootPolicy {
-    switch (value) {
-      case BootPolicy::stock: return inspect::BootPolicy::Stock;
-      case BootPolicy::preserve_source: return inspect::BootPolicy::PreserveSource;
-    }
-    throw std::runtime_error("Unsupported boot policy");
   }
 
   auto profile_for(const StockSeed& seed, Menu menu) -> nand_build::Profile {
@@ -116,15 +109,29 @@ auto write_backupmii_header(std::span<std::uint8_t> keys) -> bool {
   return true;
 }
 
-auto initialize_image(std::span<std::uint8_t> nand, const StockSeed& seed, Menu menu,
-                      BootPolicy boot_policy) -> StockIdentity {
-  const detail::ApiCall call;
-  require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
-  const auto profile = profile_for(seed, menu);
-  const auto keys = view(seed.keys);
-  const auto boots = view(seed.boot_blocks);
-  nand_build::initialize_image(nand, keys, boots, profile, native_boot_policy(boot_policy));
-  return {sha256(boots), sha256(keys)};
+namespace {
+  // Shared by the two public initializers, which differ in the boot area they accept.
+  template<class VerifyBoot>
+  auto initialize(std::span<std::uint8_t> nand, const StockSeed& seed, Menu menu,
+                  VerifyBoot&& verify_boot) -> StockIdentity {
+    const detail::ApiCall call;
+    require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
+    const auto profile = profile_for(seed, menu);
+    const auto keys = view(seed.keys);
+    const auto boots = view(seed.boot_blocks);
+    verify_boot(boots);
+    nand_build::initialize_image(nand, keys, boots, profile);
+    return {sha256(boots), sha256(keys)};
+  }
+}
+
+auto initialize_image(std::span<std::uint8_t> nand, const StockSeed& seed, Menu menu) -> StockIdentity {
+  return initialize(nand, seed, menu, inspect::verify_stock_boot);
+}
+
+auto initialize_image_with_source_boot(std::span<std::uint8_t> nand, const StockSeed& seed,
+                                       Menu menu) -> StockIdentity {
+  return initialize(nand, seed, menu, inspect::verify_source_boot);
 }
 
 void install_nus_title(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
@@ -136,16 +143,25 @@ void install_nus_title(std::span<std::uint8_t> nand, const std::optional<NusCach
   title_install::install_nus_title(nand, directory, title.id, title.version, cache && cache->offline);
 }
 
-auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
-                 const Sha256& expected_sha256, WadPolicy policy) -> InstalledWad {
+auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad {
   const detail::ApiCall call;
-  return title_install::install_wad(nand, wad, expected_sha256, policy);
+  return title_install::install_wad(nand, wad_package::read(wad));
+}
+
+auto install_unsigned_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad {
+  const detail::ApiCall call;
+  return title_install::install_wad(nand, wad_package::read_unsigned_channel(wad));
+}
+
+auto install_homebrew_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad {
+  const detail::ApiCall call;
+  return title_install::install_wad(nand, wad_package::read_homebrew_channel(wad));
 }
 
 auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
-                  const Sha256& expected_sha256, const CiosOptions& options) -> InstalledWad {
+                  const CiosOptions& options) -> InstalledWad {
   const detail::ApiCall call;
-  return title_install::install_cios(nand, wad, expected_sha256, options);
+  return title_install::install_cios(nand, wad, options);
 }
 
 void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {

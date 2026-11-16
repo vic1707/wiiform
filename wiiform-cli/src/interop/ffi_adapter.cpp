@@ -65,9 +65,15 @@ auto write_backupmii_header(Nand keys) -> bool {
   return wiiform::write_backupmii_header(span(keys));
 }
 
-auto initialize_image(Nand nand, const StockSeed& seed, Menu menu, BootPolicy boot_policy) -> StockIdentity {
+auto initialize_image(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity {
   const auto settings = native(seed.settings);
-  const auto identity = wiiform::initialize_image(span(nand), native(seed, settings), menu, boot_policy);
+  const auto identity = wiiform::initialize_image(span(nand), native(seed, settings), menu);
+  return {identity.boot_area, identity.footer};
+}
+
+auto initialize_image_with_source_boot(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity {
+  const auto settings = native(seed.settings);
+  const auto identity = wiiform::initialize_image_with_source_boot(span(nand), native(seed, settings), menu);
   return {identity.boot_area, identity.footer};
 }
 
@@ -80,12 +86,20 @@ void install_cached_nus_title(Nand nand, const NusCache& cache, TitleVersion tit
                              {title.id, title.version});
 }
 
-auto install_wad(Nand nand, Bytes wad, const Digest& sha256, WadPolicy policy) -> InstalledWad {
-  return shared(wiiform::install_wad(span(nand), span(wad), sha256, policy));
+auto install_wad(Nand nand, Bytes wad) -> InstalledWad {
+  return shared(wiiform::install_wad(span(nand), span(wad)));
 }
 
-auto install_cios(Nand nand, Bytes wad, const Digest& sha256, const CiosOptions& options) -> InstalledWad {
-  return shared(wiiform::install_cios(span(nand), span(wad), sha256,
+auto install_unsigned_channel(Nand nand, Bytes wad) -> InstalledWad {
+  return shared(wiiform::install_unsigned_channel(span(nand), span(wad)));
+}
+
+auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad {
+  return shared(wiiform::install_homebrew_channel(span(nand), span(wad)));
+}
+
+auto install_cios(Nand nand, Bytes wad, const CiosOptions& options) -> InstalledWad {
+  return shared(wiiform::install_cios(span(nand), span(wad),
       {options.slot, options.base, options.revision, options.replace_stock_stub}));
 }
 

@@ -5,9 +5,9 @@ use std::{num::NonZeroU64, str::FromStr};
 use anyhow::{Context, Result};
 use hex::FromHex;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::{Data, Menu};
+use crate::{Menu, Wad};
 
 /// Nonzero Wii title ID, written as 16 hex digits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,34 +51,13 @@ impl std::fmt::Display for TitleId {
     }
 }
 
-/// SHA-256 of the exact binary payload, encoded as 64 hex digits.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub struct Sha256(
-    #[serde(with = "hex")]
-    #[schemars(
-        with = "String",
-        length(equal = 64),
-        regex(pattern = "^[0-9a-fA-F]{64}$")
-    )]
-    pub [u8; 32],
-);
-
-impl FromStr for Sha256 {
-    type Err = hex::FromHexError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        <[u8; 32]>::from_hex(value).map(Self)
-    }
-}
-
 /// A WAD to install when its title is absent, or to verify when it is present.
+// The flattened WAD rejects unknown keys for the whole entry: see `WadFile`.
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct Title {
-    pub source: Data,
-    /// SHA-256 of the exact WAD bytes.
-    pub sha256: Sha256,
+    #[serde(flatten)]
+    pub wad: Wad,
     /// Permit an unsigned community channel after content validation.
     /// By default the WAD must carry Nintendo signatures.
     #[serde(default)]
@@ -87,11 +66,10 @@ pub struct Title {
 
 /// A prebuilt Wii d2x cIOS WAD and the slot it is expected to fill.
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct Cios {
-    pub source: Data,
-    /// SHA-256 of the exact WAD bytes.
-    pub sha256: Sha256,
+    #[serde(flatten)]
+    pub wad: Wad,
     pub target: CiosTarget,
 }
 

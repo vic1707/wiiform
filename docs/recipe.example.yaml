@@ -1,6 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/vic1707/wiiform/main/docs/wiiform.recipe.schema.json
 # Template only: replace the sample WAD path and hash with real values.
-# Local paths are read at install time, relative to this file. Titles require a SHA-256.
 menu: 4.3E
 
 # Stock channels to remove. Names expand to the menu region's title IDs.
@@ -22,29 +21,23 @@ setup:
     progressive: true # Enables 480p where supported, off by default. fix_480p is a separate hack.
     pal60: false # Off by default.
 
+# WADs to install. Each entry takes one of path, url or inline, and the
+# SHA-256 of the raw WAD. Paths are relative to this file.
 titles:
-  - source:
-      path: wads/example-pal-channel.wad
+  - path: wads/example-pal-channel.wad
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     allow_unsigned: false # true permits an unsigned community channel WAD
-  # Stock IOS9 v1034 also uses titles with the default Nintendo signature policy.
-  # - source:
-  #     path: wads/IOS9-64-v1034.wad
+  # Stock IOS9 v1034 is also a title, with the default Nintendo signature check.
+  # - path: wads/IOS9-64-v1034.wad
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  # Or use an HTTPS URL. Use the SHA-256 of the raw WAD you expect to download.
-  # - source:
-  #     url: "https://example.com/channel.wad"
+  # - url: "https://example.com/channel.wad"
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  # Or supply the WAD bytes as base64. Each source takes one key.
-  # - source:
-  #     inline: !!binary |
-  #       BASE64_OF_WAD
+  # - inline: BASE64_OF_WAD
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 # Optional prebuilt d2x WADs. Use path, url, or inline as with titles.
 # cios:
-#   - source:
-#       path: wads/d2x-wii-249-base56.wad
+#   - path: wads/d2x-wii-249-base56.wad
 #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 #     target:
 #       slot: 249 # 248–251.
@@ -61,8 +54,7 @@ titles:
 # A custom HBC WAD requires its SHA-256.
 # hbc:
 #   custom:
-#     source:
-#       path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
+#     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
 #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 priiloader: # An empty mapping installs Priiloader with pinned defaults.

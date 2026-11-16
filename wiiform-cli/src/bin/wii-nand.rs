@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::Result;
-use clap::{
-    Args, Parser, Subcommand,
-    builder::{PathBufValueParser, TypedValueParser},
-};
+use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    native::{Nand, Session, WadPolicy},
+    native::{Nand, Session},
     priiloader_payload,
-    recipe::{CiosTarget, Data, Priiloader, ResolvedPath, Sha256, TitleId},
+    recipe::{CiosTarget, Priiloader, ResolvedPath, Sha256, TitleId, Wad},
     workflow::{NusCache, publish_edit, validate_output, warn_if_already_present},
 };
 
@@ -53,8 +50,8 @@ enum Command {
         #[command(flatten)]
         image: ImagePaths,
         /// Local WAD path or HTTPS URL.
-        #[arg(value_name = "WAD", value_parser = wad_source())]
-        wad: Data,
+        #[arg(value_name = "WAD")]
+        wad: PathBuf,
         #[arg(long)]
         sha256: Sha256,
         /// Permit an unsigned community channel after content validation.
@@ -66,8 +63,8 @@ enum Command {
         #[command(flatten)]
         image: ImagePaths,
         /// Local WAD path or HTTPS URL.
-        #[arg(value_name = "WAD", value_parser = wad_source())]
-        wad: Data,
+        #[arg(value_name = "WAD")]
+        wad: PathBuf,
         #[arg(long)]
         sha256: Sha256,
         #[command(flatten)]
@@ -86,10 +83,6 @@ enum Command {
         #[command(flatten)]
         config: Priiloader,
     },
-}
-
-fn wad_source() -> impl TypedValueParser<Value = Data> {
-    PathBufValueParser::new().try_map(Data::try_from)
 }
 
 fn main() -> ExitCode {
@@ -116,14 +109,14 @@ fn run(cli: Cli) -> Result<()> {
             sha256,
             allow_unsigned,
         } => {
-            let policy = if allow_unsigned {
-                WadPolicy::LegacyChannel
-            } else {
-                WadPolicy::Standard
-            };
-            let wad = wad.resolve_wad(wiiform::fetch)?;
+            let wad = Wad::try_from((wad, sha256))?;
             image.edit(|session, nand| {
-                warn_if_already_present(&session.install_wad(nand, &wad, &sha256, policy)?);
+                let installed = if allow_unsigned {
+                    session.install_unsigned_channel(nand, &wad)
+                } else {
+                    session.install_wad(nand, &wad)
+                }?;
+                warn_if_already_present(&installed);
                 Ok(())
             })
         }
@@ -133,9 +126,9 @@ fn run(cli: Cli) -> Result<()> {
             sha256,
             target,
         } => {
-            let wad = wad.resolve_wad(wiiform::fetch)?;
+            let wad = Wad::try_from((wad, sha256))?;
             image.edit(|session, nand| {
-                warn_if_already_present(&session.install_cios(nand, &wad, &sha256, &target)?);
+                warn_if_already_present(&session.install_cios(nand, &wad, &target)?);
                 Ok(())
             })
         }

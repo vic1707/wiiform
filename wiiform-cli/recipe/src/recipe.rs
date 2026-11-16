@@ -37,28 +37,32 @@ pub struct Recipe {
     pub priiloader: Option<Priiloader>,
 }
 
-impl Recipe {
-    /// Reads a recipe for `menu_override`, or for the menu it names. What the
-    /// types cannot express is checked here, and local paths become relative
-    /// to the recipe's directory.
-    pub fn load(path: &ResolvedPath, menu_override: Option<Menu>) -> Result<Self> {
+/// Reads a recipe file. Its WADs are read, downloaded and checked on the way,
+/// with local paths relative to the recipe's directory.
+impl TryFrom<&ResolvedPath> for Recipe {
+    type Error = anyhow::Error;
+
+    fn try_from(path: &ResolvedPath) -> Result<Self> {
         let path = path.as_ref();
-        Self::read(
-            crate::open_regular_file(path)?.0,
-            path.parent()
-                .context("recipe path has no parent directory")?,
-            menu_override,
-        )
+        let directory = path.parent().context("recipe path has no parent")?;
+        Self::read(crate::open_regular_file(path)?.0, directory)
+    }
+}
+
+impl Recipe {
+    fn read(input: impl Read, directory: &Path) -> Result<Self> {
+        let recipe: Self = crate::wad::relative_to(directory.to_owned(), || {
+            serde_saphyr::from_reader_with_options(input, crate::yaml::options())
+        })
+        .context("invalid recipe")?;
+        recipe.validate()?;
+        Ok(recipe)
     }
 
-    fn read(input: impl Read, directory: &Path, menu_override: Option<Menu>) -> Result<Self> {
-        let mut recipe: Self =
-            serde_saphyr::from_reader_with_options(input, crate::yaml::options())
-                .context("invalid recipe YAML")?;
-        let menu = menu_override.unwrap_or(recipe.menu);
-        recipe.menu = menu;
-
-        if let Some(setup) = &recipe.setup {
+    /// Checks what the types cannot express. Call it again after changing a field.
+    pub fn validate(&self) -> Result<()> {
+        let menu = self.menu;
+        if let Some(setup) = &self.setup {
             ensure!(
                 menu.allows_language(setup.language_for(menu)),
                 "setup language is not supported by menu {menu}"
@@ -71,115 +75,110 @@ impl Recipe {
             );
         }
         let mut slots = HashSet::new();
-        for cios in &recipe.cios {
+        for cios in &self.cios {
             let slot = cios.target.slot;
             ensure!(slots.insert(slot), "recipe lists cIOS slot {slot} twice");
         }
-
-        let sources = (recipe.titles.iter_mut().map(|title| &mut title.source))
-            .chain(recipe.cios.iter_mut().map(|cios| &mut cios.source))
-            .chain(match &mut recipe.hbc {
-                Some(Hbc::Custom { source, .. }) => Some(source),
-                _ => None,
-            });
-        for source in sources {
-            source.rebase(directory);
-        }
-        Ok(recipe)
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::Cow, fs};
+    use std::fs;
+
+    use base64::{Engine, engine::general_purpose::STANDARD};
 
     use super::*;
-    use crate::{Aspect, Autoboot, Data, Hack, TitleId};
+    use crate::{Aspect, Autoboot, Hack, Sha256, TitleId, wad::tests::with_fetch};
 
-    const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const WAD: [u8; 0x40] = [7; 0x40];
 
-    fn read(yaml: &str, menu: Option<Menu>) -> Result<Recipe> {
-        Recipe::read(yaml.as_bytes(), Path::new("."), menu)
+    fn read(yaml: &str) -> Result<Recipe> {
+        Recipe::read(yaml.as_bytes(), Path::new("."))
     }
 
-    fn no_fetch(_: &str, _: usize) -> Result<Vec<u8>> {
-        panic!("local payload resolution should not fetch")
+    fn sha(bytes: &[u8]) -> String {
+        hex::encode(Sha256::of(bytes).0)
+    }
+
+    /// The keys of a WAD entry carrying `WAD` inline.
+    fn inline() -> String {
+        format!("inline: {}, sha256: {}", STANDARD.encode(WAD), sha(&WAD))
+    }
+
+    fn message(result: Result<Recipe>) -> String {
+        format!("{:#}", result.expect_err("the recipe must be rejected"))
     }
 
     #[test]
-    fn hbc_resolves_a_semver_using_the_release_digest_or_a_supplied_hash() -> Result<()> {
-        for (version, name, sha256, digest) in [
+    fn hbc_reborn_uses_the_release_digest_or_a_supplied_hash() -> Result<()> {
+        let digest = sha(&WAD);
+        for (version, name, sha256, asset_digest) in [
             (
                 "2.3.4",
                 "hbc-reborn-2.3.4-OHBC.wad",
-                "",
-                format!("\"sha256:{SHA}\""),
+                String::new(),
+                format!("\"sha256:{digest}\""),
             ),
             (
                 "1.12.1",
                 "hbc-1.12.1-OHBC.wad",
-                &format!(", sha256: {SHA}"),
+                format!(", sha256: {digest}"),
                 "null".to_owned(),
             ),
         ] {
-            let recipe = read(
-                &format!("menu: 4.3E\nhbc: {{reborn: {{version: {version}{sha256}}}}}"),
-                None,
+            let yaml = format!("menu: 4.3E\nhbc: {{reborn: {{version: {version}{sha256}}}}}");
+            let recipe = with_fetch(
+                move |url, _| {
+                    if url.starts_with("https://api.github.com/") {
+                        assert!(url.ends_with(&format!("/releases/tags/v{version}")));
+                        Ok(format!(
+                            r#"{{"assets":[{{"name":"other.wad"}},{{"name":"{name}","digest":{asset_digest}}}]}}"#
+                        ).into_bytes())
+                    } else {
+                        assert!(url.ends_with(&format!("/v{version}/{name}")));
+                        Ok(WAD.to_vec())
+                    }
+                },
+                || read(&yaml),
             )?;
-            let hbc = recipe.hbc.unwrap();
-            let (wad, checksum) = hbc.resolve(|url, _| {
-                if url.starts_with("https://api.github.com/") {
-                    assert!(url.ends_with(&format!("/releases/tags/v{version}")));
-                    Ok(format!(
-                        r#"{{"assets":[{{"name":"other.wad"}},{{"name":"{name}","digest":{digest}}}]}}"#
-                    ).into_bytes())
-                } else {
-                    assert!(url.ends_with(&format!("/v{version}/{name}")));
-                    Ok(vec![0; 0x40])
-                }
-            })?;
-            assert_eq!(&*wad, &[0; 0x40]);
-            assert_eq!(checksum, SHA.parse()?);
+            assert_eq!(&*recipe.hbc.unwrap().0, WAD);
         }
-        let hbc = read("menu: 4.3E\nhbc: {reborn: {version: 2.3.4}}", None)?
-            .hbc
-            .unwrap();
         for metadata in [
             r#"{"assets":[{"name":"hbc-reborn-2.3.4-LULZ.wad"}]}"#,
             r#"{"assets":[{"name":"hbc-reborn-2.3.4-OHBC.wad"}]}"#,
+            r#"{"assets":[{"name":"hbc-reborn-2.3.4-OHBC.wad","digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}]}"#,
         ] {
-            assert!(
-                hbc.resolve(|url, _| {
-                    assert!(url.starts_with("https://api.github.com/"));
-                    Ok(metadata.as_bytes().to_vec())
-                })
-                .is_err()
+            let result = with_fetch(
+                move |url, _| {
+                    if url.starts_with("https://api.github.com/") {
+                        Ok(metadata.as_bytes().to_vec())
+                    } else {
+                        Ok(WAD.to_vec())
+                    }
+                },
+                || read("menu: 4.3E\nhbc: {reborn: {version: 2.3.4}}"),
             );
+            assert!(result.is_err(), "{metadata}");
         }
         Ok(())
     }
 
     #[test]
     fn hbc_takes_exactly_one_variant() -> Result<()> {
-        let recipe = read(
-            &format!("menu: 4.3E\nhbc: {{custom: {{source: {{path: file.wad}}, sha256: {SHA}}}}}"),
-            None,
-        )?;
-        assert!(
-            matches!(recipe.hbc, Some(Hbc::Custom { source: Data::Path(path), .. }) if path == Path::new("./file.wad"))
-        );
+        let wad = inline();
+        let recipe = read(&format!("menu: 4.3E\nhbc: {{custom: {{{wad}}}}}"))?;
+        assert_eq!(&*recipe.hbc.unwrap().0, WAD);
         for fields in [
             "reborn: {version: '1.2'}".to_owned(),
             "classic: {}".to_owned(),
-            "custom: {source: {path: file.wad}}".to_owned(),
-            format!("custom: {{version: 1.16.0, source: {{path: file.wad}}, sha256: {SHA}}}"),
-            "reborn: {version: 1.16.0, source: {path: file.wad}}".to_owned(),
-            format!(
-                "reborn: {{version: 1.16.0}}, custom: {{source: {{path: file.wad}}, sha256: {SHA}}}"
-            ),
+            "custom: {path: file.wad}".to_owned(),
+            format!("custom: {{version: 1.16.0, {wad}}}"),
+            format!("reborn: {{version: 1.16.0}}, custom: {{{wad}}}"),
         ] {
             assert!(
-                read(&format!("menu: 4.3E\nhbc: {{{fields}}}"), None).is_err(),
+                read(&format!("menu: 4.3E\nhbc: {{{fields}}}")).is_err(),
                 "{fields}"
             );
         }
@@ -187,77 +186,90 @@ mod tests {
     }
 
     #[test]
-    fn a_source_is_one_path_url_or_binary_block() -> Result<()> {
-        let yaml = format!(
-            "menu: 4.3E\ntitles:\n  - sha256: {SHA}\n    source:\n      inline: !!binary |\n        /wAB\n        /v8=\n"
+    fn a_wad_is_one_source_whose_bytes_match_its_hash() -> Result<()> {
+        let title = |fields: &str| read(&format!("menu: 4.3E\ntitles:\n  - {fields}\n"));
+        let encoded = STANDARD.encode(WAD);
+        let digest = sha(&WAD);
+        let (first, second) = encoded.split_at(40);
+        let block = format!("sha256: {digest}\n    inline: |\n      {first}\n      {second}");
+        assert_eq!(&*title(&block)?.titles[0].wad, WAD);
+
+        let wrong = sha(b"something else");
+        let small = STANDARD.encode([7; 0x3f]);
+        assert!(
+            message(title(&format!("inline: {encoded}\n    sha256: {wrong}"))).contains("SHA-256")
         );
-        let source = &read(&yaml, None)?.titles[0].source;
-        assert!(matches!(
-            source.resolve(0..=usize::MAX, no_fetch)?,
-            Cow::Borrowed([255, 0, 1, 254, 255])
-        ));
-        assert!(source.resolve_wad(no_fetch).is_err(), "too small for a WAD");
+        assert!(
+            message(title(&format!(
+                "inline: {small}\n    sha256: {}",
+                sha(&[7; 0x3f])
+            )))
+            .contains("size")
+        );
         for bad in [
-            format!("source: {{path: a.wad, inline: !!binary /wAB}}\n    sha256: {SHA}"),
-            format!("source: {{inline: /wAB}}\n    sha256: {SHA}"),
-            format!("source: {{url: https://example.com/a.wad, path: a.wad}}\n    sha256: {SHA}"),
-            format!("source: {{path: null}}\n    sha256: {SHA}"),
-            format!("sha256: {SHA}"),
-            "source: {inline: !!binary /wAB}".to_owned(),
+            format!("inline: {encoded}\n    path: a.wad\n    sha256: {digest}"),
+            format!("inline: {encoded}\n    url: https://example.com/a.wad\n    sha256: {digest}"),
+            format!("sha256: {digest}"),
+            format!("inline: {encoded}"),
+            format!("inline: '***'\n    sha256: {digest}"),
+            format!("inline: !!binary {encoded}\n    sha256: {digest}"),
+            format!("path: null\n    sha256: {digest}"),
+            format!("inline: {encoded}\n    sha256: {digest}\n    unexpected: true"),
         ] {
-            assert!(
-                read(&format!("menu: 4.3E\ntitles:\n  - {bad}\n"), None).is_err(),
-                "{bad}"
-            );
+            assert!(title(&bad).is_err(), "{bad}");
         }
         Ok(())
     }
 
     #[test]
     fn a_url_source_is_fetched_within_the_wad_size_limit() -> Result<()> {
-        let url = "https://example.com/package.wad";
-        let yaml = format!("menu: 4.3E\ntitles: [{{source: {{url: {url}}}, sha256: {SHA}}}]");
-        let title = &read(&yaml, None)?.titles[0];
-        let bytes = title.source.resolve_wad(|requested, limit| {
-            assert_eq!(requested, url);
-            assert_eq!(limit, 0x2100_0000);
-            Ok(vec![7; 0x40])
-        })?;
-        assert_eq!(&*bytes, &[7; 0x40]);
-        assert_eq!(title.sha256.0, [0xaa; 32]);
-        assert!(title.source.resolve_wad(|_, _| Ok(vec![])).is_err());
+        const URL: &str = "https://example.com/package.wad";
+        let yaml = format!(
+            "menu: 4.3E\ntitles: [{{url: {URL}, sha256: {}}}]",
+            sha(&WAD)
+        );
+        let recipe = with_fetch(
+            |requested, limit| {
+                assert_eq!(requested, URL);
+                assert_eq!(limit, 0x2100_0000);
+                Ok(WAD.to_vec())
+            },
+            || read(&yaml),
+        )?;
+        assert_eq!(&*recipe.titles[0].wad, WAD);
+        assert!(with_fetch(|_, _| Ok(vec![]), || read(&yaml)).is_err());
+        assert!(with_fetch(|_, _| anyhow::bail!("offline"), || read(&yaml)).is_err());
         Ok(())
     }
 
     #[test]
     fn titles_and_cios_accept_only_their_own_fields() -> Result<()> {
         let target = "target: {slot: 249, base: 56, revision: 65535}";
-        let inline = "source: {inline: !!binary /wAB}";
-        let titles = |fields: &str| read(&format!("menu: 4.3E\ntitles: [{{{fields}}}]"), None);
-        let cios = |fields: &str| read(&format!("menu: 4.3E\ncios: [{{{fields}}}]"), None);
+        let wad = inline();
+        let titles = |fields: &str| read(&format!("menu: 4.3E\ntitles: [{{{fields}}}]"));
+        let cios = |fields: &str| read(&format!("menu: 4.3E\ncios: [{{{fields}}}]"));
 
-        assert!(!titles(&format!("{inline}, sha256: {SHA}"))?.titles[0].allow_unsigned);
-        assert!(
-            titles(&format!("{inline}, sha256: {SHA}, allow_unsigned: true"))?.titles[0]
-                .allow_unsigned
-        );
-        let recipe = cios(&format!("{inline}, sha256: {SHA}, {target}"))?;
+        assert!(!titles(&wad)?.titles[0].allow_unsigned);
+        assert!(titles(&format!("{wad}, allow_unsigned: true"))?.titles[0].allow_unsigned);
+        let recipe = cios(&format!("{wad}, {target}"))?;
         assert_eq!(
             Some(recipe.cios[0].target.title_id()),
             TitleId::new(0x0000_0001_0000_00f9)
         );
+        assert_eq!(&*recipe.cios[0].wad, WAD);
 
         for fields in [
-            format!("{inline}, sha256: {SHA}, unexpected: true"),
-            format!("{inline}, sha256: {SHA}, {target}"),
-            format!("{inline}, sha256: {SHA}, allow_unsigned: false, allow_unsigned: true"),
+            format!("{wad}, unexpected: true"),
+            format!("{wad}, {target}"),
+            format!("{wad}, allow_unsigned: false, allow_unsigned: true"),
+            format!("source: {{{wad}}}"),
         ] {
             assert!(titles(&fields).is_err(), "{fields}");
         }
         for fields in [
-            format!("{inline}, {target}"),
-            format!("{inline}, sha256: {SHA}"),
-            format!("{inline}, sha256: {SHA}, {target}, allow_unsigned: true"),
+            target.to_owned(),
+            wad.clone(),
+            format!("{wad}, {target}, allow_unsigned: true"),
         ] {
             assert!(cios(&fields).is_err(), "{fields}");
         }
@@ -265,45 +277,39 @@ mod tests {
     }
 
     #[test]
-    fn file_path_is_relative_and_rejects_nonfiles() -> Result<()> {
+    fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
         let dir = std::env::temp_dir().join(format!("wiiform-path-test-{}", std::process::id()));
         fs::create_dir(&dir)?;
-        let wad = dir.join("payload.wad");
-        let recipe_path = dir.join("recipe.yaml");
-        let contents = [0xff; 0x40];
-        fs::write(&wad, contents)?;
+        fs::write(dir.join("payload.wad"), WAD)?;
         std::os::unix::fs::symlink("payload.wad", dir.join("linked.wad"))?;
-        fs::write(
-            &recipe_path,
-            format!("menu: 4.3E\ntitles: [{{source: {{path: linked.wad}}, sha256: {SHA}}}]"),
-        )?;
-        let recipe = Recipe::load(&ResolvedPath::try_from(recipe_path)?, None)?;
-        let source = &recipe.titles[0].source;
-        assert!(matches!(source, Data::Path(path) if path.ends_with("linked.wad")));
-        assert_eq!(source.resolve_wad(no_fetch)?.as_ref(), contents);
+        let recipe_path = dir.join("recipe.yaml");
+        let digest = sha(&WAD);
+        let title =
+            |path: &str| format!("menu: 4.3E\ntitles: [{{path: {path}, sha256: {digest}}}]");
+
+        fs::write(&recipe_path, title("linked.wad"))?;
+        let recipe = Recipe::try_from(&ResolvedPath::try_from(recipe_path)?)?;
+        assert_eq!(&*recipe.titles[0].wad, WAD);
         for bad in [".", "missing.wad"] {
-            let yaml = format!("menu: 4.3E\ntitles: [{{source: {{path: {bad}}}, sha256: {SHA}}}]");
-            let recipe = Recipe::read(yaml.as_bytes(), &dir, None)?;
-            assert!(recipe.titles[0].source.resolve_wad(no_fetch).is_err());
+            assert!(Recipe::read(title(bad).as_bytes(), &dir).is_err(), "{bad}");
         }
+        assert!(read(&title("linked.wad")).is_err(), "another directory");
         fs::remove_dir_all(dir)?;
         Ok(())
     }
 
     #[test]
-    fn removals_and_setup_follow_the_effective_menu() -> Result<()> {
-        let ids = |menu| -> Result<Vec<u64>> {
-            let recipe = read(
-                "menu: 4.3E\nremove: [news-channel, forecast-channel, news-channel]",
-                menu,
-            )?;
-            Ok((recipe.remove.iter())
+    fn removals_and_setup_follow_the_menu_after_an_override() -> Result<()> {
+        let mut recipe =
+            read("menu: 4.3E\nremove: [news-channel, forecast-channel, news-channel]")?;
+        let ids = |recipe: &Recipe| -> Vec<u64> {
+            (recipe.remove.iter())
                 .flat_map(|channel| channel.title_ids(recipe.menu))
                 .map(TitleId::as_u64)
-                .collect())
+                .collect()
         };
         assert_eq!(
-            ids(None)?,
+            ids(&recipe),
             [
                 0x0001_0002_4841_4650,
                 0x0001_0002_4841_4641,
@@ -311,42 +317,41 @@ mod tests {
                 0x0001_0002_4841_4741
             ]
         );
-        assert_eq!(ids(Some(Menu::J43))?[0], 0x0001_0002_4841_464a);
+        recipe.menu = Menu::J43;
+        recipe.validate()?;
+        assert_eq!(ids(&recipe)[0], 0x0001_0002_4841_464a);
 
-        assert!(read("menu: 4.3E\nsetup: {language: ja}", Some(Menu::J43)).is_ok());
+        let mut recipe = read("menu: 4.3E\nsetup: {language: de, country: FR}")?;
+        recipe.menu = Menu::U43;
+        assert!(recipe.validate().is_err());
         for yaml in [
             "menu: 4.3E\nsetup: {country: '110'}",
-            "menu: 4.3E\nsetup: {language: en}",
-            "menu: 4.3E\nsetup: {country: GB}",
+            "menu: 4.3E\nsetup: {language: ja}",
+            "menu: 4.3J\nsetup: {country: GB}",
             "menu: 4.3E\nremove: [disc-channel]",
             "menu: 4.3E\nremove: ['0001000248414650']",
         ] {
-            assert!(read(yaml, Some(Menu::J43)).is_err(), "{yaml}");
+            assert!(read(yaml).is_err(), "{yaml}");
         }
-        assert!(read("menu: 4.3E\nsetup: {language: ja}", None).is_err());
         Ok(())
     }
 
     #[test]
     fn display_is_part_of_first_run_setup() -> Result<()> {
         for yaml in ["menu: 4.3E", "menu: 4.3E\nsetup: null"] {
-            assert!(read(yaml, None)?.setup.is_none());
+            assert!(read(yaml)?.setup.is_none());
         }
-        assert_eq!(
-            read("menu: 4.3E\nsetup: {}", None)?.setup,
-            Some(Setup::default())
-        );
+        assert_eq!(read("menu: 4.3E\nsetup: {}")?.setup, Some(Setup::default()));
 
         let recipe = read(
             "menu: 4.3E\nsetup: {nickname: 'Éééééééééé', display: {aspect: '16:9', progressive: true}}",
-            None,
         )?;
         let setup = recipe.setup.context("expected setup settings")?;
         assert_eq!(setup.nickname.as_ref(), "Éééééééééé");
         assert_eq!(setup.display.aspect, Aspect::SixteenNine);
         assert!(setup.display.progressive);
         assert!(!setup.display.pal60);
-        assert!(read("menu: 4.3E\ndisplay: {}", None).is_err());
+        assert!(read("menu: 4.3E\ndisplay: {}").is_err());
         Ok(())
     }
 
@@ -354,28 +359,23 @@ mod tests {
     fn priiloader_takes_settings_and_a_list_of_hacks() -> Result<()> {
         let recipe = read(
             "menu: 4.3E\npriiloader: {stop_disc: true, autoboot: homebrew_channel, hacks: [wiimmfi, fix_480p]}",
-            None,
         )?;
         let config = recipe.priiloader.context("expected Priiloader settings")?;
         assert!(config.stop_disc && !config.white_background);
         assert_eq!(config.autoboot, Autoboot::HomebrewChannel);
         assert_eq!(config.hacks, [Hack::Wiimmfi, Hack::Fix480p]);
 
-        let recipe = read("menu: 4.3E\npriiloader: {}", None)?;
+        let recipe = read("menu: 4.3E\npriiloader: {}")?;
         assert_eq!(recipe.priiloader, Some(Priiloader::default()));
         assert_eq!(Priiloader::default().autoboot, Autoboot::SystemMenu);
-        assert!(
-            read("menu: 4.3E\npriiloader: null", None)?
-                .priiloader
-                .is_none()
-        );
+        assert!(read("menu: 4.3E\npriiloader: null")?.priiloader.is_none());
         for priiloader in [
             "{app: override.app}",
             "{hacks: [unknown]}",
             "{hacks: {fix_480p: true}}",
         ] {
             assert!(
-                read(&format!("menu: 4.3E\npriiloader: {priiloader}"), None).is_err(),
+                read(&format!("menu: 4.3E\npriiloader: {priiloader}")).is_err(),
                 "{priiloader}"
             );
         }
@@ -384,9 +384,19 @@ mod tests {
 
     #[test]
     fn the_documented_example_is_a_valid_recipe() -> Result<()> {
+        // The example names a WAD that does not exist; give it one.
         let example = include_str!("../../../docs/recipe.example.yaml");
-        let recipe = read(example, None)?;
+        let placeholder = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let example = example
+            .replacen(
+                "path: wads/example-pal-channel.wad",
+                &format!("inline: {}", STANDARD.encode(WAD)),
+                1,
+            )
+            .replacen(placeholder, &sha(&WAD), 1);
+        let recipe = read(&example)?;
         assert_eq!(recipe.remove.len(), 2);
+        assert_eq!(&*recipe.titles[0].wad, WAD);
         assert_eq!(recipe.priiloader.unwrap().hacks, [Hack::Fix480p]);
         Ok(())
     }
@@ -395,15 +405,15 @@ mod tests {
     fn cios_slots_and_bases_are_checked_when_the_recipe_is_read() {
         let cios = |slot: u8, base: u8| {
             format!(
-                "{{source: {{inline: !!binary /wAB}}, sha256: {SHA}, target: {{slot: {slot}, base: {base}, revision: 1}}}}"
+                "{{{}, target: {{slot: {slot}, base: {base}, revision: 1}}}}",
+                inline()
             )
         };
         let recipe =
-            |entries: &[String]| read(&format!("menu: 4.3E\ncios: [{}]", entries.join(", ")), None);
+            |entries: &[String]| read(&format!("menu: 4.3E\ncios: [{}]", entries.join(", ")));
         assert!(recipe(&[cios(249, 56), cios(250, 57)]).is_ok());
         assert!(recipe(&[cios(247, 56)]).is_err());
         assert!(recipe(&[cios(249, 55)]).is_err());
-        let duplicate = recipe(&[cios(249, 56), cios(249, 57)]).unwrap_err();
-        assert!(format!("{duplicate:#}").contains("twice"), "{duplicate:#}");
+        assert!(message(recipe(&[cios(249, 56), cios(249, 57)])).contains("twice"));
     }
 }

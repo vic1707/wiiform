@@ -1892,7 +1892,6 @@ dependencies = [
  "cxx",
  "cxx-build",
  "lzma-rust2",
- "reqwest",
  "rustix",
  "serde",
  "serde-saphyr",
@@ -1906,15 +1905,18 @@ name = "wiiform-recipe"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "hex",
  "libc",
  "nnn",
+ "reqwest",
  "schemars",
  "semver",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

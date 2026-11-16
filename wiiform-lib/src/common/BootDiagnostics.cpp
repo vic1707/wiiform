@@ -95,7 +95,7 @@ namespace {
 } // namespace
 
 namespace inspect {
-  auto verify_boot(const QByteArray& raw, BootPolicy policy) -> QSet<int> {
+  auto verify_boot(const QByteArray& raw) -> BootArea {
     require(raw.size() == kBootAreaSize, "Unexpected boot-area size");
     QList<QByteArray> blocks;
     for (int block = 0; block < 8; ++block) {
@@ -124,9 +124,8 @@ namespace inspect {
     require(copies.size() == layouts.size(), "Boot2 copies disagree with validated maps");
     constexpr int valid_signatures = BOOT_2_TMD_SIG_OK | BOOT_2_TIK_SIG_OK;
     constexpr int fake_signatures = BOOT_2_TMD_FAKESIGNED | BOOT_2_TIK_FAKESIGNED;
-    const bool stock = policy == BootPolicy::Stock;
     bool primary = false;
-    QSet<int> map_blocks;
+    BootArea area{{}, true};
     for (const auto& copy : copies) {
       const auto layout = layouts.constFind(copy.secondBlock);
       require(layout != layouts.cend() && layout->first == copy.firstBlock &&
@@ -134,20 +133,17 @@ namespace inspect {
                   std::equal(layout->map.blocks.cbegin(), layout->map.blocks.cend(), copy.blockMap),
               "Boot2 copy disagrees with its validated map");
       require(copy.state >= 0 && !boot::has_bad_content_hash(copy.state), "Invalid boot2 content or metadata");
-      if (stock)
-        require((copy.state & valid_signatures) == valid_signatures && !(copy.state & fake_signatures),
-                "Modified, invalid or unrecognized boot2");
+      area.genuine &= (copy.state & valid_signatures) == valid_signatures && !(copy.state & fake_signatures);
       primary |= (copy.state & BOOT_2_USED_TO_BOOT) && !(copy.state & BOOT_2_MARKED_BAD);
-      map_blocks.insert(copy.secondBlock);
+      area.map_blocks.insert(copy.secondBlock);
     }
-    require(primary, stock ? "No usable signed primary boot2" : "No usable primary boot2");
-    require(stock || map_blocks.size() >= 2, "Source boot preservation requires redundant boot2 maps");
-    return map_blocks;
+    require(primary, "No usable primary boot2");
+    return area;
   }
 } // namespace inspect
 
 namespace inspect {
-  void verify_boot_ecc(const QByteArray& boots, BootPolicy policy, const QSet<int>& map_blocks) {
+  auto verify_boot_ecc(const QByteArray& boots, const QSet<int>& map_blocks) -> int {
     require(boots.size() == kBootAreaSize, "Unexpected boot-area size");
     QList<int> mismatches;
     for (int page = 0; page < 512; ++page) {
@@ -156,16 +152,29 @@ namespace inspect {
       if (data == QByteArray(kDataSize, '\xff')) continue;
       if (NandSpare::CalcEcc(data) != raw.mid(0x830, 0x10)) mismatches << page;
     }
-    if (mismatches.isEmpty()) return;
+    if (mismatches.isEmpty()) return 0;
 
-    require(map_blocks.size() >= 2 &&
-                (policy != BootPolicy::Stock || mismatches.size() == map_blocks.size()),
-            "Boot-page ECC mismatches require review");
+    require(map_blocks.size() >= 2, "Boot-page ECC mismatches require review");
     for (const auto page : mismatches) {
       const auto ecc = boots.mid(page * kPageSize + 0x830, 0x10);
       require(page % kPagesPerBlock == kPagesPerBlock - 1 &&
                   map_blocks.contains(page / kPagesPerBlock) && ecc == QByteArray(0x10, '\xff'),
               "Boot-page ECC mismatches require review");
     }
+    return mismatches.size();
+  }
+
+  void verify_stock_boot(const QByteArray& raw) {
+    const auto area = verify_boot(raw);
+    require(area.genuine, "Modified, invalid or unrecognized boot2");
+    const auto mismatches = verify_boot_ecc(raw, area.map_blocks);
+    require(mismatches == 0 || mismatches == area.map_blocks.size(),
+            "Boot-page ECC mismatches require review");
+  }
+
+  void verify_source_boot(const QByteArray& raw) {
+    const auto area = verify_boot(raw);
+    require(area.map_blocks.size() >= 2, "Source boot preservation requires redundant boot2 maps");
+    verify_boot_ecc(raw, area.map_blocks);
   }
 } // namespace inspect

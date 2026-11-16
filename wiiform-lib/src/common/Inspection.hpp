@@ -8,8 +8,6 @@
 #include <nandbin.h>
 
 namespace inspect {
-  enum class BootPolicy { Stock, PreserveSource };
-
   enum class PriiloaderLayout { Unavailable, StockBoot, UnidentifiedBoot, Installed };
 
   struct PriiloaderEvidence {
@@ -25,8 +23,10 @@ namespace inspect {
 
   // These routines only inspect the supplied data. Failures use fixed messages
   // so malformed console data is never copied into diagnostics.
-  // Returns the erase blocks whose boot2 maps were validated.
-  auto verify_boot(const QByteArray& raw, BootPolicy policy = BootPolicy::Stock) -> QSet<int>;
+  // A boot area with only genuinely signed boot2 copies.
+  void verify_stock_boot(const QByteArray& raw);
+  // A boot area kept as its console has it, such as BootMii installed as boot2.
+  void verify_source_boot(const QByteArray& raw);
   auto priiloader_evidence(NandBin& nand) -> PriiloaderEvidence;
   void verify_filesystem(NandBin& nand, bool generated, quint16 active_metadata);
   void verify_stock(NandBin& nand, const QString& area);

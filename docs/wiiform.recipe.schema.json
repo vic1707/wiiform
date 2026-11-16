@@ -89,11 +89,6 @@
         "file"
       ]
     },
-    "Binary": {
-      "description": "Bytes stored as a YAML `!!binary` scalar.",
-      "type": "string",
-      "contentEncoding": "base64"
-    },
     "Cios": {
       "description": "A prebuilt Wii d2x cIOS WAD and the slot it is expected to fill.",
       "type": "object",
@@ -102,19 +97,54 @@
           "description": "SHA-256 of the exact WAD bytes.",
           "$ref": "#/$defs/Sha256"
         },
-        "source": {
-          "$ref": "#/$defs/Data"
-        },
         "target": {
           "$ref": "#/$defs/CiosTarget"
         }
       },
-      "additionalProperties": false,
+      "oneOf": [
+        {
+          "description": "Local path, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of the raw file.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "The file itself, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        }
+      ],
       "required": [
-        "source",
         "sha256",
         "target"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "CiosBase": {
       "description": "Stock IOS a d2x cIOS is built on.",
@@ -247,50 +277,6 @@
         "GB"
       ]
     },
-    "Data": {
-      "description": "Data supplied by one local file, inline in a recipe, or over HTTPS.",
-      "oneOf": [
-        {
-          "description": "Local path, relative to the recipe.",
-          "type": "object",
-          "properties": {
-            "path": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "path"
-          ]
-        },
-        {
-          "description": "Data carried in the recipe itself.",
-          "type": "object",
-          "properties": {
-            "inline": {
-              "$ref": "#/$defs/Binary"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "inline"
-          ]
-        },
-        {
-          "description": "HTTPS URL for the raw file.",
-          "type": "object",
-          "properties": {
-            "url": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "url"
-          ]
-        }
-      ]
-    },
     "Display": {
       "description": "Display configuration applied during first-run setup.",
       "type": "object",
@@ -420,20 +406,7 @@
           "type": "object",
           "properties": {
             "custom": {
-              "type": "object",
-              "properties": {
-                "sha256": {
-                  "$ref": "#/$defs/Sha256"
-                },
-                "source": {
-                  "$ref": "#/$defs/Data"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "source",
-                "sha256"
-              ]
+              "$ref": "#/$defs/Wad"
             }
           },
           "additionalProperties": false,
@@ -676,16 +649,104 @@
         "sha256": {
           "description": "SHA-256 of the exact WAD bytes.",
           "$ref": "#/$defs/Sha256"
-        },
-        "source": {
-          "$ref": "#/$defs/Data"
         }
       },
-      "additionalProperties": false,
+      "oneOf": [
+        {
+          "description": "Local path, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of the raw file.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "The file itself, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        }
+      ],
       "required": [
-        "source",
         "sha256"
-      ]
+      ],
+      "unevaluatedProperties": false
+    },
+    "Wad": {
+      "description": "A WAD from one source, with the SHA-256 of its exact bytes.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact WAD bytes.",
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Local path, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of the raw file.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "The file itself, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        }
+      ],
+      "required": [
+        "sha256"
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

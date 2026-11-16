@@ -6,7 +6,6 @@ use std::io::{Read, Write};
 use anyhow::{Context, Result, anyhow, ensure};
 use lzma_rust2::XzReader;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256 as Sha256Hasher};
 use wiiform_recipe::{Sha256, yaml::Binary};
 
 use crate::ffi::bridge::{self as ffi, ConsoleSettings};
@@ -151,7 +150,7 @@ struct SeedInfo {
 }
 
 fn digest(bytes: impl AsRef<[u8]>) -> Sha256 {
-    Sha256(Sha256Hasher::digest(bytes).into())
+    Sha256::of(bytes.as_ref())
 }
 
 fn decode_xz(compressed: &[u8]) -> Result<Vec<u8>> {

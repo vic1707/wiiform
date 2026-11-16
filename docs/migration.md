@@ -93,13 +93,13 @@ CI generates the schema and checks it against the committed copy under
 
 Move keys under the old `system:` block up one indentation level. Keep
 `menu`, `remove`, `setup`, `titles`, `cios`, `hbc`, and `priiloader` as top-level keys.
-Move `display` under `setup`. Move each WAD's `path` or `inline` under `source`. Keep `sha256`
-beside `source`. WAD paths resolve relative to the recipe.
-For inline data, use `inline: !!binary |` followed by indented base64. Either source
-requires a SHA-256 of the raw WAD bytes. For a WAD that the recipe deliberately
-permits without a Nintendo signature, replace `signature_policy: allow-unsigned`
-with `allow_unsigned: true`. List channels to `remove` by name; title IDs are
-no longer accepted there.
+Move `display` under `setup`. Write each WAD's `path`, `url` or `inline` directly
+in its entry, beside `sha256`; the `source:` level is gone. WAD paths resolve
+relative to the recipe. Write inline data as plain base64 text, without the
+`!!binary` tag. Every source requires the SHA-256 of the raw WAD bytes. For a
+WAD that the recipe deliberately permits without a Nintendo signature, replace
+`signature_policy: allow-unsigned` with `allow_unsigned: true`. List channels
+to `remove` by name; title IDs are no longer accepted there.
 Regenerate earlier unreleased seeds with the current `wii-seed`.
 Remove `--reference` from scripts. A `setup` mapping, including any
 `setup.display` options, generates SYSCONF and completes first-run setup.

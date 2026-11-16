@@ -11,8 +11,7 @@ use rustix::fs::{CWD, RenameFlags, renameat_with};
 use tempfile::Builder;
 
 use crate::{
-    https::fetch,
-    native::{InstalledWad, Nand, Session, StockIdentity, WadPolicy},
+    native::{InstalledWad, Nand, Session, StockIdentity},
     priiloader_payload,
     recipe::{Menu, Recipe, Region, ResolvedPath, TitleId, open_regular_file},
     seed::StockSeed,
@@ -148,40 +147,16 @@ fn build_with(
         );
     }
 
-    // Everything the recipe needs is loaded before the long stock build starts.
-    let recipe = Recipe::load(&options.recipe, options.menu)?;
+    // Reading the recipe loads and checks every WAD it names, before the long stock build.
+    let mut recipe = Recipe::try_from(&options.recipe)?;
+    if let Some(menu) = options.menu {
+        recipe.menu = menu;
+        recipe.validate()?;
+    }
     let priiloader = recipe
         .priiloader
         .as_ref()
         .map(|config| priiloader_payload::load().map(|assets| (config, assets)))
-        .transpose()?;
-    let titles = recipe
-        .titles
-        .iter()
-        .enumerate()
-        .map(|(index, title)| {
-            let wad = (title.source.resolve_wad(fetch))
-                .with_context(|| format!("cannot read titles[{index}] WAD"))?;
-            Ok((wad, title))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let cios = recipe
-        .cios
-        .iter()
-        .map(|cios| {
-            let slot = cios.target.slot;
-            let wad = (cios.source.resolve_wad(fetch))
-                .with_context(|| format!("cannot read the cIOS WAD for slot {slot}"))?;
-            Ok((wad, cios))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let hbc = recipe
-        .hbc
-        .as_ref()
-        .map(|hbc| {
-            hbc.resolve(fetch)
-                .context("cannot get the Homebrew Channel")
-        })
         .transpose()?;
 
     let (mut nand, identity) =
@@ -202,15 +177,13 @@ fn build_with(
             .context("cannot generate system settings")?;
     }
 
-    for (index, (wad, title)) in titles.iter().enumerate() {
-        let policy = if title.allow_unsigned {
-            WadPolicy::LegacyChannel
+    for (index, title) in recipe.titles.iter().enumerate() {
+        let installed = if title.allow_unsigned {
+            session.install_unsigned_channel(&mut nand, &title.wad)
         } else {
-            WadPolicy::Standard
-        };
-        let installed = session
-            .install_wad(&mut nand, wad, &title.sha256, policy)
-            .with_context(|| format!("cannot install titles[{index}] WAD"))?;
+            session.install_wad(&mut nand, &title.wad)
+        }
+        .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
             !removals.contains(&installed.title_id),
             "recipe both removes and installs title {}",
@@ -227,16 +200,16 @@ fn build_with(
         report_installed(&installed, recipe.menu);
     }
 
-    for (wad, cios) in &cios {
+    for cios in &recipe.cios {
         let installed = session
-            .install_cios(&mut nand, wad, &cios.sha256, &cios.target)
+            .install_cios(&mut nand, &cios.wad, &cios.target)
             .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?;
         warn_if_already_present(&installed);
     }
 
-    if let Some((wad, sha256)) = &hbc {
+    if let Some(hbc) = &recipe.hbc {
         let installed = session
-            .install_wad(&mut nand, wad, sha256, WadPolicy::HomebrewChannel)
+            .install_homebrew_channel(&mut nand, &hbc.0)
             .context("cannot install Homebrew Channel")?;
         report_installed(&installed, recipe.menu);
     }
@@ -450,7 +423,7 @@ mod tests {
         fs::write(
             &recipe,
             format!(
-                "menu: 4.3E\ntitles:\n  - source: {{ path: fixture.wad }}\n    sha256: \"{}\"\n    allow_unsigned: true\n",
+                "menu: 4.3E\ntitles:\n  - path: fixture.wad\n    sha256: \"{}\"\n    allow_unsigned: true\n",
                 expected.trim()
             ),
         )?;

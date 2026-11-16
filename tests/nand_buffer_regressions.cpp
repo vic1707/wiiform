@@ -115,13 +115,6 @@ namespace {
     return make_wad('c', revision, 0x0000000100000000ull | slot, 1, 0, info, marker);
   }
 
-  auto wad_digest(const QByteArray& wad) -> wiiform::Sha256 {
-    const auto hash = QCryptographicHash::hash(wad, QCryptographicHash::Sha256);
-    wiiform::Sha256 result{};
-    std::copy_n(reinterpret_cast<const std::uint8_t*>(hash.constData()), result.size(), result.begin());
-    return result;
-  }
-
   auto wad_bytes(const QByteArray& wad) -> std::span<const std::uint8_t> {
     return {reinterpret_cast<const std::uint8_t*>(wad.constData()),
             static_cast<std::size_t>(wad.size())};
@@ -264,52 +257,43 @@ namespace {
 
   void test_wad_rejections(std::span<std::uint8_t> image, const QByteArray& wad) {
     const auto before = buffer_digest(image);
-    auto invalid_digest = wad_digest(wad);
-    invalid_digest[0] ^= 0xff;
-    rejects([&] {
-      wiiform::install_wad(image, wad_bytes(wad), invalid_digest,
-                                 wiiform::WadPolicy::legacy_channel);
-    }, "SHA-256");
-    check(before == buffer_digest(image), "Invalid WAD digest changed the NAND buffer");
     auto invalid_content = wad;
     // WAD data begins after the aligned header, certificate, ticket, and TMD sections.
     constexpr int content_offset = 0x40 + 0x40 + 0x2c0 + 0x240;
     invalid_content[content_offset + 20] = char(invalid_content.at(content_offset + 20) ^ 1);
     rejects([&] {
-      wiiform::install_wad(image, wad_bytes(invalid_content), wad_digest(invalid_content),
-                                 wiiform::WadPolicy::legacy_channel);
+      wiiform::install_unsigned_channel(image, wad_bytes(invalid_content));
     }, "WAD content validation failed");
     check(before == buffer_digest(image), "Invalid WAD content changed the NAND buffer");
     rejects([&] {
-      wiiform::install_wad(image, wad_bytes(wad), wad_digest(wad),
-                                 wiiform::WadPolicy::legacy_channel);
+      wiiform::install_unsigned_channel(image, wad_bytes(wad));
     }, "Insufficient NAND space");
     check(before == buffer_digest(image), "WAD capacity failure changed the NAND buffer");
   }
 
   void test_ios_wad_policy(std::span<std::uint8_t> image) {
-    using wiiform::WadPolicy;
     const auto before = buffer_digest(image);
     const auto ios = make_wad('i', 1034, 0x0000000100000009ull);
-    const auto install = [&](const QByteArray& wad, WadPolicy policy) {
-      return wiiform::install_wad(image, wad_bytes(wad), wad_digest(wad), policy);
-    };
-    rejects([&] { install(ios, WadPolicy::standard); }, "must be genuinely Nintendo-signed");
-    rejects([&] { install(ios, WadPolicy::legacy_channel); }, "only downloadable channels");
+    const auto install = [&](const QByteArray& wad) { return wiiform::install_wad(image, wad_bytes(wad)); };
+    rejects([&] { install(ios); }, "must be genuinely Nintendo-signed");
+    rejects([&] { wiiform::install_unsigned_channel(image, wad_bytes(ios)); }, "downloadable channels only");
 
     const auto unrelated_channel = make_wad('h', 1, wad_title_id);
-    rejects([&] { install(unrelated_channel, WadPolicy::homebrew_channel); },
+    rejects([&] { wiiform::install_homebrew_channel(image, wad_bytes(unrelated_channel)); },
             "not a recognized Homebrew Channel title");
+    rejects([&] { install(unrelated_channel); }, "must be genuinely Nintendo-signed");
+    rejects([&] { wiiform::install_cios(image, wad_bytes(unrelated_channel), {249, 56, 1, false}); },
+            "requested cIOS slot");
     check(before == buffer_digest(image),
           "Rejected non-Homebrew Channel WAD changed the NAND buffer");
 
     auto vwii = ios;
     constexpr int tmd_offset = 0x40 + 0x40 + 0x2c0;
     vwii[tmd_offset + 0x183] = char(1);
-    rejects([&] { install(vwii, WadPolicy::standard); }, "vWii WADs are unsupported");
+    rejects([&] { install(vwii); }, "vWii WADs are unsupported");
 
     const auto bootmii = make_wad('i', 65280, 0x00000001000000feull);
-    rejects([&] { install(bootmii, WadPolicy::standard); }, "IOS slots 3 through 253");
+    rejects([&] { install(bootmii); }, "IOS slots 3 through 253");
     check(before == buffer_digest(image), "Unsupported IOS WAD changed the NAND buffer");
   }
 
@@ -319,8 +303,7 @@ namespace {
     auto image = read_bytes(nand_path, nand_file_size);
     const auto wad = make_wad();
     const auto install = [&](const QByteArray& package) {
-      return wiiform::install_wad(image, wad_bytes(package), wad_digest(package),
-                                        wiiform::WadPolicy::legacy_channel);
+      return wiiform::install_unsigned_channel(image, wad_bytes(package));
     };
 
     const auto installed = install(wad);
@@ -382,8 +365,7 @@ namespace {
     const auto first_wad = make_wad('s', wad_title_version, first_title_id, 0x8001);
     const auto second_wad = make_wad('s', wad_title_version, second_title_id, 0x8001);
     const auto install = [&](const QByteArray& wad) {
-      return wiiform::install_wad(image, wad_bytes(wad), wad_digest(wad),
-                                        wiiform::WadPolicy::legacy_channel);
+      return wiiform::install_unsigned_channel(image, wad_bytes(wad));
     };
 
     check(!install(first_wad).already_present && !install(second_wad).already_present,
@@ -413,7 +395,7 @@ namespace {
     const auto wad = make_cios_wad();
     const wiiform::CiosOptions options{249, 56, 65535, false};
     const auto install = [&](const QByteArray& package, const wiiform::CiosOptions& target) {
-      return wiiform::install_cios(image, wad_bytes(package), wad_digest(package), target);
+      return wiiform::install_cios(image, wad_bytes(package), target);
     };
 
     const auto installed = install(wad, options);

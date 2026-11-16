@@ -15,7 +15,7 @@ use anyhow::{Context, Result, ensure};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    self, Aspect, CiosTarget, Hack, Menu, Priiloader, Region, SensorBar, Setup, Sha256, TitleId,
+    self, Aspect, CiosTarget, Hack, Menu, Priiloader, Region, SensorBar, Setup, TitleId, Wad,
     read_bounded,
 };
 use crate::seed::{ExtractedSeed, StockSeed};
@@ -40,7 +40,6 @@ macro_rules! same_variants {
 
 same_variants! {
     Menu => ffi::Menu { E43, U43, J43 }
-    BootPolicy => ffi::BootPolicy { Stock, PreserveSource }
     recipe::Language => ffi::Language { Ja, En, De, Fr, Es, It, Nl }
     recipe::Autoboot => ffi::Autoboot { Disabled, HomebrewChannel, BootmiiIos, SystemMenu, File }
     recipe::ReturnTo => ffi::ReturnTo { SystemMenu, Priiloader, Autoboot, File }
@@ -53,17 +52,14 @@ same_variants! {
     }
 }
 
-/// Boot-area validation policy for stock NAND creation.
+/// Which boot area a new image may be built around.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum BootPolicy {
+    /// Every boot2 copy is genuinely signed.
     Stock,
+    /// Whatever the seed's console has, such as BootMii installed as boot2.
     PreserveSource,
 }
-
-/// What a WAD is allowed to be: a Nintendo-signed title (`Standard`), a
-/// downloadable channel that may be unsigned (`LegacyChannel`), or a Homebrew
-/// Channel release (`HomebrewChannel`).
-pub use ffi::WadPolicy;
 
 /// Where Nintendo titles come from.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -197,12 +193,11 @@ impl Session {
         menu: Menu,
         policy: BootPolicy,
     ) -> Result<StockIdentity> {
-        let identity = ffi::initialize_image(
-            &mut nand.0[..],
-            &seed.as_native(),
-            menu.into(),
-            policy.into(),
-        )?;
+        let initialize = match policy {
+            BootPolicy::Stock => ffi::initialize_image,
+            BootPolicy::PreserveSource => ffi::initialize_image_with_source_boot,
+        };
+        let identity = initialize(&mut nand.0[..], &seed.as_native(), menu.into())?;
         Ok(StockIdentity(identity))
     }
 
@@ -245,21 +240,24 @@ impl Session {
         Ok(())
     }
 
-    pub fn install_wad(
-        &self,
-        nand: &mut Nand,
-        wad: &[u8],
-        sha256: &Sha256,
-        policy: WadPolicy,
-    ) -> Result<InstalledWad> {
-        ffi::install_wad(&mut nand.0[..], wad, &sha256.0, policy)?.try_into()
+    /// Installs a Nintendo-signed channel or IOS.
+    pub fn install_wad(&self, nand: &mut Nand, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_wad(&mut nand.0[..], wad)?.try_into()
+    }
+
+    /// Installs a downloadable channel that need not be signed.
+    pub fn install_unsigned_channel(&self, nand: &mut Nand, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_unsigned_channel(&mut nand.0[..], wad)?.try_into()
+    }
+
+    pub fn install_homebrew_channel(&self, nand: &mut Nand, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_homebrew_channel(&mut nand.0[..], wad)?.try_into()
     }
 
     pub fn install_cios(
         &self,
         nand: &mut Nand,
-        wad: &[u8],
-        sha256: &Sha256,
+        wad: &Wad,
         target: &CiosTarget,
     ) -> Result<InstalledWad> {
         let options = ffi::CiosOptions {
@@ -268,7 +266,7 @@ impl Session {
             revision: target.revision,
             replace_stock_stub: target.replace_stock_stub,
         };
-        ffi::install_cios(&mut nand.0[..], wad, &sha256.0, &options)?.try_into()
+        ffi::install_cios(&mut nand.0[..], wad, &options)?.try_into()
     }
 
     pub fn remove_title(&self, nand: &mut Nand, title_id: TitleId) -> Result<()> {

@@ -20,28 +20,6 @@ pub mod bridge {
     #[namespace = "wiiform"]
     #[repr(u8)]
     #[derive(Clone, Copy, Debug)]
-    enum BootPolicy {
-        #[cxx_name = "stock"]
-        Stock = 0,
-        #[cxx_name = "preserve_source"]
-        PreserveSource = 1,
-    }
-
-    #[namespace = "wiiform"]
-    #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
-    enum WadPolicy {
-        #[cxx_name = "standard"]
-        Standard = 0,
-        #[cxx_name = "legacy_channel"]
-        LegacyChannel = 1,
-        #[cxx_name = "homebrew_channel"]
-        HomebrewChannel = 2,
-    }
-
-    #[namespace = "wiiform"]
-    #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
     enum BootMiiState {
         #[cxx_name = "detected"]
         Detected = 0,
@@ -242,10 +220,6 @@ pub mod bridge {
         #[namespace = "wiiform"]
         type Menu;
         #[namespace = "wiiform"]
-        type BootPolicy;
-        #[namespace = "wiiform"]
-        type WadPolicy;
-        #[namespace = "wiiform"]
         type BootMiiState;
         #[namespace = "wiiform"]
         type Language;
@@ -270,7 +244,11 @@ pub mod bridge {
             nand: &mut [u8],
             seed: &StockSeed<'_>,
             menu: Menu,
-            boot_policy: BootPolicy,
+        ) -> Result<StockIdentity>;
+        fn initialize_image_with_source_boot(
+            nand: &mut [u8],
+            seed: &StockSeed<'_>,
+            menu: Menu,
         ) -> Result<StockIdentity>;
         fn install_nus_title(nand: &mut [u8], title: TitleVersion) -> Result<()>;
         fn install_cached_nus_title(
@@ -278,18 +256,11 @@ pub mod bridge {
             cache: &NusCache<'_>,
             title: TitleVersion,
         ) -> Result<()>;
-        fn install_wad(
-            nand: &mut [u8],
-            wad_bytes: &[u8],
-            expected_sha256: &[u8; 32],
-            policy: WadPolicy,
-        ) -> Result<InstalledWad>;
-        fn install_cios(
-            nand: &mut [u8],
-            wad_bytes: &[u8],
-            expected_sha256: &[u8; 32],
-            options: &CiosOptions,
-        ) -> Result<InstalledWad>;
+        fn install_wad(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
+        fn install_unsigned_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
+        fn install_homebrew_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
+        fn install_cios(nand: &mut [u8], wad: &[u8], options: &CiosOptions)
+        -> Result<InstalledWad>;
         fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
         fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings<'_>) -> Result<()>;
         fn install_priiloader(nand: &mut [u8], app_bytes: &[u8]) -> Result<()>;

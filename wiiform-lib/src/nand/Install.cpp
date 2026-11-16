@@ -402,16 +402,13 @@ namespace title_install {
     plan_and_install(working.nand, working.layout.orphan_entries, job);
   }
 
-  auto install_wad(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
-                   const wiiform::Sha256& expected_sha256, wiiform::WadPolicy policy) -> wiiform::InstalledWad {
-    const auto job = wad_package::read(package, expected_sha256, policy);
+  auto install_wad(std::span<std::uint8_t> image, const ValidatedTitleJob& job) -> wiiform::InstalledWad {
     return install_validated_wad(image, job, false);
   }
 
   auto install_cios(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
-                    const wiiform::Sha256& expected_sha256,
                     const wiiform::CiosOptions& options) -> wiiform::InstalledWad {
-    const auto job = wad_package::read_cios(package, expected_sha256, options);
+    const auto job = wad_package::read_cios(package, options);
     const auto& parsed = job.get();
     const auto expected_id = (quint64(1) << 32) | options.slot;
     require(parsed.tid == expected_id && parsed.version == options.revision,

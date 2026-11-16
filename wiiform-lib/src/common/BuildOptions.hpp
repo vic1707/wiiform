@@ -19,6 +19,7 @@ namespace nand_build {
   auto resolve_profile(const QByteArray& keys, const wiiform::ConsoleSettings& settings,
                        const wiiform::Sha256& settings_sha256,
                        std::span<const std::uint16_t> bad_blocks, wiiform::Menu menu) -> Profile;
+  // The caller has verified the boot area.
   void initialize_image(std::span<std::uint8_t> image, const QByteArray& keys, const QByteArray& boot,
-                        const Profile& profile, inspect::BootPolicy policy);
+                        const Profile& profile);
 } // namespace nand_build

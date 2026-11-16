@@ -51,10 +51,11 @@ archive carries its Qt runtime.
 
 See the [example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
-regenerate the schema from the Rust recipe model. Local file paths resolve
-relative to the recipe. A WAD entry has exactly one `source` key. Use `path`
-for a local file, `inline: !!binary |` for a base64 block, or `url` for an
-HTTPS download. Each source requires the SHA-256 of the raw WAD bytes.
+regenerate the schema from the Rust recipe model. A WAD entry names exactly
+one source next to its `sha256`: `path` for a local file (relative to the
+recipe), `url` for an HTTPS download, or `inline` for the file as base64 text.
+The SHA-256 is of the raw WAD bytes. Reading a recipe loads, downloads and
+checks every WAD it names, before the build starts.
 The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
 channel removal, initial setup, display settings, and Priiloader settings and named hacks. Set setup country
 codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
@@ -122,16 +123,12 @@ in your recipe.
 ```yaml
 hbc:
   custom:
-    source:
-      path: wads/my-homebrew-channel.wad
+    path: wads/my-homebrew-channel.wad
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 ```
 
-If you used the earlier `hbc.variant` form, move its fields under `hbc.reborn`
-or `hbc.custom`.
-
 A custom WAD requires its SHA-256. The source may be a recipe-relative path,
-inline binary, or an HTTPS URL. Wiiform validates the package and checks its
+inline base64, or an HTTPS URL. Wiiform validates the package and checks its
 title ID against the Homebrew Channel IDs recognized by Priiloader before
 writing it. The title installs before Priiloader settings are applied, so
 `autoboot: homebrew_channel` can use it.
