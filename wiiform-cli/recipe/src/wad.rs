@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! WAD payloads, read and checked while a recipe is deserialized.
-use std::{
-    cell::RefCell,
-    fmt,
-    ops::{Deref, RangeInclusive},
-    path::PathBuf,
-};
+use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use derive_more::Deref;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::Digest;
@@ -30,8 +26,11 @@ pub(crate) fn relative_to<T>(directory: PathBuf, read: impl FnOnce() -> T) -> T 
     result
 }
 
+#[cfg_attr(test, allow(dead_code))] // Tests never download.
+mod https;
+
 #[cfg(not(test))]
-pub(crate) use crate::https::fetch;
+pub(crate) use self::https::fetch;
 #[cfg(test)]
 pub(crate) use tests::fetch;
 
@@ -99,9 +98,10 @@ pub(crate) struct WadFile {
 }
 
 /// The bytes of a WAD whose SHA-256 matched the one its recipe or command line gave.
-#[derive(Deserialize, JsonSchema)]
+#[derive(derive_more::Debug, Deref, Deserialize, JsonSchema)]
+#[debug("Wad({} bytes)", _0.len())]
 #[serde(try_from = "WadFile")]
-pub struct Wad(Vec<u8>);
+pub struct Wad(#[deref(forward)] Vec<u8>);
 
 impl Wad {
     pub(crate) fn checked(bytes: Vec<u8>, expected: Sha256) -> Result<Self> {
@@ -118,20 +118,6 @@ impl Wad {
 
     pub(crate) fn download(url: &str, expected: Sha256) -> Result<Self> {
         Self::checked(fetch(url, *WAD_BOUNDS.end())?, expected)
-    }
-}
-
-impl Deref for Wad {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl fmt::Debug for Wad {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "Wad({} bytes)", self.0.len())
     }
 }
 

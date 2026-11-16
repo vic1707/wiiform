@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+use derive_more::AsRef;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_saphyr::MergeKeyPolicy;
@@ -6,7 +7,8 @@ use serde_saphyr::MergeKeyPolicy;
 const MAX_DEPTH: usize = 24;
 
 /// Bytes stored as a YAML `!!binary` scalar.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, AsRef, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[as_ref([u8])]
 #[serde(transparent)]
 pub struct Binary(
     #[serde(
@@ -16,12 +18,6 @@ pub struct Binary(
     #[schemars(with = "String", extend("contentEncoding" = "base64"))]
     pub Vec<u8>,
 );
-
-impl AsRef<[u8]> for Binary {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
 
 fn serialize_binary<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_bytes(bytes)

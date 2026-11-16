@@ -8,9 +8,11 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use derive_more::AsRef;
 
 /// A canonical path checked to point to a regular file.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, AsRef, Eq, PartialEq)]
+#[as_ref(Path)]
 pub struct ResolvedPath(PathBuf);
 
 impl TryFrom<PathBuf> for ResolvedPath {
@@ -26,12 +28,6 @@ impl TryFrom<PathBuf> for ResolvedPath {
             path.display()
         );
         Ok(Self(resolved))
-    }
-}
-
-impl AsRef<Path> for ResolvedPath {
-    fn as_ref(&self) -> &Path {
-        &self.0
     }
 }
 

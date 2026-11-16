@@ -11,7 +11,7 @@ use rustix::fs::{CWD, RenameFlags, renameat_with};
 use tempfile::Builder;
 
 use crate::{
-    native::{InstalledWad, Nand, Session, StockIdentity},
+    native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
     recipe::{Menu, Recipe, Region, ResolvedPath, TitleId, open_regular_file},
     seed::StockSeed,
@@ -93,25 +93,18 @@ impl NusCache {
 }
 
 pub fn build(options: &BuildOptions) -> Result<()> {
-    build_with(options, |session, recipe| {
+    build_with(options, |recipe| {
         let mut seed = match &options.seed {
             SeedInput::Stdin => StockSeed::from_reader(io::stdin().lock()),
             SeedInput::File(path) => StockSeed::from_reader(open_regular_file(path.as_ref())?.0),
         }?;
         options.cache.prepare()?;
-        create_stock(
-            session,
-            &mut seed,
-            recipe.menu,
-            options.boot_policy,
-            &options.cache,
-        )
+        create_stock(&mut seed, recipe.menu, options.boot_policy, &options.cache)
     })
 }
 
 /// Builds the image a factory-fresh console of this menu's region would have.
 fn create_stock(
-    session: &Session,
     seed: &mut StockSeed,
     menu: Menu,
     boot_policy: BootPolicy,
@@ -121,21 +114,19 @@ fn create_stock(
         eprintln!("warning: replaced the seed's key footer header with a BackupMii header");
     }
     let mut nand = Nand::zeroed()?;
-    let identity = session.initialize_image(&mut nand, seed, menu, boot_policy)?;
-    for (title_id, version) in session.stock_titles(menu)? {
-        session
-            .install_nus_title(&mut nand, cache, title_id, version)
+    let identity = nand.initialize_image(seed, menu, boot_policy)?;
+    for (title_id, version) in native::stock_titles(menu)? {
+        nand.install_nus_title(cache, title_id, version)
             .with_context(|| format!("cannot install stock title {title_id} v{version}"))?;
     }
-    session.verify_stock(&nand, seed, menu)?;
+    nand.verify_stock(seed, menu)?;
     Ok((nand, identity))
 }
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&Session, &Recipe) -> Result<(Nand, StockIdentity)>,
+    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity)>,
 ) -> Result<()> {
-    let session = Session::acquire()?;
     validate_output(&options.output)?;
     if let NusCache::Directory { path, .. } = &options.cache {
         let output = output_parent(&options.output)?
@@ -159,29 +150,26 @@ fn build_with(
         .map(|config| priiloader_payload::load().map(|assets| (config, assets)))
         .transpose()?;
 
-    let (mut nand, identity) =
-        create_stock(&session, &recipe).context("cannot create stock NAND")?;
+    let (mut nand, identity) = create_stock(&recipe).context("cannot create stock NAND")?;
 
     let removals: Vec<TitleId> = (recipe.remove.iter())
         .flat_map(|channel| channel.title_ids(recipe.menu))
         .collect();
     for &id in &removals {
-        session
-            .remove_title(&mut nand, id)
+        nand.remove_title(id)
             .with_context(|| format!("cannot remove title {id}"))?;
     }
 
     if let Some(setup) = &recipe.setup {
-        session
-            .apply_system_settings(&mut nand, recipe.menu, setup)
+        nand.apply_system_settings(recipe.menu, setup)
             .context("cannot generate system settings")?;
     }
 
     for (index, title) in recipe.titles.iter().enumerate() {
         let installed = if title.allow_unsigned {
-            session.install_unsigned_channel(&mut nand, &title.wad)
+            nand.install_unsigned_channel(&title.wad)
         } else {
-            session.install_wad(&mut nand, &title.wad)
+            nand.install_wad(&title.wad)
         }
         .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
@@ -201,33 +189,29 @@ fn build_with(
     }
 
     for cios in &recipe.cios {
-        let installed = session
-            .install_cios(&mut nand, &cios.wad, &cios.target)
+        let installed = nand
+            .install_cios(&cios.wad, &cios.target)
             .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?;
         warn_if_already_present(&installed);
     }
 
     if let Some(hbc) = &recipe.hbc {
-        let installed = session
-            .install_homebrew_channel(&mut nand, &hbc.0)
+        let installed = nand
+            .install_homebrew_channel(&hbc.0)
             .context("cannot install Homebrew Channel")?;
         report_installed(&installed, recipe.menu);
     }
 
     if let Some((config, (app, definitions))) = &priiloader {
-        session
-            .install_priiloader(&mut nand, app)
+        nand.install_priiloader(app)
             .context("cannot install Priiloader")?;
-        session
-            .configure_priiloader(&mut nand, config)
+        nand.configure_priiloader(config)
             .context("cannot configure Priiloader")?;
-        session
-            .set_priiloader_hacks(&mut nand, definitions, &config.hacks)
+        nand.set_priiloader_hacks(definitions, &config.hacks)
             .context("cannot set Priiloader hacks")?;
     }
 
-    session
-        .verify_generated_nand(&nand, &identity)
+    nand.verify_generated_nand(&identity)
         .context("cannot verify generated NAND")?;
     publish_bundle(&nand, &options.output)
 }
@@ -437,7 +421,7 @@ mod tests {
             boot_policy: BootPolicy::Stock,
             menu: None,
         };
-        let failure = build_with(&options, |_, _| {
+        let failure = build_with(&options, |_| {
             Ok((Nand::read(&image)?, StockIdentity::unverifiable()))
         })
         .expect_err("the WAD cannot fit the synthetic NAND");

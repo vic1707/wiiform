@@ -1,26 +1,116 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//! Declarative recipe types, validation, and editor schema.
+//! The recipe a NAND is built from, as serde reads it.
+//!
+//! Each top-level key has a module of the same name. Deserializing a
+//! [`Recipe`] reads, downloads and checks every WAD it names.
+use std::{
+    collections::{BTreeSet, HashSet},
+    io::Read,
+    path::Path,
+};
 
-mod country;
+use anyhow::{Context, Result, ensure};
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+pub mod cios;
 mod files;
 mod hbc;
-#[cfg_attr(test, allow(dead_code))] // Tests never download.
-mod https;
-mod priiloader;
-mod recipe;
-mod system;
+mod menu;
+pub mod priiloader;
+mod remove;
+pub mod setup;
+#[cfg(test)]
+mod tests;
+mod title;
 mod titles;
 mod wad;
 pub mod yaml;
 
-pub use country::CountryCode;
-pub use files::{ResolvedPath, open_regular_file, read_bounded};
-pub use hbc::Hbc;
-pub use priiloader::{Autoboot, Hack, MountPoint, Priiloader, ReturnTo, ShutdownTo};
-pub use recipe::Recipe;
-pub use system::{Aspect, Display, Language, Menu, Nickname, Region, SensorBar, Setup};
-pub use titles::{Cios, CiosBase, CiosSlot, CiosTarget, RemovableChannel, Title, TitleId};
-pub use wad::{Sha256, Wad};
+pub use self::{
+    cios::Cios,
+    files::{ResolvedPath, open_regular_file, read_bounded},
+    hbc::Hbc,
+    menu::Menu,
+    priiloader::Priiloader,
+    remove::RemovableChannel,
+    setup::Setup,
+    title::{Region, TitleId},
+    titles::Title,
+    wad::{Sha256, Wad},
+};
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Recipe {
+    /// Stock System Menu target (4.3E, 4.3U, or 4.3J).
+    pub menu: Menu,
+    /// Stock channels to remove.
+    #[serde(default)]
+    pub remove: BTreeSet<RemovableChannel>,
+    /// Supply a mapping to complete first-run setup with these settings and defaults.
+    /// Omit this section or use null to run the Wii setup wizard.
+    #[serde(default)]
+    pub setup: Option<Setup>,
+    /// WADs to install from a local file, inline bytes, or an HTTPS URL.
+    #[serde(default)]
+    pub titles: Vec<Title>,
+    /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
+    #[serde(default)]
+    pub cios: Vec<Cios>,
+    /// Optional Homebrew Channel from a tagged Reborn release or a custom WAD.
+    #[serde(default)]
+    pub hbc: Option<Hbc>,
+    /// Optional pinned Priiloader install with its settings and hacks.
+    #[serde(default)]
+    pub priiloader: Option<Priiloader>,
+}
+
+/// Reads a recipe file. Its WADs are read, downloaded and checked on the way,
+/// with local paths relative to the recipe's directory.
+impl TryFrom<&ResolvedPath> for Recipe {
+    type Error = anyhow::Error;
+
+    fn try_from(path: &ResolvedPath) -> Result<Self> {
+        let path = path.as_ref();
+        let directory = path.parent().context("recipe path has no parent")?;
+        Self::read(open_regular_file(path)?.0, directory)
+    }
+}
+
+impl Recipe {
+    fn read(input: impl Read, directory: &Path) -> Result<Self> {
+        let recipe: Self = crate::wad::relative_to(directory.to_owned(), || {
+            serde_saphyr::from_reader_with_options(input, crate::yaml::options())
+        })
+        .context("invalid recipe")?;
+        recipe.validate()?;
+        Ok(recipe)
+    }
+
+    /// Checks what the types cannot express. Call it again after changing a field.
+    pub fn validate(&self) -> Result<()> {
+        let menu = self.menu;
+        if let Some(setup) = &self.setup {
+            ensure!(
+                menu.allows_language(setup.language_for(menu)),
+                "setup language is not supported by menu {menu}"
+            );
+            let country = setup.country_for(menu);
+            ensure!(
+                menu.allows_country(country),
+                "setup country {} is not supported by menu {menu}",
+                country.as_alpha2()
+            );
+        }
+        let mut slots = HashSet::new();
+        for cios in &self.cios {
+            let slot = cios.target.slot;
+            ensure!(slots.insert(slot), "recipe lists cIOS slot {slot} twice");
+        }
+        Ok(())
+    }
+}
 
 /// The JSON Schema of a recipe, for editors.
 ///

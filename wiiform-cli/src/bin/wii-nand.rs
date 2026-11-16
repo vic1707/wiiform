@@ -3,9 +3,9 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    native::{Nand, Session},
+    native::Nand,
     priiloader_payload,
-    recipe::{CiosTarget, Priiloader, ResolvedPath, Sha256, TitleId, Wad},
+    recipe::{Priiloader, ResolvedPath, Sha256, TitleId, Wad, cios},
     workflow::{NusCache, publish_edit, validate_output, warn_if_already_present},
 };
 
@@ -26,11 +26,10 @@ struct ImagePaths {
 
 impl ImagePaths {
     /// Runs one edit on a copy of the input and publishes it only if the edit succeeds.
-    fn edit(self, operation: impl FnOnce(&Session, &mut Nand) -> Result<()>) -> Result<()> {
+    fn edit(self, operation: impl FnOnce(&mut Nand) -> Result<()>) -> Result<()> {
         validate_output(&self.output)?;
-        let session = Session::acquire()?;
         let mut nand = Nand::read(self.input.as_ref())?;
-        operation(&session, &mut nand)?;
+        operation(&mut nand)?;
         publish_edit(&nand, &self.output)
     }
 }
@@ -68,7 +67,7 @@ enum Command {
         #[arg(long)]
         sha256: Sha256,
         #[command(flatten)]
-        target: CiosTarget,
+        target: cios::Target,
     },
     /// Remove one allowlisted channel by title ID.
     RemoveTitle {
@@ -98,9 +97,9 @@ fn run(cli: Cli) -> Result<()> {
             version,
         } => {
             let cache = NusCache::from_environment()?;
-            image.edit(|session, nand| {
+            image.edit(|nand| {
                 cache.prepare()?;
-                session.install_nus_title(nand, &cache, title_id, version)
+                nand.install_nus_title(&cache, title_id, version)
             })
         }
         Command::InstallWad {
@@ -110,11 +109,11 @@ fn run(cli: Cli) -> Result<()> {
             allow_unsigned,
         } => {
             let wad = Wad::try_from((wad, sha256))?;
-            image.edit(|session, nand| {
+            image.edit(|nand| {
                 let installed = if allow_unsigned {
-                    session.install_unsigned_channel(nand, &wad)
+                    nand.install_unsigned_channel(&wad)
                 } else {
-                    session.install_wad(nand, &wad)
+                    nand.install_wad(&wad)
                 }?;
                 warn_if_already_present(&installed);
                 Ok(())
@@ -127,20 +126,18 @@ fn run(cli: Cli) -> Result<()> {
             target,
         } => {
             let wad = Wad::try_from((wad, sha256))?;
-            image.edit(|session, nand| {
-                warn_if_already_present(&session.install_cios(nand, &wad, &target)?);
+            image.edit(|nand| {
+                warn_if_already_present(&nand.install_cios(&wad, &target)?);
                 Ok(())
             })
         }
-        Command::RemoveTitle { image, title_id } => {
-            image.edit(|session, nand| session.remove_title(nand, title_id))
-        }
+        Command::RemoveTitle { image, title_id } => image.edit(|nand| nand.remove_title(title_id)),
         Command::InstallPriiloader { image, config } => {
             let (app, definitions) = priiloader_payload::load()?;
-            image.edit(|session, nand| {
-                session.install_priiloader(nand, &app)?;
-                session.configure_priiloader(nand, &config)?;
-                session.set_priiloader_hacks(nand, &definitions, &config.hacks)
+            image.edit(|nand| {
+                nand.install_priiloader(&app)?;
+                nand.configure_priiloader(&config)?;
+                nand.set_priiloader_hacks(&definitions, &config.hacks)
             })
         }
     }
@@ -149,7 +146,7 @@ fn run(cli: Cli) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiiform::recipe::{Autoboot, Hack};
+    use wiiform::recipe::priiloader::{Autoboot, Hack};
 
     #[test]
     fn priiloader_cli_uses_defaults_and_accepts_named_flags() {

@@ -3,20 +3,16 @@
 //!
 //! Everything here translates between recipe types and the bridge; decisions
 //! about what to build live in [`crate::workflow`].
-use std::{
-    collections::BTreeSet,
-    marker::PhantomData,
-    path::Path,
-    sync::OnceLock,
-    thread::{self, ThreadId},
-};
+use std::{collections::BTreeSet, path::Path};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    self, Aspect, CiosTarget, Hack, Menu, Priiloader, Region, SensorBar, Setup, TitleId, Wad,
+    Menu, Priiloader, Region, Setup, TitleId, Wad, cios, priiloader,
+    priiloader::Hack,
     read_bounded,
+    setup::{self, Aspect, SensorBar},
 };
 use crate::seed::{ExtractedSeed, StockSeed};
 
@@ -40,11 +36,11 @@ macro_rules! same_variants {
 
 same_variants! {
     Menu => ffi::Menu { E43, U43, J43 }
-    recipe::Language => ffi::Language { Ja, En, De, Fr, Es, It, Nl }
-    recipe::Autoboot => ffi::Autoboot { Disabled, HomebrewChannel, BootmiiIos, SystemMenu, File }
-    recipe::ReturnTo => ffi::ReturnTo { SystemMenu, Priiloader, Autoboot, File }
-    recipe::ShutdownTo => ffi::ShutdownTo { None, Priiloader, Autoboot }
-    recipe::MountPoint => ffi::MountPoint { Auto, Sd, Usb }
+    setup::Language => ffi::Language { Ja, En, De, Fr, Es, It, Nl }
+    priiloader::Autoboot => ffi::Autoboot { Disabled, HomebrewChannel, BootmiiIos, SystemMenu, File }
+    priiloader::ReturnTo => ffi::ReturnTo { SystemMenu, Priiloader, Autoboot, File }
+    priiloader::ShutdownTo => ffi::ShutdownTo { None, Priiloader, Autoboot }
+    priiloader::MountPoint => ffi::MountPoint { Auto, Sd, Usb }
     Hack => ffi::Hack {
         Fix480p, BlockOnlineUpdates, BlockDiscUpdates, BlockDiscAutoboot, AutoPressA,
         RemoveDeflicker, MoveDiscChannel, RemoveNocopySaveProtection, ReplaceHealthScreen,
@@ -149,46 +145,30 @@ impl TryFrom<ffi::InstalledWad> for InstalledWad {
     }
 }
 
-/// The right to call the library, which works on a single thread for the
-/// whole process: the one that makes the first call.
-pub struct Session(PhantomData<*const ()>);
+/// Reads a seed from a backup. A footerless backup needs its key sidecar.
+pub fn extract_seed(nand: &[u8], sidecar_keys: Option<&[u8; KEYS_BYTES]>) -> Result<ExtractedSeed> {
+    let sidecar_keys = sidecar_keys.map_or(&[][..], |keys| keys);
+    Ok(ExtractedSeed(ffi::extract_seed(nand, sidecar_keys)?))
+}
 
-impl Session {
-    pub fn acquire() -> Result<Self> {
-        static OWNER: OnceLock<ThreadId> = OnceLock::new();
-        let current = thread::current().id();
-        ensure!(
-            *OWNER.get_or_init(|| current) == current,
-            "the Wiiform library is already in use on another thread"
-        );
-        Ok(Self(PhantomData))
-    }
+/// The titles of a factory-fresh console, in installation order.
+pub fn stock_titles(menu: Menu) -> Result<Vec<(TitleId, u16)>> {
+    ffi::stock_titles(menu.into())?
+        .into_iter()
+        .map(|title| {
+            Ok((
+                TitleId::new(title.id).context("stock title has no ID")?,
+                title.version,
+            ))
+        })
+        .collect()
+}
 
-    /// Reads a seed from a backup. A footerless backup needs its key sidecar.
-    pub fn extract_seed(
-        &self,
-        nand: &[u8],
-        sidecar_keys: Option<&[u8; KEYS_BYTES]>,
-    ) -> Result<ExtractedSeed> {
-        let sidecar_keys = sidecar_keys.map_or(&[][..], |keys| keys);
-        Ok(ExtractedSeed(ffi::extract_seed(nand, sidecar_keys)?))
-    }
-
-    pub fn stock_titles(&self, menu: Menu) -> Result<Vec<(TitleId, u16)>> {
-        ffi::stock_titles(menu.into())?
-            .into_iter()
-            .map(|title| {
-                Ok((
-                    TitleId::new(title.id).context("stock title has no ID")?,
-                    title.version,
-                ))
-            })
-            .collect()
-    }
-
+/// Operations of the library on an image. The library itself refuses calls
+/// from a second thread.
+impl Nand {
     pub fn initialize_image(
-        &self,
-        nand: &mut Nand,
+        &mut self,
         seed: &StockSeed,
         menu: Menu,
         policy: BootPolicy,
@@ -197,25 +177,24 @@ impl Session {
             BootPolicy::Stock => ffi::initialize_image,
             BootPolicy::PreserveSource => ffi::initialize_image_with_source_boot,
         };
-        let identity = initialize(&mut nand.0[..], &seed.as_native(), menu.into())?;
+        let identity = initialize(&mut self.0[..], &seed.as_native(), menu.into())?;
         Ok(StockIdentity(identity))
     }
 
-    pub fn verify_stock(&self, nand: &Nand, seed: &StockSeed, menu: Menu) -> Result<()> {
+    pub fn verify_stock(&self, seed: &StockSeed, menu: Menu) -> Result<()> {
         Ok(ffi::verify_stock(
-            nand.as_bytes(),
+            self.as_bytes(),
             &seed.as_native(),
             menu.into(),
         )?)
     }
 
-    pub fn verify_generated_nand(&self, nand: &Nand, expected: &StockIdentity) -> Result<()> {
-        Ok(ffi::verify_generated_nand(nand.as_bytes(), &expected.0)?)
+    pub fn verify_generated_nand(&self, expected: &StockIdentity) -> Result<()> {
+        Ok(ffi::verify_generated_nand(self.as_bytes(), &expected.0)?)
     }
 
     pub fn install_nus_title(
-        &self,
-        nand: &mut Nand,
+        &mut self,
         cache: &NusCache,
         title_id: TitleId,
         version: u16,
@@ -225,7 +204,7 @@ impl Session {
             version,
         };
         match cache {
-            NusCache::Memory => ffi::install_nus_title(&mut nand.0[..], title)?,
+            NusCache::Memory => ffi::install_nus_title(&mut self.0[..], title)?,
             NusCache::Directory { path, offline } => {
                 let directory = path.to_str().with_context(|| {
                     format!("NUS cache directory must be UTF-8: {}", path.display())
@@ -234,46 +213,41 @@ impl Session {
                     directory,
                     offline: *offline,
                 };
-                ffi::install_cached_nus_title(&mut nand.0[..], &cache, title)?;
+                ffi::install_cached_nus_title(&mut self.0[..], &cache, title)?;
             }
         }
         Ok(())
     }
 
     /// Installs a Nintendo-signed channel or IOS.
-    pub fn install_wad(&self, nand: &mut Nand, wad: &Wad) -> Result<InstalledWad> {
-        ffi::install_wad(&mut nand.0[..], wad)?.try_into()
+    pub fn install_wad(&mut self, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_wad(&mut self.0[..], wad)?.try_into()
     }
 
     /// Installs a downloadable channel that need not be signed.
-    pub fn install_unsigned_channel(&self, nand: &mut Nand, wad: &Wad) -> Result<InstalledWad> {
-        ffi::install_unsigned_channel(&mut nand.0[..], wad)?.try_into()
+    pub fn install_unsigned_channel(&mut self, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_unsigned_channel(&mut self.0[..], wad)?.try_into()
     }
 
-    pub fn install_homebrew_channel(&self, nand: &mut Nand, wad: &Wad) -> Result<InstalledWad> {
-        ffi::install_homebrew_channel(&mut nand.0[..], wad)?.try_into()
+    pub fn install_homebrew_channel(&mut self, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_homebrew_channel(&mut self.0[..], wad)?.try_into()
     }
 
-    pub fn install_cios(
-        &self,
-        nand: &mut Nand,
-        wad: &Wad,
-        target: &CiosTarget,
-    ) -> Result<InstalledWad> {
+    pub fn install_cios(&mut self, wad: &Wad, target: &cios::Target) -> Result<InstalledWad> {
         let options = ffi::CiosOptions {
             slot: target.slot.into(),
             base: target.base.into(),
             revision: target.revision,
             replace_stock_stub: target.replace_stock_stub,
         };
-        ffi::install_cios(&mut nand.0[..], wad, &options)?.try_into()
+        ffi::install_cios(&mut self.0[..], wad, &options)?.try_into()
     }
 
-    pub fn remove_title(&self, nand: &mut Nand, title_id: TitleId) -> Result<()> {
-        Ok(ffi::remove_title(&mut nand.0[..], title_id.as_u64())?)
+    pub fn remove_title(&mut self, title_id: TitleId) -> Result<()> {
+        Ok(ffi::remove_title(&mut self.0[..], title_id.as_u64())?)
     }
 
-    pub fn apply_system_settings(&self, nand: &mut Nand, menu: Menu, setup: &Setup) -> Result<()> {
+    pub fn apply_system_settings(&mut self, menu: Menu, setup: &Setup) -> Result<()> {
         let display = setup.display;
         let settings = ffi::SystemSettings {
             nickname: setup.nickname.as_ref(),
@@ -284,15 +258,15 @@ impl Session {
             progressive: display.progressive,
             pal60: display.pal60,
         };
-        Ok(ffi::apply_system_settings(&mut nand.0[..], &settings)?)
+        Ok(ffi::apply_system_settings(&mut self.0[..], &settings)?)
     }
 
-    pub fn install_priiloader(&self, nand: &mut Nand, app: &[u8]) -> Result<()> {
-        Ok(ffi::install_priiloader(&mut nand.0[..], app)?)
+    pub fn install_priiloader(&mut self, app: &[u8]) -> Result<()> {
+        Ok(ffi::install_priiloader(&mut self.0[..], app)?)
     }
 
     /// Writes the settings. Hacks are a separate file: see [`Self::set_priiloader_hacks`].
-    pub fn configure_priiloader(&self, nand: &mut Nand, config: &Priiloader) -> Result<()> {
+    pub fn configure_priiloader(&mut self, config: &Priiloader) -> Result<()> {
         let settings = ffi::PriiloaderSettings {
             autoboot: config.autoboot.into(),
             return_to: config.return_to.into(),
@@ -305,19 +279,14 @@ impl Session {
             dump_gecko_text: config.dump_gecko_text,
             show_rc_updates: config.show_rc_updates,
         };
-        Ok(ffi::configure_priiloader(&mut nand.0[..], &settings)?)
+        Ok(ffi::configure_priiloader(&mut self.0[..], &settings)?)
     }
 
-    pub fn set_priiloader_hacks(
-        &self,
-        nand: &mut Nand,
-        definitions: &[u8],
-        enabled: &[Hack],
-    ) -> Result<()> {
+    pub fn set_priiloader_hacks(&mut self, definitions: &[u8], enabled: &[Hack]) -> Result<()> {
         let enabled: BTreeSet<Hack> = enabled.iter().copied().collect();
         let enabled: Vec<ffi::Hack> = enabled.into_iter().map(Into::into).collect();
         Ok(ffi::set_priiloader_hacks(
-            &mut nand.0[..],
+            &mut self.0[..],
             definitions,
             &enabled,
         )?)

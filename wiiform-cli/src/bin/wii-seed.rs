@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::{io, process::ExitCode};
 use wiiform::{
-    native::{KEYS_BYTES, Nand, RAW_NAND_BYTES, Session},
+    native::{KEYS_BYTES, Nand, RAW_NAND_BYTES, extract_seed},
     recipe::{ResolvedPath, read_bounded},
 };
 
@@ -27,7 +27,6 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let session = Session::acquire()?;
     let seed = match cli.keys {
         Some(keys) => {
             let nand = read_bounded(cli.backup.as_ref(), RAW_NAND_BYTES..=RAW_NAND_BYTES)
@@ -37,12 +36,12 @@ fn run(cli: Cli) -> Result<()> {
                 .into_boxed_slice()
                 .try_into()
                 .expect("the read is bounded to the footer size");
-            session.extract_seed(&nand, Some(&keys))?
+            extract_seed(&nand, Some(&keys))?
         }
         None => {
             let nand = Nand::read(cli.backup.as_ref())
                 .context("expected an embedded footer; for a footerless backup pass --keys FILE")?;
-            session.extract_seed(nand.as_bytes(), None)?
+            extract_seed(nand.as_bytes(), None)?
         }
     };
     seed.write(io::stdout().lock())
