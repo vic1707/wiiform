@@ -5,7 +5,7 @@ set_languages("cxx20")
 add_rules("mode.release", "mode.debug")
 
 includes("xmake/wiiqt-nand.lua")
-add_requires("wiiqt-nand 0.2.0")
+add_requires("wiiqt-nand 0.3.0")
 
 local private_headers = {
     "wiiform-lib/src/common",
@@ -15,7 +15,7 @@ local private_headers = {
 
 target("wiiform-core")
     add_rules("qt.shared")
-    add_frameworks("QtGui", "QtWidgets", "QtNetwork")
+    add_frameworks("QtNetwork")
     add_packages("wiiqt-nand")
     add_includedirs("wiiform-lib/include", {public = true})
     add_headerfiles("wiiform-lib/include/(wiiform/*.hpp)")
@@ -38,7 +38,7 @@ for name, source in pairs({
         set_default(false)
         add_rules("qt.console")
         add_deps("wiiform-core")
-        add_frameworks("QtGui", "QtWidgets", "QtNetwork")
+        add_frameworks("QtNetwork")
         add_packages("wiiqt-nand")
         add_includedirs(private_headers)
         add_files(source)

@@ -216,6 +216,27 @@ The archive includes the three commands under `bin/`, runtime libraries under
 [migration guide](docs/migration.md) for the old recipe mapping and the mise
 configuration for GitHub releases.
 
+## Container images
+
+The `Containerfile` builds one image per command. Each carries the command, its
+shared libraries and, where needed, the Priiloader assets under `/opt/wiiform`.
+
+```sh
+podman build --target wiiform -t wiiform .
+podman build --target wii-seed -t wii-seed .
+podman build --target wii-nand -t wii-nand .
+```
+
+Set `--build-arg BUILD_JOBS=N` to match the memory of the build host; the
+default of 2 fits a 2 GiB machine. The images run as an unprivileged user, so
+mount an output directory that user can write to.
+
+```sh
+podman run --rm -v "$PWD/backups:/in:ro" wii-seed /in/nand.bin |
+    podman run --rm -i -v "$PWD/work:/work" wiiform \
+        --seed - --recipe /work/recipe.yaml --output /work/bundle
+```
+
 ## License and attribution
 
 Wiiform and migrated code are distributed under GPL-2.0-only. See

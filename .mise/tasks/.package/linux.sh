@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 set -euo pipefail
 
-if [[ $(uname -s)-$(uname -m) != Linux-x86_64 || $# -lt 2 ]]; then
-    echo "Usage on Linux x86_64: $0 NEW_DIR SOURCE=DEST [SOURCE=DEST ...]" >&2
+if [[ $(uname -s) != Linux || $# -lt 2 ]]; then
+    echo "Usage on Linux: $0 NEW_DIR SOURCE=DEST [SOURCE=DEST ...]" >&2
     exit 2
 fi
 command -v lddtree >/dev/null
@@ -41,7 +41,7 @@ for source in "${sources[@]}"; do
         [[ $real != "$source" ]] || continue
         name=$(basename -- "$dependency")
         case "$name" in
-            ld-linux-x86-64.so.2|libc.so.6|libm.so.6|libpthread.so.0|libdl.so.2|librt.so.1|libresolv.so.2)
+            ld-linux-x86-64.so.2|ld-linux-aarch64.so.1|libc.so.6|libm.so.6|libpthread.so.0|libdl.so.2|librt.so.1|libresolv.so.2)
                 continue ;;
         esac
         if [[ -v copied[$name] ]]; then

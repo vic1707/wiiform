@@ -1,7 +1,14 @@
 [tools]
-'github:xmake-io/xmake' = { version = "3.1.2", bin = "xmake" }
 cmake = "3.31.8"
 rust = "1.99.0"
 
 [env]
 CARGO_TARGET_DIR = "{{ config_root }}/build/cargo"
+
+[tools."github:xmake-io/xmake"]
+version = "3.1.2"
+bin = "xmake"
+
+[tools."github:xmake-io/xmake".platforms]
+linux-arm64 = { asset_pattern = "xmake-bundle-v*.cosmocc", format = "raw" }
+linux-x64 = { asset_pattern = "xmake-bundle-v*.linux.x86_64", format = "raw" }

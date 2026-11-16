@@ -1,0 +1,12 @@
+.git/
+.github/
+.xmake/
+build/
+dist/
+docs/
+private/
+target/
+*.seed.yaml
+*.nand.bin
+keys.bin
+nand.bin
