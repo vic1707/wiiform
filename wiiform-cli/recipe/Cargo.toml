@@ -19,7 +19,7 @@ base64 = "0.23"
 libc = "0.2"
 hex = { version = "0.4.3", features = ["serde"] }
 clap = { workspace = true, optional = true }
-nnn = "=1.2.7"
+nnn = "=1.2.8"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
 schemars = "=1.2.3"
 semver = { version = "1.0", features = ["serde"] }

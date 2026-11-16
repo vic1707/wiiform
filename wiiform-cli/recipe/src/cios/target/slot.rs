@@ -11,6 +11,3 @@ use serde::Deserialize;
     validators(min_or_eq = 248, max_or_eq = 251)
 )]
 pub struct Slot(u8);
-
-// clap needs this to show the message; nnn 1.2.7 does not implement it.
-impl std::error::Error for SlotParseError {}
