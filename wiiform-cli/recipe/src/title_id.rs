@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//! What identifies a title, whichever recipe key names it.
 use std::{num::NonZeroU64, str::FromStr};
 
 use anyhow::{Context, Result};
@@ -40,29 +39,5 @@ impl FromStr for TitleId {
         let bytes =
             <[u8; 8]>::from_hex(value).context("expected a 16-digit hexadecimal title ID")?;
         Self::new(u64::from_be_bytes(bytes)).context("title ID must be nonzero")
-    }
-}
-
-/// Region code a title declares in its TMD.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Region {
-    Japan,
-    Usa,
-    Pal,
-    /// Runs on every console.
-    Free,
-    Korea,
-}
-
-impl Region {
-    pub const fn from_code(code: u16) -> Option<Self> {
-        Some(match code {
-            0 => Self::Japan,
-            1 => Self::Usa,
-            2 => Self::Pal,
-            3 => Self::Free,
-            4 => Self::Korea,
-            _ => return None,
-        })
     }
 }

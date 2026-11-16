@@ -18,11 +18,12 @@ mod files;
 mod hbc;
 mod menu;
 pub mod priiloader;
+mod region;
 mod remove;
 pub mod setup;
 #[cfg(test)]
 mod tests;
-mod title;
+mod title_id;
 mod titles;
 mod wad;
 pub mod yaml;
@@ -33,9 +34,10 @@ pub use self::{
     hbc::Hbc,
     menu::Menu,
     priiloader::Priiloader,
+    region::Region,
     remove::RemovableChannel,
     setup::Setup,
-    title::{Region, TitleId},
+    title_id::TitleId,
     titles::Title,
     wad::{Sha256, Wad},
 };

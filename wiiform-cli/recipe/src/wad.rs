@@ -3,11 +3,9 @@
 use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf};
 
 use anyhow::{Context, Result, ensure};
-use base64::{Engine, engine::general_purpose::STANDARD};
 use derive_more::Deref;
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
-use sha2::Digest;
+use serde::Deserialize;
 
 use crate::{ResolvedPath, read_bounded};
 
@@ -26,76 +24,19 @@ pub(crate) fn relative_to<T>(directory: PathBuf, read: impl FnOnce() -> T) -> T 
     result
 }
 
+mod file;
 #[cfg_attr(test, allow(dead_code))] // Tests never download.
 mod https;
+mod sha256;
+
+use self::file::Source;
+pub(crate) use self::file::WadFile;
+pub use self::sha256::Sha256;
 
 #[cfg(not(test))]
 pub(crate) use self::https::fetch;
 #[cfg(test)]
 pub(crate) use tests::fetch;
-
-/// SHA-256 of the exact binary payload, encoded as 64 hex digits.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub struct Sha256(
-    #[serde(with = "hex")]
-    #[schemars(
-        with = "String",
-        length(equal = 64),
-        regex(pattern = "^[0-9a-fA-F]{64}$")
-    )]
-    pub [u8; 32],
-);
-
-impl std::str::FromStr for Sha256 {
-    type Err = hex::FromHexError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        hex::FromHex::from_hex(value).map(Self)
-    }
-}
-
-impl Sha256 {
-    pub fn of(bytes: &[u8]) -> Self {
-        Self(sha2::Sha256::digest(bytes).into())
-    }
-}
-
-/// Where a recipe gets a file from.
-#[derive(Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-enum Source {
-    /// Local path, relative to the recipe.
-    Path(PathBuf),
-    /// HTTPS URL of the raw file.
-    Url(String),
-    /// The file itself, base64-encoded.
-    Inline(
-        #[serde(deserialize_with = "base64")]
-        #[schemars(with = "String", extend("contentEncoding" = "base64"))]
-        Vec<u8>,
-    ),
-}
-
-fn base64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
-    let text = String::deserialize(deserializer)?;
-    let compact: String = text.split_ascii_whitespace().collect();
-    STANDARD.decode(compact).map_err(serde::de::Error::custom)
-}
-
-/// A WAD from one source, with the SHA-256 of its exact bytes.
-// When a WAD is flattened into an entry, this is where that entry's unknown
-// keys are rejected: it sees every key the entry does not name itself, and
-// serde cannot make the same check on the outer struct.
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(rename = "Wad")]
-pub(crate) struct WadFile {
-    #[serde(flatten)]
-    source: Source,
-    /// SHA-256 of the exact WAD bytes.
-    sha256: Sha256,
-}
 
 /// The bytes of a WAD whose SHA-256 matched the one its recipe or command line gave.
 #[derive(derive_more::Debug, Deref, Deserialize, JsonSchema)]

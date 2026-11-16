@@ -12,7 +12,7 @@ use crate::recipe::{
     Menu, Priiloader, Region, Setup, TitleId, Wad, cios, priiloader,
     priiloader::Hack,
     read_bounded,
-    setup::{self, Aspect, SensorBar},
+    setup::{self, SensorBar, display::Aspect},
 };
 use crate::seed::{ExtractedSeed, StockSeed};
 
