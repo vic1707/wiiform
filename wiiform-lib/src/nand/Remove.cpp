@@ -5,15 +5,12 @@
 #include <WorkingImage.hpp>
 #include <tiktmd.h>
 
-#include <QTreeWidgetItem>
 #include <QSet>
 #include <QtEndian>
-#include <memory>
 #include <optional>
 #include <stdexcept>
 
 namespace {
-  using working_image::entry_kind;
   using working_image::find_path;
   using working_image::read_authenticated_file;
 
@@ -52,19 +49,15 @@ namespace {
     const auto content_path = title_path + "/content";
     const auto data_path = title_path + "/data";
     const auto ticket_path = "/ticket/" + high + "/" + low + ".tik";
-    std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
-    require(tree && tree->childCount() == 1, "Cannot inspect NAND filesystem tree");
-
-    auto* data = find_path(tree.get(), data_path);
-    auto* content = find_path(tree.get(), content_path);
-    auto* ticket_entry = find_path(tree.get(), ticket_path);
+    const auto data = find_path(nand, data_path);
+    const auto content = find_path(nand, content_path);
+    const auto ticket_entry = find_path(nand, ticket_path);
     require(data && content && ticket_entry, "Allowlisted channel is not completely installed");
-    require(entry_kind(data) == NAND_DIR && entry_kind(content) == NAND_DIR &&
-                entry_kind(ticket_entry) == NAND_FILE,
+    require(data->IsDir() && content->IsDir() && ticket_entry->IsFile(),
             "Installed channel has malformed title paths");
 
     auto read_file = [&](const QString& path, quint64 limit) {
-      return read_authenticated_file(nand, find_path(tree.get(), path), limit);
+      return read_authenticated_file(nand, path, limit);
     };
     const auto title_tmd = read_file(content_path + "/title.tmd", 2 * 1024 * 1024);
     const auto ticket = read_file(ticket_path, 64 * 1024);
@@ -110,12 +103,11 @@ namespace {
       require(quint64(app.size()) == size && GetSha1(app) == tmd.Hash(i),
               "Installed channel content does not match its TMD");
     }
-    for (int i = 0; i < content->childCount(); ++i) {
-      const auto* child = content->child(i);
-      require(entry_kind(child) == NAND_FILE && expected_paths.contains(child->text(0)),
+    const auto content_files = nand.Children(content->index);
+    for (const auto& child : content_files)
+      require(child.IsFile() && expected_paths.contains(child.name),
               "Installed channel content directory has unexpected files");
-    }
-    require(content->childCount() == expected_paths.size(),
+    require(content_files.size() == expected_paths.size(),
             "Installed channel is missing a TMD or private content file");
     const auto uid_bytes = read_file("/sys/uid.sys", 1024 * 1024);
     UIDmap uid(uid_bytes);

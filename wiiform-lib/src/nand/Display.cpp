@@ -4,8 +4,6 @@
 #include <Seed.hpp>
 #include <tools.h>
 
-#include <QTreeWidgetItem>
-#include <memory>
 #include <stdexcept>
 
 namespace {
@@ -24,15 +22,14 @@ namespace {
 namespace wii_sysconf {
   void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings) {
     working_image::Image working(image);
-    const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
-    require(!working_image::find_path(tree.get(), path), "NAND already has SYSCONF");
-    const auto raw = working_image::read_authenticated_file(working.nand,
-        working_image::find_path(tree.get(), "/title/00000001/00000002/data/setting.txt"), 256);
+    auto& nand = working.nand;
+    require(!working_image::find_path(nand, path), "NAND already has SYSCONF");
+    const auto raw = working_image::read_authenticated_file(nand, "/title/00000001/00000002/data/setting.txt", 256);
     const auto region = QString::fromStdString(seed::decode_settings(raw).area);
     const auto bytes = create(settings, region);
-    const auto* parent = working_image::find_path(tree.get(), "/shared2/sys");
-    require(parent && working_image::entry_kind(parent) == NAND_DIR, "Working image needs /shared2/sys");
-    working_image::require_capacity(working.nand, tree->child(0), working.layout.orphan_entries, 1, 1);
+    const auto parent = working_image::find_path(nand, "/shared2/sys");
+    require(parent && parent->IsDir(), "Working image needs /shared2/sys");
+    working_image::require_capacity(nand, working.layout.orphan_entries, 1, 1);
     // System Menu ownership and permissions observed in original Wii captures.
     const auto id = working.nand.CreateEntry(path, 0x1000, 1, NAND_FILE, NAND_RW, NAND_RW, NAND_RW);
     require(id && working.nand.SetData(id, bytes) && working.nand.WriteMetaData(),
@@ -42,10 +39,9 @@ namespace wii_sysconf {
     NandBin reopened;
     require(reopened.SetDevice(&device) && reopened.InitNand() && reopened.CheckHmacMeta(layout.active_metadata),
             "Cannot authenticate the edited NAND buffer");
-    const std::unique_ptr<QTreeWidgetItem> verified(reopened.GetTree());
-    const auto* entry = working_image::find_path(verified.get(), path);
+    const auto entry = working_image::find_path(reopened, path);
     require(working_image::read_authenticated_file(reopened, entry, size) == bytes,
             "SYSCONF readback differs from the requested settings");
-    check_ecc(reopened, working_image::entry_id(entry));
+    check_ecc(reopened, entry->index);
   }
 }

@@ -11,9 +11,7 @@
 #include <QDir>
 #include <QMap>
 #include <QSet>
-#include <QTreeWidgetItem>
 #include <QtEndian>
-#include <memory>
 #include <optional>
 #include <stdexcept>
 
@@ -47,22 +45,6 @@ namespace {
     return text.toUInt(&ok, 16);
   }
 
-  auto entry_type(const QTreeWidgetItem* item, bool& ok) -> int {
-    return item->text(7).left(2).toInt(&ok, 16);
-  }
-
-  auto entry_id(const QTreeWidgetItem* item, bool& ok) -> quint16 {
-    const auto value = item->text(1).toUInt(&ok, 10);
-    if (!ok || value > 0xffff) ok = false;
-    return static_cast<quint16>(value);
-  }
-
-  auto entry_size(const QTreeWidgetItem* item, bool& ok) -> quint64 {
-    const auto value = item->text(2).toULongLong(&ok, 16);
-    if (!ok || value > maximum_file_size) ok = false;
-    return value;
-  }
-
   struct Metadata {
     quint32 uid = 0;
     quint16 gid = 0;
@@ -71,26 +53,8 @@ namespace {
     quint8 attr = 0;
   };
 
-  auto entry_metadata(const QTreeWidgetItem* item, bool& ok) -> Metadata {
-    Metadata metadata;
-    bool uid_ok = false;
-    bool gid_ok = false;
-    bool x3_ok = false;
-    bool mode_ok = false;
-    bool attr_ok = false;
-    metadata.uid = item->text(3).toUInt(&uid_ok, 16);
-    metadata.gid = item->text(4).left(4).toUShort(&gid_ok, 16);
-    metadata.x3 = item->text(5).toUInt(&x3_ok, 16);
-    const auto mode = item->text(6).toUInt(&mode_ok, 16);
-    const auto attr_text = item->text(7);
-    const auto open = attr_text.lastIndexOf('[');
-    require(open >= 0 && attr_text.endsWith(']'), "Invalid NAND attribute field");
-    const auto attr = attr_text.mid(open + 1, attr_text.size() - open - 2).toUInt(&attr_ok, 16);
-    require(mode <= 0xff && attr <= 0xff, "Invalid NAND metadata value");
-    metadata.mode = static_cast<quint8>(mode);
-    metadata.attr = static_cast<quint8>(attr);
-    ok = uid_ok && gid_ok && x3_ok && mode_ok && attr_ok;
-    return metadata;
+  auto entry_metadata(const NandEntry& entry) -> Metadata {
+    return {entry.uid, entry.gid, entry.x3, entry.wtf, entry.attr};
   }
 
   auto make_attr(int type, int user, int group, int other) -> quint8 {
@@ -118,73 +82,35 @@ namespace {
       const auto fats = nand_.GetFats();
       require(fats.size() == 0x8000, "Invalid NAND allocation table");
 
-      std::unique_ptr<QTreeWidgetItem> tree(nand_.GetTree());
-      require(tree && tree->childCount() == 1, "Invalid NAND root");
-      auto* root = tree->child(0);
-      bool type_ok = false;
-      require(entry_type(root, type_ok) == NAND_DIR && type_ok, "Invalid NAND root");
-      bool root_id_ok = false;
-      bool root_size_ok = false;
-      bool root_metadata_ok = false;
-      const auto root_id = entry_id(root, root_id_ok);
-      const auto root_size = entry_size(root, root_size_ok);
-      root_metadata_ = entry_metadata(root, root_metadata_ok);
-      require(root->text(0) == "/" && root_id_ok && root_id == 0 && root_size_ok && root_size == 0 &&
-                  root_metadata_ok,
+      NandEntry root;
+      require(nand_.Stat("/", &root) && root.IsDir() && root.name == "/" && root.index == 0 && root.size == 0,
               "Invalid NAND root entry");
+      root_metadata_ = entry_metadata(root);
 
       struct Pending {
-        QTreeWidgetItem* item;
+        NandEntry entry;
         QString path;
         int depth;
       };
-      QList<Pending> pending;
-      for (int i = 0; i < root->childCount(); ++i) {
-        auto* item = root->child(i);
-        const auto name = item->text(0);
-        require(!name.isEmpty() && name != "." && name != ".." && !name.contains('/'),
-                "Invalid NAND root entry name");
-        pending.push_back({item, "/" + name, 1});
-      }
-      QSet<quint16> ids;
+      QList<Pending> pending{{root, QString(), 0}};
+      QSet<quint16> ids{root.index};
       int visited = 0;
       while (!pending.isEmpty()) {
         const auto current = pending.takeLast();
-        require(++visited <= maximum_entries && current.depth <= maximum_depth,
-                "NAND directory tree exceeds inspection limits");
-        require(current.item && !current.path.endsWith('/') && !current.path.contains("//") &&
-                    current.path != "/." && current.path != "/..",
-                "Invalid NAND directory entry");
-
-        bool id_ok = false;
-        bool size_ok = true;
-        bool kind_ok = false;
-        const auto id = entry_id(current.item, id_ok);
-        const auto kind = entry_type(current.item, kind_ok);
-        bool metadata_ok = false;
-        const auto metadata = entry_metadata(current.item, metadata_ok);
-        const bool is_directory = kind == NAND_DIR;
-        const auto size = is_directory ? quint64(0) : entry_size(current.item, size_ok);
-        require(id_ok && size_ok && kind_ok && metadata_ok && (metadata.attr & 3) == kind &&
-                    !ids.contains(id),
-                "Invalid NAND entry metadata");
-        ids.insert(id);
-        require(is_directory || kind == NAND_FILE, "Unsupported NAND entry type");
-        if (is_directory) require(size == 0, "Invalid NAND directory size");
-        else require(current.item->childCount() == 0, "Invalid NAND file entry");
-        require(!entries_.contains(current.path), "Duplicate NAND path");
-        entries_.insert(current.path, Entry{id, size, is_directory, metadata});
-
-        const auto parent = current.path.left(current.path.lastIndexOf('/'));
-        children_[parent].insert(current.path);
-        if (is_directory) {
-          for (int i = 0; i < current.item->childCount(); ++i) {
-            auto* item = current.item->child(i);
-            const auto name = item->text(0);
-            require(!name.isEmpty() && name != "." && name != ".." && !name.contains('/'),
-                    "Invalid NAND directory name");
-            pending.push_back({item, current.path + "/" + name, current.depth + 1});
-          }
+        for (const auto& child : nand_.Children(current.entry.index)) {
+          require(++visited <= maximum_entries && current.depth < maximum_depth,
+                  "NAND directory tree exceeds inspection limits");
+          require(!child.name.isEmpty() && child.name != "." && child.name != ".." && !child.name.contains('/'),
+                  "Invalid NAND directory name");
+          require((child.IsDir() || child.IsFile()) && child.size <= maximum_file_size &&
+                      (child.IsFile() || child.size == 0) && !ids.contains(child.index),
+                  "Invalid NAND entry metadata");
+          ids.insert(child.index);
+          const auto path = current.path + "/" + child.name;
+          require(!entries_.contains(path), "Duplicate NAND path");
+          entries_.insert(path, Entry{child.index, child.size, child.IsDir(), entry_metadata(child)});
+          children_[current.path].insert(path);
+          if (child.IsDir()) pending.push_back({child, path, current.depth + 1});
         }
       }
     }
@@ -204,7 +130,7 @@ namespace {
       const auto* item = entry(path);
       require(item && !item->directory && item->size <= quint64(limit),
               "NAND file is missing or exceeds the inspection limit");
-      const auto data = nand_.GetData(path);
+      const auto data = nand_.GetFile(item->id);
       require(quint64(data.size()) == item->size, "NAND file read was incomplete");
       return data;
     }

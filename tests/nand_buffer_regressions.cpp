@@ -11,7 +11,6 @@
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
-#include <QTreeWidgetItem>
 #include <uidmap.h>
 #include <algorithm>
 #include <future>
@@ -249,14 +248,13 @@ namespace {
     const auto before = buffer_digest(image);
     {
       working_image::Image working(image);
-      const std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
       const auto free_clusters = working.nand.GetFats().count(0xfffe);
       rejects([&] {
-        working_image::require_capacity(working.nand, tree->child(0), working.layout.orphan_entries,
+        working_image::require_capacity(working.nand, working.layout.orphan_entries,
                                         0, static_cast<quint64>(free_clusters));
       }, "one cluster is reserved");
       rejects([&] {
-        working_image::require_capacity(working.nand, tree->child(0), working.layout.orphan_entries,
+        working_image::require_capacity(working.nand, working.layout.orphan_entries,
                                         0x1800, 0);
       }, "FST entries");
     }

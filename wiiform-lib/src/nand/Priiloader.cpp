@@ -10,9 +10,7 @@
 #include <tiktmd.h>
 
 #include <QCryptographicHash>
-#include <QTreeWidgetItem>
 #include <QtEndian>
-#include <memory>
 #include <stdexcept>
 
 namespace {
@@ -26,7 +24,6 @@ namespace {
   const QString ticket_path = "/ticket/00000001/00000002.tik";
   const QString settings_path = menu + "/data/loader.ini";
 
-  using working_image::entry_id;
   using working_image::find_path;
   using working_image::read_authenticated_file;
 
@@ -55,18 +52,18 @@ namespace {
     throw std::runtime_error("System Menu TMD has no selected boot record");
   }
 
-  auto authentic_ticket(NandBin& nand, QTreeWidgetItem* tree, const QByteArray& tmd) -> QByteArray {
-    const auto ticket = read_authenticated_file(nand, find_path(tree, ticket_path), 0x2a4);
+  auto authentic_ticket(NandBin& nand, const QByteArray& tmd) -> QByteArray {
+    const auto ticket = read_authenticated_file(nand, find_path(nand, ticket_path), 0x2a4);
     require(ticket.size() == 0x2a4 && check_title_metadata(tmd, ticket) &&
                 check_cert_chain(ticket) == ERROR_SUCCESS && Ticket(ticket, false).Tid() == 0x100000002ull,
             "System Menu ticket is not an authentic stock ticket");
     return ticket;
   }
 
-  void check_destinations(NandBin& nand, QTreeWidgetItem* tree, const wiiform::PriiloaderSettings& settings) {
+  void check_destinations(NandBin& nand, const wiiform::PriiloaderSettings& settings) {
     using wiiform::Autoboot;
     if (settings.autoboot == Autoboot::file || settings.return_to == wiiform::ReturnTo::file) {
-      require(!read_authenticated_file(nand, find_path(tree, menu + "/data/main.bin"), menu_app_limit).isEmpty(),
+      require(!read_authenticated_file(nand, find_path(nand, menu + "/data/main.bin"), menu_app_limit).isEmpty(),
               "Priiloader file boot needs an installed executable");
     }
     if (settings.autoboot == Autoboot::homebrew_channel) {
@@ -74,13 +71,13 @@ namespace {
       for (const auto tid : wiiform::homebrew_channel_title_ids) {
         const auto low = QString::number(static_cast<qulonglong>(tid), 16)
                              .rightJustified(8, QLatin1Char('0'));
-        present |= find_path(tree, QString("/title/00010001/") + low + "/content/title.tmd") != nullptr;
+        present |= find_path(nand, QString("/title/00010001/") + low + "/content/title.tmd") .has_value();
       }
       require(present, "Priiloader Homebrew Channel autoboot needs an installed Homebrew Channel");
     }
     if (settings.autoboot == Autoboot::bootmii_ios) {
       const auto bootmii = read_authenticated_file(
-          nand, find_path(tree, "/title/00000001/000000fe/content/title.tmd"), tmd_limit);
+          nand, find_path(nand, "/title/00000001/000000fe/content/title.tmd"), tmd_limit);
       require(bootmii.size() >= 0x1e4 && qFromBigEndian<quint16>(bootmii.constData() + 0x1dc) == 31338,
               "Priiloader BootMii autoboot needs BootMii installed as IOS");
     }
@@ -117,21 +114,20 @@ namespace {
     require(nand.SetDevice(&device) && nand.InitNand() && nand.CheckHmacMeta(layout.active_metadata),
             "Cannot authenticate the prepared Priiloader image");
     inspect::verify_filesystem(nand, false, layout.active_metadata);
-    const std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
     for (const auto& file : files)
-      require(read_authenticated_file(nand, find_path(tree.get(), file.path), file.bytes.size()) == file.bytes,
+      require(read_authenticated_file(nand, find_path(nand, file.path), file.bytes.size()) == file.bytes,
               "Priiloader file readback differs from the planned bytes");
     const auto evidence = inspect::priiloader_evidence(nand);
     require(evidence.layout == inspect::PriiloaderLayout::Installed,
             "Prepared image lacks the verified Priiloader layout");
   }
 
-  void plan_hacks(NandBin& nand, QTreeWidgetItem* tree, int version,
+  void plan_hacks(NandBin& nand, int version,
                   std::span<const std::uint8_t> definitions,
                   std::span<const wiiform::Hack> enabled_hacks,
                   QMap<QString, PendingFile>& files) {
-    const auto* definition_entry = find_path(tree, priiloader::hack_definitions_path);
-    const auto* state_entry = find_path(tree, priiloader::hack_states_path);
+    const auto definition_entry = find_path(nand, priiloader::hack_definitions_path);
+    const auto state_entry = find_path(nand, priiloader::hack_states_path);
     require(bool(definition_entry) == bool(state_entry),
             "Priiloader hack files must be a matching pair");
     const auto desired = priiloader::prepare_hacks(definitions, version, enabled_hacks);
@@ -147,12 +143,12 @@ namespace {
     }
   }
 
-  void check_buffer_capacity(NandBin& nand, QTreeWidgetItem* tree, int orphan_entries,
+  void check_buffer_capacity(NandBin& nand, int orphan_entries,
                              const QMap<QString, PendingFile>& files) {
     int needed_entries = 0;
     quint64 needed_clusters = 0;
     for (const auto& file : files) {
-      const auto* existing = find_path(tree, file.path);
+      const auto existing = find_path(nand, file.path);
       const auto new_clusters = clusters(file.bytes.size());
       if (!existing) {
         ++needed_entries;
@@ -160,40 +156,37 @@ namespace {
       } else {
         // A replaced file is recreated before its old entry is reusable; one rewritten in place only grows.
         if (file.replace) ++needed_entries;
-        bool size_ok = false;
-        const auto old_size = existing->text(2).toULongLong(&size_ok, 16);
-        require(size_ok, "Invalid Priiloader configuration file size");
-        const auto old_clusters = clusters(old_size);
+        const auto old_clusters = clusters(existing->size);
         if (new_clusters > old_clusters) needed_clusters += new_clusters - old_clusters;
       }
     }
     if (needed_entries || needed_clusters)
-      working_image::require_capacity(nand, tree->child(0), orphan_entries,
+      working_image::require_capacity(nand, orphan_entries,
                                       needed_entries, needed_clusters);
   }
 
-  void require_clean_menu_data(QTreeWidgetItem* tree) {
-    const auto* data = find_path(tree, menu + "/data");
-    require(data && working_image::entry_kind(data) == NAND_DIR, "System Menu data directory is missing");
+  void require_clean_menu_data(NandBin& nand) {
+    const auto data = find_path(nand, menu + "/data");
+    require(data && data->IsDir(), "System Menu data directory is missing");
     for (const auto* name : {"loader.ini", "hacks.ini", "hacks_s.ini", "hacksh_s.ini", "hackshas.ini", "password.txt"})
-      require(!find_path(tree, menu + "/data/" + name), "System Menu contains existing Priiloader data");
+      require(!find_path(nand, menu + "/data/" + name), "System Menu contains existing Priiloader data");
   }
 
-  void require_installed_menu(NandBin& nand, QTreeWidgetItem* tree,
+  void require_installed_menu(NandBin& nand,
                               const inspect::PriiloaderEvidence& evidence) {
     require(evidence.layout == inspect::PriiloaderLayout::Installed &&
                 evidence.backup_tmd_nintendo_signed &&
                 evidence.backup_app_matches_original_tmd_hash &&
                 evidence.backup_app_matches_original_tmd_size,
             "Settings writes need a verified Priiloader 0.10.0 installation with its original System Menu");
-    const auto app = read_authenticated_file(nand, find_path(tree, evidence.boot_app_path), release_app_size);
+    const auto app = read_authenticated_file(nand, find_path(nand, evidence.boot_app_path), release_app_size);
     require(priiloader::is_release_app(app),
             "Installed Priiloader app does not match the pinned release");
-    const auto original = read_authenticated_file(nand, find_path(tree, original_tmd_path), tmd_limit);
-    const auto active = read_authenticated_file(nand, find_path(tree, tmd_path), tmd_limit);
+    const auto original = read_authenticated_file(nand, find_path(nand, original_tmd_path), tmd_limit);
+    const auto active = read_authenticated_file(nand, find_path(nand, tmd_path), tmd_limit);
     require(active == patched_tmd(original, app), "Installed System Menu TMD differs from the pinned installer layout");
-    const auto ticket = authentic_ticket(nand, tree, original);
-    require(read_authenticated_file(nand, find_path(tree, content + "ticket"), ticket.size()) == ticket,
+    const auto ticket = authentic_ticket(nand, original);
+    require(read_authenticated_file(nand, find_path(nand, content + "ticket"), ticket.size()) == ticket,
             "Priiloader content ticket differs from the signed System Menu ticket");
   }
 }
@@ -218,45 +211,44 @@ namespace priiloader {
     require(installing || evidence.layout == inspect::PriiloaderLayout::Installed,
             "Priiloader preparation needs a stock System Menu or an existing Priiloader layout");
     const int version = menu_version(evidence);
-    const std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
 
     QMap<QString, PendingFile> files;
     if (installing) {
       require(!app.isEmpty(), "Installing Priiloader requires the pinned app payload");
       inspect::verify_stock_titles(
           nand, {{0x100000002ull, static_cast<quint16>(version)}, {0x100000050ull, 6944}});
-      require_clean_menu_data(tree.get());
+      require_clean_menu_data(nand);
       const auto& app_path = evidence.boot_app_path;
       const auto& backup_path = evidence.backup_app_path;
       require(!backup_path.isEmpty(),
               "System Menu boot CID does not support the Wii Priiloader backup layout");
       for (const auto& path : {backup_path, original_tmd_path, content + "ticket"})
-        require(!find_path(tree.get(), path), "Priiloader installer backup or ticket already exists");
-      const auto tmd = read_authenticated_file(nand, find_path(tree.get(), tmd_path), tmd_limit);
-      const auto original = read_authenticated_file(nand, find_path(tree.get(), app_path), menu_app_limit);
-      const auto ticket = authentic_ticket(nand, tree.get(), tmd);
+        require(!find_path(nand, path), "Priiloader installer backup or ticket already exists");
+      const auto tmd = read_authenticated_file(nand, find_path(nand, tmd_path), tmd_limit);
+      const auto original = read_authenticated_file(nand, find_path(nand, app_path), menu_app_limit);
+      const auto ticket = authentic_ticket(nand, tmd);
       files["backup_app"] = {backup_path, original};
       files["backup_tmd"] = {original_tmd_path, tmd, 0};
       files["boot_app"] = {app_path, app, NAND_RW, true};
       files["ticket"] = {content + "ticket", ticket};
       files["tmd"] = {tmd_path, patched_tmd(tmd, app), 0, true};
     } else {
-      require_installed_menu(nand, tree.get(), evidence);
+      require_installed_menu(nand, evidence);
     }
 
-    const auto* settings_entry = find_path(tree.get(), settings_path);
+    const auto settings_entry = find_path(nand, settings_path);
     // Start from pinned 0.10.0 defaults on every application, replacing prior
     // settings deterministically, including fields hidden by the recipe API.
     const auto settings_bytes = encode_settings(settings);
-    check_destinations(nand, tree.get(), settings);
+    check_destinations(nand, settings);
     if (!settings_entry || read_authenticated_file(nand, settings_entry, 32) != settings_bytes) {
       files["settings"] = {settings_path, settings_bytes, NAND_RW, false,
-                            settings_entry ? entry_id(settings_entry) : quint16(0)};
+                            settings_entry ? settings_entry->index : quint16(0)};
     }
 
-    plan_hacks(nand, tree.get(), version, definition_bytes, enabled_hacks, files);
+    plan_hacks(nand, version, definition_bytes, enabled_hacks, files);
 
-    check_buffer_capacity(nand, tree.get(), working.layout.orphan_entries, files);
+    check_buffer_capacity(nand, working.layout.orphan_entries, files);
     if (files.isEmpty()) return;
     persist_buffer(nand, files);
     verify_readback_buffer(image, files);

@@ -2,26 +2,12 @@
 // Adapted from giantpune's WiiQt ohneschwanzenegger title installation code.
 #include <Titles.hpp>
 #include <tiktmd.h>
-#include <memory>
 
 namespace {
-  auto find_path(QTreeWidgetItem* root, const QString& path) -> QTreeWidgetItem* {
-    if (root->childCount() != 1) return nullptr;
-    auto* item = root->child(0);
-    for (const auto& name : path.split('/', Qt::SkipEmptyParts)) {
-      QTreeWidgetItem* next = nullptr;
-      for (int i = 0; i < item->childCount(); ++i)
-        if (item->child(i)->text(0) == name) next = item->child(i);
-      if (!next) return nullptr;
-      item = next;
-    }
-    return item;
-  }
-
   auto ensure_entry(NandBin& nand, const QString& path, quint32 uid, quint16 gid,
                     quint8 attr, quint8 user, quint8 group, quint8 other) -> quint16 {
-    std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
-    if (auto* item = find_path(tree.get(), path)) return item->text(1).toUShort();
+    NandEntry existing;
+    if (nand.Stat(path, &existing)) return existing.index;
     return nand.CreateEntry(path, uid, gid, attr, user, group, other);
   }
 }
@@ -62,11 +48,10 @@ bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared,
       !ensure_entry(nand, title + "/data", owner, tmd.Gid(), NAND_DIR, NAND_RW, 0, 0) ||
       !ensure_entry(nand, title + "/content", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0)) return false;
 
-  std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
-  auto* content = find_path(tree.get(), title + "/content");
-  if (!content) return false;
-  for (int i = 0; i < content->childCount(); ++i)
-    if (!nand.Delete(title + "/content/" + content->child(i)->text(0))) return false;
+  NandEntry content;
+  if (!nand.Stat(title + "/content", &content)) return false;
+  for (const auto& child : nand.Children(content.index))
+    if (!nand.Delete(title + "/content/" + child.name)) return false;
 
   auto write = [&](const QString& path, const QByteArray& data) {
     const auto entry = ensure_entry(nand, path, 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);

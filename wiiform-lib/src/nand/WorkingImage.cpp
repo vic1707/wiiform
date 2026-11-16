@@ -2,14 +2,13 @@
 #include <WorkingImage.hpp>
 #include <tools.h>
 
-#include <QTreeWidgetItem>
 #include <algorithm>
 #include <stdexcept>
 
 namespace {
-  auto count_fst_entries(const QTreeWidgetItem* item) -> int {
+  auto count_fst_entries(NandBin& nand, quint16 entry) -> int {
     int count = 1;
-    for (int i = 0; i < item->childCount(); ++i) count += count_fst_entries(item->child(i));
+    for (const auto& child : nand.Children(entry)) count += count_fst_entries(nand, child.index);
     return count;
   }
 }
@@ -25,56 +24,31 @@ namespace working_image {
       throw std::runtime_error("Active NAND metadata HMAC is invalid");
   }
 
-  auto find_path(QTreeWidgetItem* tree, const QString& path) -> QTreeWidgetItem* {
-    if (!tree || tree->childCount() != 1 || !path.startsWith('/')) return nullptr;
-    auto* item = tree->child(0);
-    if (item->text(0) != "/") return nullptr;
-    for (const auto& name : path.split('/', Qt::SkipEmptyParts)) {
-      QTreeWidgetItem* next = nullptr;
-      for (int i = 0; i < item->childCount(); ++i) {
-        if (item->child(i)->text(0) == name) {
-          next = item->child(i);
-          break;
-        }
-      }
-      if (!next) return nullptr;
-      item = next;
-    }
-    return item;
+  auto find_path(NandBin& nand, const QString& path) -> std::optional<NandEntry> {
+    NandEntry entry;
+    if (!nand.Stat(path, &entry)) return std::nullopt;
+    return entry;
   }
 
-  auto entry_kind(const QTreeWidgetItem* item) -> int {
-    bool ok = false;
-    const auto kind = item->text(7).left(2).toInt(&ok, 16);
-    if (!ok) throw std::runtime_error("Invalid NAND FST entry type");
-    return kind;
-  }
-
-  auto entry_id(const QTreeWidgetItem* item) -> quint16 {
-    bool ok = false;
-    const auto index = item->text(1).toUInt(&ok, 10);
-    if (!ok || index >= 0x17ff) throw std::runtime_error("Invalid NAND FST entry index");
-    return static_cast<quint16>(index);
-  }
-
-  auto read_authenticated_file(NandBin& nand, const QTreeWidgetItem* item, quint64 maximum) -> QByteArray {
-    if (!item || entry_kind(item) != NAND_FILE)
+  auto read_authenticated_file(NandBin& nand, const std::optional<NandEntry>& entry, quint64 maximum) -> QByteArray {
+    if (!entry || !entry->IsFile())
       throw std::runtime_error("Expected NAND file is missing or has the wrong type");
-    bool size_ok = false;
-    const auto size = item->text(2).toULongLong(&size_ok, 16);
-    if (!size_ok || size > maximum) throw std::runtime_error("NAND file exceeds the read limit");
-    const auto index = entry_id(item);
-    if (!nand.CheckHmacData(index)) throw std::runtime_error("NAND file HMAC is invalid");
-    const auto data = nand.GetFile(index);
-    if (quint64(data.size()) != size) throw std::runtime_error("Incomplete NAND file read");
+    if (entry->size > maximum) throw std::runtime_error("NAND file exceeds the read limit");
+    if (!nand.CheckHmacData(entry->index)) throw std::runtime_error("NAND file HMAC is invalid");
+    const auto data = nand.GetFile(entry->index);
+    if (quint64(data.size()) != entry->size) throw std::runtime_error("Incomplete NAND file read");
     return data;
   }
 
-  void require_capacity(NandBin& nand, const QTreeWidgetItem* root, int orphan_entries,
+  auto read_authenticated_file(NandBin& nand, const QString& path, quint64 maximum) -> QByteArray {
+    return read_authenticated_file(nand, find_path(nand, path), maximum);
+  }
+
+  void require_capacity(NandBin& nand, int orphan_entries,
                         int needed_entries, quint64 needed_clusters,
                         int released_entries, quint64 released_clusters) {
     constexpr int fst_slot_count = 0x17ff;
-    const auto used_entries = count_fst_entries(root) + orphan_entries;
+    const auto used_entries = count_fst_entries(nand, 0) + orphan_entries;
     if (released_entries < 0 || released_entries > used_entries ||
         used_entries - released_entries > fst_slot_count ||
         needed_entries > fst_slot_count - (used_entries - released_entries))

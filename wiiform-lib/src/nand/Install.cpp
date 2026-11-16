@@ -7,17 +7,13 @@
 #include <WorkingImage.hpp>
 #include <tiktmd.h>
 
-#include <QTreeWidgetItem>
 #include <QSet>
 #include <QtEndian>
 #include <algorithm>
 #include <limits>
-#include <memory>
 #include <stdexcept>
 
 namespace {
-  using working_image::entry_id;
-  using working_image::entry_kind;
   using working_image::find_path;
   using working_image::read_authenticated_file;
 
@@ -31,13 +27,13 @@ namespace {
     return QString("%1").arg(tid, 16, 16, QChar('0'));
   }
 
-  auto path_exists(QTreeWidgetItem* tree, const QString& path) -> bool {
-    return find_path(tree, path) != nullptr;
+  auto path_exists(NandBin& nand, const QString& path) -> bool {
+    return nand.Stat(path);
   }
 
-  void require_directory(QTreeWidgetItem* tree, const QString& path) {
-    if (auto* item = find_path(tree, path))
-      require(entry_kind(item) == NAND_DIR, "A title path component is not a directory");
+  void require_directory(NandBin& nand, const QString& path) {
+    if (const auto item = find_path(nand, path))
+      require(item->IsDir(), "A title path component is not a directory");
   }
 
   auto clusters_for(quint64 bytes) -> quint64 {
@@ -46,36 +42,36 @@ namespace {
     return (bytes + cluster_size - 1) / cluster_size;
   }
 
-  auto existing_file_clusters(NandBin& nand, QTreeWidgetItem* tree, const QString& path) -> quint64 {
-    const auto* item = find_path(tree, path);
-    require(item && entry_kind(item) == NAND_FILE, "Expected NAND file is missing or has the wrong type");
-    return static_cast<quint64>(nand.GetFatsForFile(entry_id(item)).size());
+  auto existing_file_clusters(NandBin& nand, const QString& path) -> quint64 {
+    const auto item = find_path(nand, path);
+    require(item && item->IsFile(), "Expected NAND file is missing or has the wrong type");
+    return static_cast<quint64>(nand.GetFatsForFile(item->index).size());
   }
 
-  void add_new_entry(QTreeWidgetItem* tree, const QString& path, int& required_entries) {
-    if (path_exists(tree, path)) return;
+  void add_new_entry(NandBin& nand, const QString& path, int& required_entries) {
+    if (path_exists(nand, path)) return;
     ++required_entries;
   }
 
-  void add_new_file(QTreeWidgetItem* tree, const QString& path, quint64 bytes,
+  void add_new_file(NandBin& nand, const QString& path, quint64 bytes,
                     quint64& required_clusters, int& required_entries,
                     const QSet<QString>& replaced_files = {}) {
-    require(!path_exists(tree, path) || replaced_files.contains(path),
+    require(!path_exists(nand, path) || replaced_files.contains(path),
             "The target title already contains a file");
     required_clusters += clusters_for(bytes);
     ++required_entries;
   }
 
-  void add_resize(QTreeWidgetItem* tree, NandBin& nand, const QString& path, quint64 bytes,
+  void add_resize(NandBin& nand, const QString& path, quint64 bytes,
                   quint64& required_clusters, int& required_entries) {
-    const auto* item = find_path(tree, path);
+    const auto item = find_path(nand, path);
     if (!item) {
       required_clusters += clusters_for(bytes);
       ++required_entries;
       return;
     }
-    require(entry_kind(item) == NAND_FILE, "NAND map path has the wrong type");
-    const auto old_clusters = existing_file_clusters(nand, tree, path);
+    require(item->IsFile(), "NAND map path has the wrong type");
+    const auto old_clusters = existing_file_clusters(nand, path);
     const auto new_clusters = clusters_for(bytes);
     if (new_clusters > old_clusters) required_clusters += new_clusters - old_clusters;
   }
@@ -84,12 +80,12 @@ namespace {
     return "/shared1/" + cid + ".app";
   }
 
-  auto installed_wad_matches(NandBin& nand, QTreeWidgetItem* tree, const QString& content_dir,
+  auto installed_wad_matches(NandBin& nand, const QString& content_dir,
                             const QString& ticket_path, const ValidatedTitleJob& validated) -> bool {
     const auto& job = validated.get();
     const auto tmd_path = content_dir + "/title.tmd";
-    const auto* tmd_entry = find_path(tree, tmd_path);
-    const auto* ticket_entry = find_path(tree, ticket_path);
+    const auto tmd_entry = find_path(nand, tmd_path);
+    const auto ticket_entry = find_path(nand, ticket_path);
     require(tmd_entry && ticket_entry,
             "Installed title is incomplete or inconsistent with WAD");
 
@@ -99,7 +95,7 @@ namespace {
     if (installed_tmd != job.data[0] || installed_ticket != job.data[1]) return false;
 
     const auto map_path = QString("/shared1/content.map");
-    const auto* map_entry = find_path(tree, map_path);
+    const auto map_entry = find_path(nand, map_path);
     const auto map_data = map_entry
         ? read_authenticated_file(nand, map_entry, 1024 * 1024)
         : QByteArray();
@@ -122,37 +118,34 @@ namespace {
         content_path = content_dir + "/" + cid + ".app";
         expected_local_files.insert(cid + ".app");
       }
-      const auto* content_file = find_path(tree, content_path);
-      require(content_file, "Installed title is incomplete or inconsistent with WAD");
+      const auto content_file = find_path(nand, content_path);
+      require(content_file.has_value(), "Installed title is incomplete or inconsistent with WAD");
       const auto installed_content = read_authenticated_file(nand, content_file, expected_content.size());
       if (installed_content != expected_content)
         throw std::runtime_error("Installed title content conflicts with WAD");
     }
 
-    const auto* content_entry = find_path(tree, content_dir);
-    require(content_entry && entry_kind(content_entry) == NAND_DIR,
+    const auto content_entry = find_path(nand, content_dir);
+    require(content_entry && content_entry->IsDir(),
             "Installed title is incomplete or inconsistent with WAD");
     QSet<QString> actual_local_files;
-    for (int index = 0; index < content_entry->childCount(); ++index) {
-      const auto* child = content_entry->child(index);
-      require(entry_kind(child) == NAND_FILE,
-              "Installed title is incomplete or inconsistent with WAD");
-      const auto name = child->text(0);
-      if (name != "title.tmd") actual_local_files.insert(name);
+    for (const auto& child : nand.Children(content_entry->index)) {
+      require(child.IsFile(), "Installed title is incomplete or inconsistent with WAD");
+      if (child.name != "title.tmd") actual_local_files.insert(child.name);
     }
     require(actual_local_files == expected_local_files,
             "Installed title is incomplete or inconsistent with WAD");
     return true;
   }
 
-  void verify_stock_stub(NandBin& nand, QTreeWidgetItem* tree, quint64 title_id) {
+  void verify_stock_stub(NandBin& nand, quint64 title_id) {
     const auto tid = title_name(title_id);
     const auto title = "/title/" + tid.left(8) + "/" + tid.mid(8);
     const auto content_dir = title + "/content";
     const auto tmd_path = content_dir + "/title.tmd";
     const auto ticket_path = "/ticket/" + tid.left(8) + "/" + tid.mid(8) + ".tik";
-    const auto* tmd_entry = find_path(tree, tmd_path);
-    const auto* ticket_entry = find_path(tree, ticket_path);
+    const auto tmd_entry = find_path(nand, tmd_path);
+    const auto ticket_entry = find_path(nand, ticket_path);
     require(tmd_entry && ticket_entry, "The occupied cIOS slot is not a complete stock stub");
     const auto metadata = read_authenticated_file(nand, tmd_entry, 2 * 1024 * 1024);
     const auto ticket_data = read_authenticated_file(nand, ticket_entry, 64 * 1024);
@@ -170,7 +163,7 @@ namespace {
     require(tmd.Tid() == title_id && ticket.Tid() == title_id && tmd.Version() == 65280,
             "The occupied cIOS slot is not Nintendo stub v65280");
 
-    const auto* map_entry = find_path(tree, "/shared1/content.map");
+    const auto map_entry = find_path(nand, "/shared1/content.map");
     const auto map_data = map_entry
         ? read_authenticated_file(nand, map_entry, 1024 * 1024)
         : QByteArray();
@@ -200,21 +193,19 @@ namespace {
         expected_local_files.insert(cid + ".app");
         path = content_dir + "/" + cid + ".app";
       }
-      const auto* app_entry = find_path(tree, path);
-      require(app_entry, "The occupied cIOS slot has missing stub content");
+      const auto app_entry = find_path(nand, path);
+      require(app_entry.has_value(), "The occupied cIOS slot has missing stub content");
       const auto app = read_authenticated_file(nand, app_entry, size);
       require(quint64(app.size()) == size, "The occupied cIOS slot has incomplete stub content");
       job.data << app;
     }
-    const auto* content_entry = find_path(tree, content_dir);
-    require(content_entry && entry_kind(content_entry) == NAND_DIR,
+    const auto content_entry = find_path(nand, content_dir);
+    require(content_entry && content_entry->IsDir(),
             "The occupied cIOS slot has no content directory");
     QSet<QString> actual_files;
-    for (int index = 0; index < content_entry->childCount(); ++index) {
-      const auto* child = content_entry->child(index);
-      require(entry_kind(child) == NAND_FILE,
-              "The occupied cIOS slot has unexpected content entries");
-      actual_files.insert(child->text(0));
+    for (const auto& child : nand.Children(content_entry->index)) {
+      require(child.IsFile(), "The occupied cIOS slot has unexpected content entries");
+      actual_files.insert(child.name);
     }
     require(actual_files == expected_local_files && decrypt_title(job),
             "The occupied cIOS slot does not contain the authentic Nintendo stub");
@@ -239,37 +230,32 @@ namespace {
     require(ticket.Tid() == job.tid && tmd.Tid() == job.tid && tmd.Version() == job.version,
             "Title ID/version does not match its metadata");
 
-    std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
-    require(tree && tree->childCount() == 1, "Cannot inspect NAND filesystem tree");
-    auto* root = tree->child(0);
-    require(root && root->text(0) == "/", "Cannot inspect NAND filesystem root");
+    require(path_exists(nand, "/"), "Cannot inspect NAND filesystem root");
 
     // A fresh stock image may already contain the title's directory skeleton,
     // including system-menu settings. Preserve NUS installation semantics by
     // rejecting only the same completed-title markers as before.
-    require((!path_exists(tree.get(), ticket_path) || replaced_files.contains(ticket_path)) &&
-                (!path_exists(tree.get(), tmd_path) || replaced_files.contains(tmd_path)),
+    require((!path_exists(nand, ticket_path) || replaced_files.contains(ticket_path)) &&
+                (!path_exists(nand, tmd_path) || replaced_files.contains(tmd_path)),
             "The requested title is already installed");
-    if (auto* existing_content = find_path(tree.get(), content_dir)) {
-      require(entry_kind(existing_content) == NAND_DIR,
+    if (const auto existing_content = find_path(nand, content_dir)) {
+      require(existing_content->IsDir(),
               "The requested title content path is not a directory");
-      for (int i = 0; i < existing_content->childCount(); ++i) {
-        const auto* child = existing_content->child(i);
-        require(replaced_files.contains(content_dir + "/" + child->text(0)),
+      for (const auto& child : nand.Children(existing_content->index))
+        require(replaced_files.contains(content_dir + "/" + child.name),
                 "The requested title has existing content files");
-      }
     }
-    require_directory(tree.get(), ticket_dir);
-    require_directory(tree.get(), "/ticket");
-    require_directory(tree.get(), "/title");
-    require_directory(tree.get(), "/shared1");
-    require_directory(tree.get(), "/sys");
-    require_directory(tree.get(), "/title/" + high);
-    require_directory(tree.get(), title);
-    require_directory(tree.get(), title + "/data");
-    require_directory(tree.get(), content_dir);
+    require_directory(nand, ticket_dir);
+    require_directory(nand, "/ticket");
+    require_directory(nand, "/title");
+    require_directory(nand, "/shared1");
+    require_directory(nand, "/sys");
+    require_directory(nand, "/title/" + high);
+    require_directory(nand, title);
+    require_directory(nand, title + "/data");
+    require_directory(nand, content_dir);
 
-    const auto uid_data = read_authenticated_file(nand, find_path(tree.get(), "/sys/uid.sys"), 1024 * 1024);
+    const auto uid_data = read_authenticated_file(nand, find_path(nand, "/sys/uid.sys"), 1024 * 1024);
     require(!uid_data.isEmpty(), "NAND UID map is empty");
     UIDmap uid(uid_data);
     require(uid.Check(), "Existing NAND UID map is malformed");
@@ -278,7 +264,7 @@ namespace {
     require(owner != 0 && uid.Check(), "Cannot assign a valid title UID");
 
     const auto map_path = QString("/shared1/content.map");
-    const auto* existing_map = find_path(tree.get(), map_path);
+    const auto existing_map = find_path(nand, map_path);
     const auto map_data = existing_map ? read_authenticated_file(nand, existing_map, 1024 * 1024) : QByteArray();
     SharedContentMap shared(map_data);
     require(map_data.isEmpty() || shared.Check(), "Existing shared-content map is malformed");
@@ -286,13 +272,13 @@ namespace {
 
     int needed_entries = 0;
     quint64 needed_clusters = 0;
-    add_new_entry(tree.get(), ticket_dir, needed_entries);
-    add_new_entry(tree.get(), "/title/" + high, needed_entries);
-    add_new_entry(tree.get(), title, needed_entries);
-    add_new_entry(tree.get(), title + "/data", needed_entries);
-    add_new_entry(tree.get(), content_dir, needed_entries);
-    add_new_file(tree.get(), ticket_path, ticket.Data().size(), needed_clusters, needed_entries, replaced_files);
-    add_new_file(tree.get(), tmd_path, tmd.Data().size(), needed_clusters, needed_entries, replaced_files);
+    add_new_entry(nand, ticket_dir, needed_entries);
+    add_new_entry(nand, "/title/" + high, needed_entries);
+    add_new_entry(nand, title, needed_entries);
+    add_new_entry(nand, title + "/data", needed_entries);
+    add_new_entry(nand, content_dir, needed_entries);
+    add_new_file(nand, ticket_path, ticket.Data().size(), needed_clusters, needed_entries, replaced_files);
+    add_new_file(nand, tmd_path, tmd.Data().size(), needed_clusters, needed_entries, replaced_files);
 
     bool adds_shared = false;
     for (int i = 0; i < tmd.Count(); ++i) {
@@ -303,7 +289,7 @@ namespace {
         const auto hash = tmd.Hash(i);
         const auto existing_cid = shared.GetAppFromHash(hash);
         if (!existing_cid.isEmpty()) {
-          const auto existing_bytes = read_authenticated_file(nand, find_path(tree.get(), shared_path(existing_cid)), size);
+          const auto existing_bytes = read_authenticated_file(nand, find_path(nand, shared_path(existing_cid)), size);
           require(existing_bytes == job.data[i + 2],
                   "Shared-content map references invalid NAND content");
           continue;
@@ -311,37 +297,37 @@ namespace {
         if (!planned_shared.GetAppFromHash(hash).isEmpty()) continue;
         const auto cid = planned_shared.GetNextEmptyCid();
         const auto path = shared_path(cid);
-        require(!path_exists(tree.get(), path), "An unindexed shared-content path already exists");
+        require(!path_exists(nand, path), "An unindexed shared-content path already exists");
         planned_shared.AddEntry(cid, hash);
         adds_shared = true;
-        add_new_file(tree.get(), path, size, needed_clusters, needed_entries, replaced_files);
+        add_new_file(nand, path, size, needed_clusters, needed_entries, replaced_files);
       } else {
         const auto path = content_dir + "/" + tmd.Cid(i) + ".app";
-        add_new_file(tree.get(), path, size, needed_clusters, needed_entries, replaced_files);
+        add_new_file(nand, path, size, needed_clusters, needed_entries, replaced_files);
       }
     }
 
     if (owner != old_owner) {
-      add_resize(tree.get(), nand, "/sys/uid.sys", uid.Data().size(), needed_clusters, needed_entries);
+      add_resize(nand, "/sys/uid.sys", uid.Data().size(), needed_clusters, needed_entries);
     }
     if (adds_shared) {
-      add_resize(tree.get(), nand, map_path, planned_shared.Data().size(), needed_clusters, needed_entries);
+      add_resize(nand, map_path, planned_shared.Data().size(), needed_clusters, needed_entries);
     }
 
     quint64 released_clusters = 0;
     int released_entries = 0;
     for (const auto& path : replaced_files) {
-      const auto* entry = find_path(tree.get(), path);
+      const auto entry = find_path(nand, path);
       if (!entry) continue;
-      require(entry_kind(entry) == NAND_FILE, "A cIOS replacement path is not a file");
-      released_clusters += existing_file_clusters(nand, tree.get(), path);
+      require(entry->IsFile(), "A cIOS replacement path is not a file");
+      released_clusters += existing_file_clusters(nand, path);
       ++released_entries;
     }
-    working_image::require_capacity(nand, root, orphan_entries, needed_entries, needed_clusters,
+    working_image::require_capacity(nand, orphan_entries, needed_entries, needed_clusters,
                                     released_entries, released_clusters);
     if (!replaced_files.isEmpty()) {
       for (const auto& path : replaced_files) {
-        if (find_path(tree.get(), path))
+        if (find_path(nand, path))
           require(nand.Delete(path), "Cannot remove the original stock stub file");
       }
     }
@@ -352,10 +338,10 @@ namespace {
     if (owner != old_owner)
       require(nand.SetData("/sys/uid.sys", uid.Data()), "Cannot persist NAND UID map");
     if (adds_shared) {
-      auto* entry = find_path(tree.get(), map_path);
+      const auto entry = find_path(nand, map_path);
       quint16 index = 0;
       if (!entry) index = nand.CreateEntry(map_path, 0, 0, NAND_FILE, NAND_RW, NAND_RW, 0);
-      else index = entry_id(entry);
+      else index = entry->index;
       require(index && nand.SetData(index, shared.Data()), "Cannot persist shared-content map");
     }
     require(nand.WriteMetaData(), "Cannot persist NAND metadata");
@@ -374,48 +360,41 @@ namespace {
     QSet<QString> replaced_files;
     {
       working_image::Image working(image);
-      std::unique_ptr<QTreeWidgetItem> tree(working.nand.GetTree());
-      require(tree && tree->childCount() == 1 && tree->child(0) && tree->child(0)->text(0) == "/",
-              "Cannot inspect NAND filesystem tree");
-      const auto* content = find_path(tree.get(), content_dir);
-      const bool occupied = path_exists(tree.get(), ticket_path) ||
-          (content && content->childCount() != 0);
+      auto& nand = working.nand;
+      require(path_exists(nand, "/"), "Cannot inspect NAND filesystem tree");
+      const auto content = find_path(nand, content_dir);
+      const bool occupied = path_exists(nand, ticket_path) ||
+          (content && !nand.Children(content->index).isEmpty());
       if (occupied) {
-        if (installed_wad_matches(working.nand, tree.get(), content_dir, ticket_path, job))
+        if (installed_wad_matches(nand, content_dir, ticket_path, job))
           return {title_id, region, version, true};
         require(replace_stock_stub, "Installed title conflicts with WAD title metadata");
 
         const auto slot = static_cast<quint32>(title_id);
         require((title_id >> 32) == 1 && (slot == 249 || slot == 250),
                 "Stock stub replacement is supported only in slots 249 and 250");
-        verify_stock_stub(working.nand, tree.get(), title_id);
-        const auto* current_ticket = find_path(tree.get(), ticket_path);
-        require(current_ticket && entry_kind(current_ticket) == NAND_FILE,
+        verify_stock_stub(nand, title_id);
+        const auto current_ticket = find_path(nand, ticket_path);
+        require(current_ticket && current_ticket->IsFile(),
                 "The occupied cIOS slot has no valid ticket file");
         replaced_files.insert(ticket_path);
-        const auto* current_content = find_path(tree.get(), content_dir);
-        require(current_content && entry_kind(current_content) == NAND_DIR,
+        const auto current_content = find_path(nand, content_dir);
+        require(current_content && current_content->IsDir(),
                 "The occupied cIOS slot has no content directory");
-        for (int index = 0; index < current_content->childCount(); ++index) {
-          const auto* child = current_content->child(index);
-          require(entry_kind(child) == NAND_FILE,
-                  "The occupied cIOS slot has unexpected content entries");
-          replaced_files.insert(content_dir + "/" + child->text(0));
+        for (const auto& child : nand.Children(current_content->index)) {
+          require(child.IsFile(), "The occupied cIOS slot has unexpected content entries");
+          replaced_files.insert(content_dir + "/" + child.name);
         }
-        const auto uid_bytes = read_authenticated_file(working.nand, find_path(tree.get(), "/sys/uid.sys"),
-                                                        1024 * 1024);
+        const auto uid_bytes = read_authenticated_file(nand, "/sys/uid.sys", 1024 * 1024);
         UIDmap uid(uid_bytes);
         require(uid.Check() && uid.GetUid(title_id, false) != 0,
                 "The authentic stock stub has no matching UID record");
       }
-      plan_and_install(working.nand, working.layout.orphan_entries, job, replaced_files);
+      plan_and_install(nand, working.layout.orphan_entries, job, replaced_files);
     }
 
     working_image::Image readback(image);
-    std::unique_ptr<QTreeWidgetItem> tree(readback.nand.GetTree());
-    require(tree && tree->childCount() == 1 && tree->child(0) && tree->child(0)->text(0) == "/",
-            "Cannot inspect NAND filesystem after WAD install");
-    require(installed_wad_matches(readback.nand, tree.get(), content_dir, ticket_path, job),
+    require(installed_wad_matches(readback.nand, content_dir, ticket_path, job),
             "Installed title conflicts with WAD title metadata");
     return {title_id, region, version, false};
   }

@@ -8,10 +8,8 @@
 #include <tools.h>
 
 #include <QCryptographicHash>
-#include <QTreeWidgetItem>
 
 #include <cstring>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -122,10 +120,8 @@ namespace seed {
       if (fats[block * 8] == 0xfffd)
         result.bad_blocks.push_back(static_cast<std::uint16_t>(block));
 
-    std::unique_ptr<QTreeWidgetItem> tree(nand.GetTree());
-    require(tree && tree->childCount() == 1, "Unexpected NAND root");
-    const auto* settings_node = working_image::find_path(tree.get(), "/title/00000001/00000002/data/setting.txt");
-    const auto setting = working_image::read_authenticated_file(nand, settings_node, 4096);
+    const auto setting =
+        working_image::read_authenticated_file(nand, "/title/00000001/00000002/data/setting.txt", 4096);
     result.settings = decode_settings(setting);
     result.settings_sha256 = digest(setting);
 
