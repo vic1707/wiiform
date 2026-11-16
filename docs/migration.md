@@ -94,7 +94,7 @@ CI generates the schema and checks it against the committed copy under
 ## Update an existing recipe
 
 Move keys under the old `system:` block up one indentation level. Keep
-`menu`, `remove`, `setup`, `titles`, and `priiloader` as top-level keys.
+`menu`, `remove`, `setup`, `titles`, `cios`, `hbc`, and `priiloader` as top-level keys.
 Move `display` under `setup`. Move each WAD's `path` or `inline` under `source`. Keep `sha256` and
 `signature_policy` beside `source`. WAD paths resolve relative to the recipe.
 For inline data, use `inline: !!binary |` followed by indented base64. Either source

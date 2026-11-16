@@ -6,7 +6,7 @@
 #include <span>
 
 namespace title_remove {
-  // Remove an installed Forecast or News Channel title, retaining its data
-  // directory, UID record and shared-content map.
+  // Remove an allowlisted Forecast, News, Shop or Photo Channel title, retaining
+  // its data directory, UID record and shared-content map.
   void remove_channel(std::span<std::uint8_t> image, quint64 title_id);
 }
