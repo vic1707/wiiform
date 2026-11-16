@@ -52,9 +52,9 @@ The project-owned C++ library wraps the following areas:
   planning and the checks around WiiQt. Rust sequences these calls: the stock
   build is a loop over `stock_titles`. The CXX adapter only converts values;
   the bridge binds the library's own enums and maps exceptions to Rust errors.
-- **Priiloader** is included as an upstream git submodule for source access and
-  the Wii-side installer reference, pinned to commit
-  `2b70b3693e9dc3e144db1a73224921d405081663` (0.10.0). Wiiform's host-side
+- **Priiloader** 0.10.0 (upstream commit
+  `2b70b3693e9dc3e144db1a73224921d405081663`) is the reference for the
+  Wii-side installer. Wiiform's host-side
   NAND installation and settings support are project code. Release packaging
   extracts the installer app, hack definitions, and license from the pinned
   upstream ZIP. The native writer verifies the payload hashes.

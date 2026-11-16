@@ -7,7 +7,7 @@ the applicable upstream license notices and corresponding license texts.
 | Component | Use | Source / pin | License handling |
 | --- | --- | --- | --- |
 | WiiQt NAND tools | NAND filesystem, title and console-format operations | [vic1707/wiiqt-tools](https://github.com/vic1707/wiiqt-tools), commit pinned in [xmake/wiiqt-nand.lua](xmake/wiiqt-nand.lua) | GPL-2.0-only; preserve its `COPYING` and notices in source/release bundles |
-| Priiloader | Wii-side installer project, source reference and submodule | [DacoTaco/priiloader](https://github.com/DacoTaco/priiloader), vendored submodule | Preserve the submodule's upstream license files/notices; Wiiform host integration remains separately identified as project code |
+| Priiloader | Wii-side installer app and hack definitions, and the source reference for the host-side installation | [DacoTaco/priiloader](https://github.com/DacoTaco/priiloader) 0.10.0, commit `2b70b3693e9dc3e144db1a73224921d405081663`; release ZIP pinned by hash in the packaging task | Ship the license file from the release ZIP with the app; Wiiform host integration remains separately identified as project code |
 | Qt | Native runtime and GUI/Widgets/Network libraries used by WiiQt | Host Qt SDK during build; exact detected SDK recorded by xmake package configuration | Follow the license notices shipped with the Qt distribution and include applicable notices in binary archives |
 | Rust crates | CLI, parsing, schema, hashing, XZ compression, CXX bridge and reqwest HTTPS with Rustls/AWS-LC | Exact resolved graph in `Cargo.lock` | Preserve each crate's license metadata/notices; generate a complete notice list before publishing binaries |
 
