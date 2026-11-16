@@ -9,6 +9,10 @@ publish = false
 default = []
 cli = ["dep:clap"]
 
+[[bin]]
+name = "schema"
+path = "bin/schema.rs"
+
 [dependencies]
 anyhow.workspace = true
 libc = "0.2"

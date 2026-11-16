@@ -4,7 +4,7 @@ run = '''
 set -eu
 output=$(mktemp docs/.recipe-schema.XXXXXX)
 trap 'rm -f "$output"' EXIT
-cargo run --quiet --locked -p wiiform-recipe --example recipe-schema > "$output"
+cargo run --quiet --locked -p wiiform-recipe --bin schema > "$output"
 chmod 644 "$output"
 mv "$output" docs/wiiform.recipe.schema.json
 '''
@@ -15,6 +15,6 @@ run = '''
 set -eu
 output=$(mktemp)
 trap 'rm -f "$output"' EXIT
-cargo run --quiet --locked -p wiiform-recipe --example recipe-schema > "$output"
+cargo run --quiet --locked -p wiiform-recipe --bin schema > "$output"
 diff -u docs/wiiform.recipe.schema.json "$output"
 '''
