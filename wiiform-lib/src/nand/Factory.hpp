@@ -9,5 +9,5 @@ namespace factory {
   auto stock_titles(const QString& area) -> QMap<quint64, quint16>;
   // Empty cache path disables disk reads and writes; offline mode then fails
   // on the first requested title file.
-  auto read_title(const QString& cache, quint64 id, int version, bool offline = false) -> ValidatedTitleJob;
+  auto read_title(const QString& cache, quint64 id, int version, bool offline) -> ValidatedTitleJob;
 }

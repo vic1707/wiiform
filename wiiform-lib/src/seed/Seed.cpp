@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Seed.hpp>
+#include <Support.hpp>
 #include <Layout.hpp>
 #include <NandBuffer.hpp>
 #include <WorkingImage.hpp>
@@ -25,17 +26,6 @@ namespace {
       {"DVD", &wiiform::ConsoleSettings::dvd}, {"MPCH", &wiiform::ConsoleSettings::mpch},
       {"CODE", &wiiform::ConsoleSettings::code}, {"SERNO", &wiiform::ConsoleSettings::serial},
       {"VIDEO", &wiiform::ConsoleSettings::video}, {"GAME", &wiiform::ConsoleSettings::game}};
-
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
-
-  auto digest(const QByteArray& data) -> wiiform::Sha256 {
-    const auto hash = QCryptographicHash::hash(data, QCryptographicHash::Sha256);
-    wiiform::Sha256 result{};
-    std::memcpy(result.data(), hash.constData(), result.size());
-    return result;
-  }
 
   auto footer_header(const QByteArray& keys) -> std::string {
     int size = 0;
@@ -123,7 +113,7 @@ namespace seed {
     const auto setting =
         working_image::read_authenticated_file(nand, "/title/00000001/00000002/data/setting.txt", 4096);
     result.settings = decode_settings(setting);
-    result.settings_sha256 = digest(setting);
+    result.settings_sha256 = sha256(setting);
 
     bool detected_bootmii = false;
     bool all_copies_stock = true;

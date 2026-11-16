@@ -1,23 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <BuildOptions.hpp>
+#include <Support.hpp>
 #include <Seed.hpp>
 #include <tools.h>
 #include <QCryptographicHash>
 #include <QSet>
 #include <cstring>
 #include <stdexcept>
-
-namespace {
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
-
-  auto same_digest(const QByteArray& raw, const wiiform::Sha256& expected) -> bool {
-    const auto actual = QCryptographicHash::hash(raw, QCryptographicHash::Sha256);
-    return actual.size() == static_cast<int>(expected.size()) &&
-           std::memcmp(actual.constData(), expected.data(), expected.size()) == 0;
-  }
-}
 
 namespace nand_build {
   auto area(wiiform::Menu menu) -> QString {
@@ -34,7 +23,7 @@ namespace nand_build {
                        std::span<const std::uint16_t> bad_blocks, wiiform::Menu menu) -> Profile {
     require(keys.size() == 0x400, "Expected exactly 1024 key bytes");
     const auto source_bytes = seed::encode_settings(source_settings);
-    require(same_digest(source_bytes, settings_sha256), "Seed setting.txt digest does not match its fields");
+    require(sha256(source_bytes) == settings_sha256, "Seed setting.txt digest does not match its fields");
 
     const auto& model = source_settings.model;
     const auto& area_original = source_settings.area;

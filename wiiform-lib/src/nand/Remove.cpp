@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Remove.hpp>
+#include <Support.hpp>
 
 #include <Titles.hpp>
 #include <WorkingImage.hpp>
@@ -13,10 +14,6 @@
 namespace {
   using working_image::find_path;
   using working_image::read_authenticated_file;
-
-  void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-  }
 
   auto title_id_is_removable(quint64 title_id) -> bool {
     switch (title_id) {
@@ -35,10 +32,6 @@ namespace {
       default:
         return false;
     }
-  }
-
-  auto title_name(quint64 title_id) -> QString {
-    return QString("%1").arg(title_id, 16, 16, QChar('0'));
   }
 
   void remove_title_contents(NandBin& nand, quint64 id) {

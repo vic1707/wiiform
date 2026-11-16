@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <BootDiagnostics.hpp>
+#include <Support.hpp>
 #include <BuildOptions.hpp>
 #include <NandBuffer.hpp>
 #include <Titles.hpp>
@@ -7,10 +8,6 @@
 #include <stdexcept>
 
 namespace {
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
-
   void populate(NandBin& nand, const QByteArray& settings, const QByteArray& uids) {
     require(initialize_system(nand, uids), "Cannot initialize system files");
 

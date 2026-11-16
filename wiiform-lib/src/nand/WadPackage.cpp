@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <WadPackage.hpp>
+#include <Support.hpp>
 
 #include <Titles.hpp>
 #include <tiktmd.h>
@@ -17,10 +18,6 @@ namespace {
   constexpr int ticket_size = 0x2a4;
   constexpr int tmd_header_size = 0x1e4;
   constexpr int content_record_size = 0x24;
-
-  void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-  }
 
   auto align(quint64 size) -> quint64 {
     return (size + section_alignment - 1) & ~(section_alignment - 1);
@@ -52,8 +49,7 @@ namespace {
     // Content buffers copied into NusJob remain owned by the job.
     const auto bytes = QByteArray::fromRawData(reinterpret_cast<const char*>(input.data()),
                                                static_cast<int>(input.size()));
-    const auto sha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
-    require(std::memcmp(sha256.constData(), expected_sha256.data(), expected_sha256.size()) == 0,
+    require(sha256(bytes) == expected_sha256,
             "WAD SHA-256 does not match the expected package digest");
     require(u32(bytes, 0) == wad_header_size && u32(bytes, 4) == 0x49730000,
             "Expected a standard installable Wii WAD header");

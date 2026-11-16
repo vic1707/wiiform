@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Boot2 map layout follows giantpune's WiiQt Blocks0to7 parser.
 #include <BootDiagnostics.hpp>
+#include <Support.hpp>
 #include <tiktmd.h>
 #include <BootFlags.hpp>
 
@@ -26,10 +27,6 @@ namespace {
   constexpr int kMapOffset = 0x1f800;
   constexpr int kMapRecordSize = 0x4c;
   const QByteArray kMapMagic = QByteArray::fromHex("26f29a401ee684cf");
-
-  void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-  }
 
   struct MapRecord {
     quint32 generation = 0;

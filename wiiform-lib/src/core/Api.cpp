@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <wiiform/read.hpp>
+#include <Support.hpp>
 #include <wiiform/write.hpp>
 #include "QtRuntime.hpp"
 
 #include <BuildOptions.hpp>
-#include <Display.hpp>
+#include <SysConfWrite.hpp>
 #include <Factory.hpp>
 #include <Install.hpp>
 #include <Inspection.hpp>
@@ -25,10 +26,6 @@
 
 namespace wiiform {
 namespace {
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
-
   auto qstring(std::string_view value, const char* label) -> QString {
     require(value.size() <= std::size_t(std::numeric_limits<int>::max()), label);
     const auto converted = QString::fromUtf8(value.data(), int(value.size()));
@@ -40,13 +37,6 @@ namespace {
   auto view(std::span<const std::uint8_t> value) -> QByteArray {
     require(value.size() <= std::size_t(std::numeric_limits<int>::max()), "Input exceeds supported size");
     return QByteArray::fromRawData(reinterpret_cast<const char*>(value.data()), int(value.size()));
-  }
-
-  auto digest(const QByteArray& value) -> Sha256 {
-    const auto hash = QCryptographicHash::hash(value, QCryptographicHash::Sha256);
-    Sha256 result;
-    std::memcpy(result.data(), hash.constData(), result.size());
-    return result;
   }
 
   auto native_boot_policy(BootPolicy value) -> inspect::BootPolicy {
@@ -106,9 +96,9 @@ void verify_stock(std::span<const std::uint8_t> nand, const StockSeed& seed, Men
 void verify_generated_nand(std::span<const std::uint8_t> nand, const StockIdentity& expected) {
   const detail::ApiCall call;
   require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
-  require(digest(view(nand.first(boot_area_size))) == expected.boot_area,
+  require(sha256(view(nand.first(boot_area_size))) == expected.boot_area,
           "NAND boot area differs from the verified seed");
-  require(digest(view(nand.last(footer_size))) == expected.footer,
+  require(sha256(view(nand.last(footer_size))) == expected.footer,
           "NAND key footer differs from the stock build");
   Authenticated image(nand, "Cannot authenticate the final NAND filesystem");
 }
@@ -134,7 +124,7 @@ auto initialize_image(std::span<std::uint8_t> nand, const StockSeed& seed, Menu 
   const auto keys = view(seed.keys);
   const auto boots = view(seed.boot_blocks);
   nand_build::initialize_image(nand, keys, boots, profile, native_boot_policy(boot_policy));
-  return {digest(boots), digest(keys)};
+  return {sha256(boots), sha256(keys)};
 }
 
 void install_nus_title(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,

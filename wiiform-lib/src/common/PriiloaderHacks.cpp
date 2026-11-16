@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <PriiloaderHacks.hpp>
+#include <Support.hpp>
 
 #include <QCryptographicHash>
 #include <QMap>
@@ -22,10 +23,6 @@ namespace {
     bool selector = false;
     bool patch = false;
   };
-
-  void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-  }
 
   auto digest(const QByteArray& bytes) -> QByteArray {
     return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex();

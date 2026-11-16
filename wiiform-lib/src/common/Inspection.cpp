@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Inspection.hpp>
+#include <Support.hpp>
 
 #include <Factory.hpp>
 #include <Titles.hpp>
@@ -21,20 +22,12 @@ namespace {
   constexpr quint64 maximum_file_size = 0x21000000;
   constexpr quint64 maximum_title_size = 0x20000000;
 
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
-
   auto is_hex_id(const QString& text) -> bool {
     if (text.size() != 8) return false;
     for (const auto c : text)
       if (!((c >= QChar('0') && c <= QChar('9')) || (c >= QChar('a') && c <= QChar('f')) ||
             (c >= QChar('A') && c <= QChar('F')))) return false;
     return true;
-  }
-
-  auto title_path(quint64 id) -> QString {
-    return QString("%1").arg(id, 16, 16, QChar('0'));
   }
 
   auto hex_id(const QString& text, bool& ok) -> quint32 {
@@ -263,7 +256,7 @@ namespace {
   }
 
   auto verify_stock_title(ImageIndex& index, SharedContentMap& shared, quint64 id, quint16 version) -> VerifiedTitle {
-    const auto id_text = title_path(id);
+    const auto id_text = title_name(id);
     const auto content_dir = "/title/" + id_text.left(8) + "/" + id_text.mid(8) + "/content";
     const auto metadata = index.read(content_dir + "/title.tmd", 2 * 1024 * 1024);
     const auto ticket = index.read("/ticket/" + id_text.left(8) + "/" + id_text.mid(8) + ".tik", 64 * 1024);
@@ -439,7 +432,7 @@ namespace inspect {
     QSet<QString> expected_shared_files{"content.map"};
     for (auto title = profile.cbegin(); title != profile.cend(); ++title) {
       const auto id = title.key();
-      const auto id_text = title_path(id);
+      const auto id_text = title_name(id);
       const auto high = id_text.left(8);
       const auto low = id_text.mid(8);
       const auto base = "/title/" + high + "/" + low;

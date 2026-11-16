@@ -2,6 +2,7 @@
 // Format references are Dolphin's SysConf.cpp, libogc's conf.c and WiiBrew's
 // SYSCONF name lookup table, verified against original Wii captures.
 #include <SysConf.hpp>
+#include <Support.hpp>
 
 #include <QtEndian>
 #include <algorithm>
@@ -39,10 +40,6 @@ namespace {
     Type type;
     QByteArray value;
   };
-
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
 
   void write_u16(QByteArray& bytes, int offset, int value) {
     qToBigEndian<quint16>(static_cast<quint16>(value), reinterpret_cast<uchar*>(bytes.data() + offset));

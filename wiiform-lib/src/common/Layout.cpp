@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // SFFS selection and field layout adapted from giantpune's WiiQt nandbin.cpp.
 #include <Layout.hpp>
+#include <Support.hpp>
 #include <NandBuffer.hpp>
 
 #include <QtEndian>
@@ -35,10 +36,6 @@ namespace {
   constexpr quint16 fat_free = 0xfffe;
   constexpr quint16 fat_end = 0xfffb;
   constexpr quint16 fst_end = 0xffff;
-
-  void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-  }
 
   auto read_exact(QIODevice& file, qint64 offset, qint64 size) -> QByteArray {
     require(offset >= 0 && size >= 0 && offset <= file.size() && size <= file.size() - offset,

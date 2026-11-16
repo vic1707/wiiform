@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Install.hpp>
+#include <Support.hpp>
 
 #include <Factory.hpp>
 #include <Titles.hpp>
@@ -18,14 +19,6 @@ namespace {
   using working_image::read_authenticated_file;
 
   constexpr quint64 cluster_size = 0x4000;
-
-  void require(bool condition, const QString& message) {
-    if (!condition) throw std::runtime_error(message.toStdString());
-  }
-
-  auto title_name(quint64 tid) -> QString {
-    return QString("%1").arg(tid, 16, 16, QChar('0'));
-  }
 
   auto path_exists(NandBin& nand, const QString& path) -> bool {
     return nand.Stat(path);

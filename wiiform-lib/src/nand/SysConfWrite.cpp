@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#include <Display.hpp>
+#include <SysConfWrite.hpp>
+#include <Support.hpp>
 #include <WorkingImage.hpp>
 #include <Seed.hpp>
 #include <tools.h>
@@ -7,10 +8,6 @@
 #include <stdexcept>
 
 namespace {
-  void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-  }
-
   void check_ecc(NandBin& nand, quint16 entry) {
     const auto clusters = nand.GetFatsForFile(entry);
     require(clusters.size() == 1, "SYSCONF must occupy one NAND cluster");

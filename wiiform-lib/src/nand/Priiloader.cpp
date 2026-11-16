@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Priiloader.hpp>
+#include <Support.hpp>
 
 #include <Inspection.hpp>
 #include <PriiloaderHacks.hpp>
@@ -26,10 +27,6 @@ namespace {
 
   using working_image::find_path;
   using working_image::read_authenticated_file;
-
-  void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-  }
 
   auto menu_version(const inspect::PriiloaderEvidence& evidence) -> int {
     const int version = evidence.menu_version;
