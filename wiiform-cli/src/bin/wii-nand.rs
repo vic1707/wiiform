@@ -5,7 +5,7 @@ use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     native::Nand,
     priiloader_payload,
-    recipe::{Priiloader, ResolvedPath, Sha256, TitleId, Wad, cios},
+    recipe::{Priiloader, ResolvedPath, Rvloader, Sha256, TitleId, Wad, cios, rvloader},
     workflow::{NusCache, publish_edit, validate_output, warn_if_already_present},
 };
 
@@ -81,6 +81,13 @@ enum Command {
         image: ImagePaths,
         #[command(flatten)]
         config: Priiloader,
+        /// Boot this RVLoader release from USB at power-on, such as 2.1.
+        #[arg(long, value_name = "VERSION", requires = "rvloader_sha256")]
+        #[arg(conflicts_with_all = ["autoboot", "return_to"])]
+        rvloader: Option<rvloader::Version>,
+        /// SHA-256 of that release's bootloader.
+        #[arg(long, value_name = "SHA256", requires = "rvloader")]
+        rvloader_sha256: Option<Sha256>,
     },
 }
 
@@ -132,11 +139,28 @@ fn run(cli: Cli) -> Result<()> {
             })
         }
         Command::RemoveTitle { image, title_id } => image.edit(|nand| nand.remove_title(title_id)),
-        Command::InstallPriiloader { image, config } => image.edit(|nand| {
-            nand.install_priiloader(priiloader_payload::APP)?;
-            nand.configure_priiloader(&config)?;
-            nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
-        }),
+        Command::InstallPriiloader {
+            image,
+            config,
+            rvloader,
+            rvloader_sha256,
+        } => {
+            let bootloader = (rvloader.zip(rvloader_sha256))
+                .map(|(version, sha256)| Rvloader::download(&version, sha256))
+                .transpose()?;
+            image.edit(|nand| {
+                nand.install_priiloader(priiloader_payload::APP)?;
+                let config = match &bootloader {
+                    Some(bootloader) => {
+                        nand.install_priiloader_boot_file(bootloader, true)?;
+                        config.booting_file()
+                    }
+                    None => config,
+                };
+                nand.configure_priiloader(&config)?;
+                nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
+            })
+        }
     }
 }
 
@@ -166,7 +190,7 @@ mod tests {
             ]),
             Priiloader {
                 white_background: true,
-                autoboot: Autoboot::HomebrewChannel,
+                autoboot: Some(Autoboot::HomebrewChannel),
                 hacks: vec![Hack::Fix480p, Hack::Wiimmfi],
                 ..Priiloader::default()
             }

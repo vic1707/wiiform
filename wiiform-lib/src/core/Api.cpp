@@ -179,6 +179,12 @@ void install_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8
   priiloader::install(nand, app);
 }
 
+void install_priiloader_boot_file(std::span<std::uint8_t> nand, std::span<const std::uint8_t> dol,
+                                  bool hardware_access) {
+  const detail::ApiCall call;
+  priiloader::install_boot_file(nand, dol, hardware_access);
+}
+
 void configure_priiloader(std::span<std::uint8_t> nand, const PriiloaderSettings& settings) {
   const detail::ApiCall call;
   priiloader::configure(nand, settings);

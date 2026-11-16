@@ -297,6 +297,28 @@ namespace {
     check(before == buffer_digest(image), "Unsupported IOS WAD changed the NAND buffer");
   }
 
+  void test_priiloader_boot_file(std::span<std::uint8_t> image) {
+    const auto before = buffer_digest(image);
+    // One 0x20-byte text section right after the header, loaded and entered at 0x80004000.
+    QByteArray dol(0x120, '\0');
+    const auto set = [&](int offset, quint32 value) {
+      qToBigEndian(value, reinterpret_cast<uchar*>(dol.data() + offset));
+    };
+    set(0x00, 0x100), set(0x48, 0x80004000), set(0x90, 0x20), set(0xe0, 0x80004000);
+    const auto install = [&](const QByteArray& file) {
+      wiiform::install_priiloader_boot_file(image, wad_bytes(file), true);
+    };
+    rejects([&] { install(dol.left(0x100)); }, "unsupported size");
+    auto truncated = dol;
+    truncated.chop(1);
+    rejects([&] { install(truncated); }, "not a valid DOL");
+    auto no_entry = dol;
+    no_entry.replace(0xe0, 4, QByteArray(4, '\0'));
+    rejects([&] { install(no_entry); }, "not a valid DOL");
+    rejects([&] { install(dol); }, "Priiloader preparation needs a stock System Menu");
+    check(before == buffer_digest(image), "Rejected boot file changed the NAND buffer");
+  }
+
   void test_wad_installation(const QString& temporary_path) {
     const auto nand_path = QDir(temporary_path).filePath("empty-nand.bin");
     create_empty_nand(nand_path);
@@ -471,6 +493,7 @@ int main(int argc, char** argv) {
       test_capacity_helpers(image);
       test_wad_rejections(image, make_wad());
       test_ios_wad_policy(image);
+      test_priiloader_boot_file(image);
     }
     test_wide_directory_layout(temporary.path());
     test_wad_installation(temporary.path());

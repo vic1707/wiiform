@@ -130,9 +130,34 @@ title ID against the Homebrew Channel IDs recognized by Priiloader before
 writing it. The title installs before Priiloader settings are applied, so
 `autoboot: homebrew_channel` can use it.
 
-The original HackMii HBC 1.1.2 is available through its Wii-side installer.
-A built-in recipe variant would require a verified offline package from that
-release. [Official HackMii Installer](https://bootmii.org/download/)
+### RVLoader
+
+```yaml
+priiloader: {}
+rvloader:
+  version: "2.1"
+  sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7"
+```
+
+RVLoader is started by Priiloader, so `rvloader` requires a `priiloader`
+section. Wiiform downloads the bootloader of that RVLoader release
+(`installer/data/bootloader.dol` at the release tag), checks it against
+`sha256`, stores it as Priiloader's boot file with hardware access, and sets
+Priiloader's `autoboot` to that file and `return_to` to autoboot. Leave those
+two settings out of `priiloader`; the other settings and `hacks` apply as usual.
+The hash above is the 2.1 bootloader.
+
+The bootloader loads `apps/RVLoader/boot.dol` from a USB drive: unpack the
+matching [RVLoader release](https://github.com/Aurelio92/RVLoader/releases)
+onto the drive. Wiiform writes the NAND only.
+
+This is the boot hook of RVLoader's installer and nothing else. The installer's
+NoWiFi IOS copies and its VGA option, which portables without a Wi-Fi module
+need, are not applied. Booting RVLoader from a prepared image has not yet
+been confirmed on a console.
+
+On an existing image, use
+`wii-nand install-priiloader IN OUT --rvloader 2.1 --rvloader-sha256 HASH`.
 
 ### cIOS packages
 

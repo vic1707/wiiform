@@ -117,6 +117,10 @@ void install_priiloader(Nand nand, Bytes app) {
   wiiform::install_priiloader(span(nand), span(app));
 }
 
+void install_priiloader_boot_file(Nand nand, Bytes dol, bool hardware_access) {
+  wiiform::install_priiloader_boot_file(span(nand), span(dol), hardware_access);
+}
+
 void configure_priiloader(Nand nand, const PriiloaderSettings& settings) {
   wiiform::configure_priiloader(span(nand), {
       settings.autoboot, settings.return_to, settings.shutdown_to, settings.preferred_mount_point,

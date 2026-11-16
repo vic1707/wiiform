@@ -20,6 +20,7 @@ mod menu;
 pub mod priiloader;
 mod region;
 mod remove;
+pub mod rvloader;
 pub mod setup;
 #[cfg(test)]
 mod tests;
@@ -36,6 +37,7 @@ pub use self::{
     priiloader::Priiloader,
     region::Region,
     remove::RemovableChannel,
+    rvloader::Rvloader,
     setup::Setup,
     title_id::TitleId,
     titles::Title,
@@ -66,6 +68,9 @@ pub struct Recipe {
     /// Optional pinned Priiloader install with its settings and hacks.
     #[serde(default)]
     pub priiloader: Option<Priiloader>,
+    /// Optional RVLoader boot hook. Requires `priiloader`.
+    #[serde(default)]
+    pub rvloader: Option<Rvloader>,
 }
 
 /// Reads a recipe file. Its WADs are read, downloaded and checked on the way,
@@ -103,6 +108,14 @@ impl Recipe {
                 menu.allows_country(country),
                 "setup country {} is not supported by menu {menu}",
                 country.as_alpha2()
+            );
+        }
+        if self.rvloader.is_some() {
+            let priiloader = (self.priiloader.as_ref())
+                .context("rvloader requires a priiloader section: Priiloader starts it")?;
+            ensure!(
+                priiloader.autoboot.is_none() && priiloader.return_to.is_none(),
+                "rvloader sets Priiloader's autoboot and return_to: remove them from priiloader"
             );
         }
         let mut slots = HashSet::new();

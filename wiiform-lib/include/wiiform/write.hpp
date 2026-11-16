@@ -49,6 +49,11 @@ namespace wiiform {
   // Installs the pinned Priiloader release over a stock System Menu. An image that
   // already has this release is left unchanged.
   void install_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app);
+  // Stores the executable (a DOL) that Priiloader's "file" destinations boot, with or
+  // without hardware access (AHBPROT). Needs an installed Priiloader. An identical
+  // file is left alone.
+  void install_priiloader_boot_file(std::span<std::uint8_t> nand, std::span<const std::uint8_t> dol,
+                                    bool hardware_access);
   // Both need an installed Priiloader. Every setting is written, not just changed ones.
   void configure_priiloader(std::span<std::uint8_t> nand, const PriiloaderSettings& settings);
   void set_priiloader_hacks(std::span<std::uint8_t> nand, std::span<const std::uint8_t> hacks_hash_ini,

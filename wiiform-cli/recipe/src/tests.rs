@@ -5,7 +5,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 
 use super::*;
 use crate::{
-    priiloader::{Autoboot, Hack},
+    priiloader::{Autoboot, Hack, ReturnTo},
     setup::display::Aspect,
     wad::tests::with_fetch,
 };
@@ -276,12 +276,12 @@ fn priiloader_takes_settings_and_a_list_of_hacks() -> Result<()> {
     )?;
     let config = recipe.priiloader.context("expected Priiloader settings")?;
     assert!(config.stop_disc && !config.white_background);
-    assert_eq!(config.autoboot, Autoboot::HomebrewChannel);
+    assert_eq!(config.autoboot, Some(Autoboot::HomebrewChannel));
     assert_eq!(config.hacks, [Hack::Wiimmfi, Hack::Fix480p]);
 
     let recipe = read("menu: 4.3E\npriiloader: {}")?;
     assert_eq!(recipe.priiloader, Some(Priiloader::default()));
-    assert_eq!(Priiloader::default().autoboot, Autoboot::SystemMenu);
+    assert_eq!(Autoboot::default(), Autoboot::SystemMenu);
     assert!(read("menu: 4.3E\npriiloader: null")?.priiloader.is_none());
     for priiloader in [
         "{app: override.app}",
@@ -293,6 +293,54 @@ fn priiloader_takes_settings_and_a_list_of_hacks() -> Result<()> {
             "{priiloader}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
+    const DOL: [u8; 3] = [1, 2, 3];
+    let rvloader = |version: &str, sha256: &str| {
+        format!("rvloader: {{version: '{version}', sha256: {sha256}}}")
+    };
+    let read = |yaml: String| {
+        with_fetch(
+            |url, _| {
+                let expected = "https://raw.githubusercontent.com/Aurelio92/RVLoader/v2.1/installer/data/bootloader.dol";
+                assert_eq!(url, expected);
+                Ok(DOL.to_vec())
+            },
+            || read(&format!("menu: 4.3E\n{yaml}")),
+        )
+    };
+    let good = rvloader("2.1", &sha(&DOL));
+
+    let recipe = read(format!("{good}\npriiloader: {{stop_disc: true}}"))?;
+    assert_eq!(
+        **recipe.rvloader.as_ref().context("expected RVLoader")?,
+        DOL
+    );
+    let config = recipe
+        .priiloader
+        .context("expected Priiloader")?
+        .booting_file();
+    assert_eq!(config.autoboot, Some(Autoboot::File));
+    assert_eq!(config.return_to, Some(ReturnTo::Autoboot));
+    assert!(config.stop_disc);
+
+    assert!(message(read(good.clone())).contains("requires a priiloader section"));
+    for setting in [
+        "autoboot: file",
+        "autoboot: system_menu",
+        "return_to: autoboot",
+    ] {
+        let result = read(format!("{good}\npriiloader: {{{setting}}}"));
+        assert!(message(result).contains("remove them"), "{setting}");
+    }
+    assert!(message(read(rvloader("2.1", &sha(&WAD)))).contains("does not match its SHA-256"));
+    for version in ["2", "2.1.0", "v2.1", "2.x", "../2.1"] {
+        assert!(read(rvloader(version, &sha(&DOL))).is_err(), "{version}");
+    }
+    assert!(read("rvloader: {version: '2.1'}".to_owned()).is_err());
     Ok(())
 }
 

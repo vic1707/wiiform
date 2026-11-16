@@ -46,7 +46,7 @@ The project-owned C++ library wraps the following areas:
 - **Wiiform C++ code** exposes one function per operation in
   `wiiform-lib/include/wiiform/` (no Qt, CXX or Rust types): seed extraction,
   image initialization, single-title install, WAD and cIOS install, channel
-  removal, SYSCONF creation, the three Priiloader steps, the BackupMii header
+  removal, SYSCONF creation, the four Priiloader steps, the BackupMii header
   and the verifications. It owns boot validation, WAD policy, capacity
   planning and the checks around WiiQt. Rust sequences these calls: the stock
   build is a loop over `stock_titles`. The CXX adapter only converts values;
@@ -93,7 +93,7 @@ builds the container images. Every task is a few lines in `mise-tasks.toml`.
 ## Update an existing recipe
 
 Move keys under the old `system:` block up one indentation level. Keep
-`menu`, `remove`, `setup`, `titles`, `cios`, `hbc`, and `priiloader` as top-level keys.
+`menu`, `remove`, `setup`, `titles`, `cios`, `hbc`, `priiloader`, and `rvloader` as top-level keys.
 Move `display` under `setup`. Write each WAD's `path`, `url` or `inline` directly
 in its entry, beside `sha256`; the `source:` level is gone. WAD paths resolve
 relative to the recipe. Write inline data as plain base64 text, without the

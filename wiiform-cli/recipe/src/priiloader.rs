@@ -39,11 +39,11 @@ options! {
 #[serde(default, deny_unknown_fields)]
 pub struct Priiloader {
     /// Autoboot destination. Defaults to the System Menu.
-    #[cfg_attr(feature = "cli", arg(long, value_enum, default_value_t))]
-    pub autoboot: Autoboot,
+    #[cfg_attr(feature = "cli", arg(long, value_enum))]
+    pub autoboot: Option<Autoboot>,
     /// Destination used by Priiloader's Return to option. Defaults to the System Menu.
-    #[cfg_attr(feature = "cli", arg(long, value_enum, default_value_t))]
-    pub return_to: ReturnTo,
+    #[cfg_attr(feature = "cli", arg(long, value_enum))]
+    pub return_to: Option<ReturnTo>,
     /// Shutdown destination. Defaults to none.
     #[cfg_attr(feature = "cli", arg(long, value_enum, default_value_t))]
     pub shutdown_to: ShutdownTo,
@@ -72,4 +72,16 @@ pub struct Priiloader {
     #[cfg_attr(feature = "cli", arg(long = "hack", value_enum, value_name = "HACK"))]
     #[schemars(extend("uniqueItems" = true))]
     pub hacks: Vec<Hack>,
+}
+
+impl Priiloader {
+    /// These settings, starting the executable stored as Priiloader's boot file
+    /// at power-on and whenever a program returns.
+    pub fn booting_file(&self) -> Self {
+        Self {
+            autoboot: Some(Autoboot::File),
+            return_to: Some(ReturnTo::Autoboot),
+            ..self.clone()
+        }
+    }
 }

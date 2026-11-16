@@ -45,6 +45,17 @@
       },
       "uniqueItems": true
     },
+    "rvloader": {
+      "description": "Optional RVLoader boot hook. Requires `priiloader`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Rvloader"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "setup": {
       "description": "Supply a mapping to complete first-run setup with these settings and defaults.\nOmit this section or use null to run the Wii setup wizard.",
       "anyOf": [
@@ -425,8 +436,15 @@
       "properties": {
         "autoboot": {
           "description": "Autoboot destination. Defaults to the System Menu.",
-          "$ref": "#/$defs/Autoboot",
-          "default": "system_menu"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Autoboot"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "dump_gecko_text": {
           "description": "Dump Gecko output.",
@@ -459,8 +477,15 @@
         },
         "return_to": {
           "description": "Destination used by Priiloader's Return to option. Defaults to the System Menu.",
-          "$ref": "#/$defs/ReturnTo",
-          "default": "system_menu"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReturnTo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "show_rc_updates": {
           "description": "Show Priiloader update notices.",
@@ -518,6 +543,25 @@
         "priiloader",
         "autoboot",
         "file"
+      ]
+    },
+    "Rvloader": {
+      "description": "Boot RVLoader from USB when the console starts. Priiloader starts it, so\nthe recipe needs a `priiloader` section that leaves `autoboot` and\n`return_to` unset. The RVLoader release itself goes on the USB drive.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of that release's `installer/data/bootloader.dol`.",
+          "$ref": "#/$defs/Sha256"
+        },
+        "version": {
+          "description": "RVLoader release, such as \"2.1\".",
+          "$ref": "#/$defs/Version"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "sha256"
       ]
     },
     "SensorBar": {
@@ -694,6 +738,11 @@
         "sha256"
       ],
       "unevaluatedProperties": false
+    },
+    "Version": {
+      "description": "RVLoader release number: major.minor, without the leading v.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
     },
     "Wad": {
       "description": "A WAD from one source, with the SHA-256 of its exact bytes.",

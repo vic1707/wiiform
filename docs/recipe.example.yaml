@@ -57,6 +57,12 @@ titles:
 #     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
 #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+# Optional RVLoader boot hook: Priiloader starts RVLoader's bootloader, which loads
+# RVLoader from USB. Requires priiloader, without its autoboot and return_to keys.
+# rvloader:
+#   version: "2.1"
+#   sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7" # installer/data/bootloader.dol of that release.
+
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
   # Every Priiloader setting and hack state is written. Omitted keys use the
   # pinned 0.10.0 defaults; prior NAND values are not preserved.

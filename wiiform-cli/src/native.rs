@@ -265,11 +265,24 @@ impl Nand {
         Ok(ffi::install_priiloader(&mut self.0[..], app)?)
     }
 
+    /// Stores the executable that Priiloader's file destinations boot.
+    pub fn install_priiloader_boot_file(
+        &mut self,
+        dol: &[u8],
+        hardware_access: bool,
+    ) -> Result<()> {
+        Ok(ffi::install_priiloader_boot_file(
+            &mut self.0[..],
+            dol,
+            hardware_access,
+        )?)
+    }
+
     /// Writes the settings. Hacks are a separate file: see [`Self::set_priiloader_hacks`].
     pub fn configure_priiloader(&mut self, config: &Priiloader) -> Result<()> {
         let settings = ffi::PriiloaderSettings {
-            autoboot: config.autoboot.into(),
-            return_to: config.return_to.into(),
+            autoboot: config.autoboot.unwrap_or_default().into(),
+            return_to: config.return_to.unwrap_or_default().into(),
             shutdown_to: config.shutdown_to.into(),
             preferred_mount_point: config.preferred_mount_point.into(),
             stop_disc: config.stop_disc,

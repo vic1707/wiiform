@@ -199,6 +199,15 @@ fn build_with(
     if let Some(config) = &recipe.priiloader {
         nand.install_priiloader(priiloader_payload::APP)
             .context("cannot install Priiloader")?;
+        let config = match &recipe.rvloader {
+            Some(bootloader) => {
+                // RVLoader's bootloader needs hardware access to bring up USB and video.
+                nand.install_priiloader_boot_file(bootloader, true)
+                    .context("cannot install the RVLoader bootloader")?;
+                &config.booting_file()
+            }
+            None => config,
+        };
         nand.configure_priiloader(config)
             .context("cannot configure Priiloader")?;
         nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)

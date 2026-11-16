@@ -24,6 +24,8 @@ namespace {
   const QString original_tmd_path = content + "title_or.tmd";
   const QString ticket_path = "/ticket/00000001/00000002.tik";
   const QString settings_path = menu + "/data/loader.ini";
+  const QString boot_file_path = menu + "/data/main.bin";
+  const QString boot_options_path = menu + "/data/main.nfo";
 
   using working_image::find_path;
   using working_image::read_authenticated_file;
@@ -60,7 +62,7 @@ namespace {
   void check_destinations(NandBin& nand, const wiiform::PriiloaderSettings& settings) {
     using wiiform::Autoboot;
     if (settings.autoboot == Autoboot::file || settings.return_to == wiiform::ReturnTo::file) {
-      require(!read_authenticated_file(nand, find_path(nand, menu + "/data/main.bin"), menu_app_limit).isEmpty(),
+      require(!read_authenticated_file(nand, find_path(nand, boot_file_path), menu_app_limit).isEmpty(),
               "Priiloader file boot needs an installed executable");
     }
     if (settings.autoboot == Autoboot::homebrew_channel) {
@@ -162,6 +164,31 @@ namespace {
                                       needed_entries, needed_clusters);
   }
 
+  // A DOL starts with a 0x100-byte header: 18 section offsets, 18 load addresses,
+  // 18 sizes, the BSS range and the entry point, all big-endian.
+  void require_dol(const QByteArray& dol) {
+    constexpr int header_size = 0x100, sections = 18;
+    require(dol.size() > header_size && dol.size() <= menu_app_limit, "Boot file has an unsupported size");
+    const auto word = [&](int offset) { return qFromBigEndian<quint32>(dol.constData() + offset); };
+    bool loads_something = false;
+    for (int i = 0; i < sections; ++i) {
+      const quint64 offset = word(i * 4), size = word(0x90 + i * 4);
+      if (!size) continue;
+      require(offset >= header_size && offset + size <= static_cast<quint64>(dol.size()),
+              "Boot file is not a valid DOL");
+      loads_something = true;
+    }
+    require(loads_something && word(0xe0), "Boot file is not a valid DOL");
+  }
+
+  // Plans one file of the System Menu data directory unless the image already holds these bytes.
+  void plan_data_file(NandBin& nand, QMap<QString, PendingFile>& files, const QString& path,
+                      const QByteArray& bytes) {
+    const auto existing = find_path(nand, path);
+    if (existing && read_authenticated_file(nand, existing, menu_app_limit) == bytes) return;
+    files[path] = {path, bytes, NAND_RW, existing.has_value()};
+  }
+
   void require_clean_menu_data(NandBin& nand) {
     const auto data = find_path(nand, menu + "/data");
     require(data && data->IsDir(), "System Menu data directory is missing");
@@ -250,6 +277,21 @@ namespace priiloader {
     files["boot_app"] = {app_path, app, NAND_RW, true};
     files["ticket"] = {content + "ticket", ticket};
     files["tmd"] = {tmd_path, patched_tmd(tmd, app), 0, true};
+    operation.commit();
+  }
+
+  void install_boot_file(std::span<std::uint8_t> image, std::span<const std::uint8_t> dol_bytes,
+                         bool hardware_access) {
+    const QByteArray dol(reinterpret_cast<const char*>(dol_bytes.data()), static_cast<int>(dol_bytes.size()));
+    require_dol(dol);
+    // main.nfo: the AHBPROT flag, the argument count and the 32-bit argument length.
+    QByteArray options(6, '\0');
+    options[0] = hardware_access ? 1 : 0;
+
+    Operation operation(image);
+    operation.require_installed();
+    plan_data_file(operation.working.nand, operation.files, boot_file_path, dol);
+    plan_data_file(operation.working.nand, operation.files, boot_options_path, options);
     operation.commit();
   }
 

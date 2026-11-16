@@ -264,6 +264,11 @@ pub mod bridge {
         fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
         fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings<'_>) -> Result<()>;
         fn install_priiloader(nand: &mut [u8], app_bytes: &[u8]) -> Result<()>;
+        fn install_priiloader_boot_file(
+            nand: &mut [u8],
+            dol: &[u8],
+            hardware_access: bool,
+        ) -> Result<()>;
         fn configure_priiloader(nand: &mut [u8], settings: &PriiloaderSettings) -> Result<()>;
         fn set_priiloader_hacks(
             nand: &mut [u8],
