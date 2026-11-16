@@ -39,7 +39,6 @@ mise run run:wii-seed -- --help
 | Xmake and Cargo | Pinned WiiQt and locked Rust crates |
 | Host | Git, a C++20 compiler and linker, make, and a Qt SDK with qmake, Qt Core, Gui, Widgets, and Network |
 | Archive creation | Python 3 and Xcode linker tools on macOS. patchelf and pax-utils on Linux |
-| Optional Priiloader source build | devkitPPC, libogc, and the pinned Priiloader submodule |
 
 On macOS, install Xcode Command Line Tools and a Qt SDK. The build task
 detects Homebrew Qt 5 under `/opt/homebrew/opt/qt@5`. Set `QT_ROOT_DIR` for a
@@ -70,7 +69,7 @@ WiiQt's own diagnostic messages are hidden; set `WIIFORM_QT_MESSAGES=1` to see
 them when investigating a failure.
 
 Use the `titles` list for downloadable channels and Nintendo-signed system
-channels or Wii IOS WADs for slots 3–253. The `allow-unsigned` policy applies to
+channels or Wii IOS WADs for slots 3–253. `allow_unsigned: true` applies to
 downloadable channels. Each entry verifies an exact installed match or installs
 the WAD when the title is absent. An exact match emits a warning. A conflicting
 title or incomplete installation stops the build. Stock 4.3 includes IOS9 v1034
@@ -103,7 +102,8 @@ again after restoring a prepared image.
 Wiiform uses the pinned Priiloader assets included in the release archive.
 When running from a checkout, run `mise run assets:priiloader` once before
 using a Priiloader recipe. Use `priiloader: {}` to install with pinned defaults.
-Each application replaces the settings and disables unspecified hacks.
+Settings sit directly under `priiloader`, and `hacks` lists the hacks to
+enable. Each application replaces the settings and disables unlisted hacks.
 
 ### Homebrew Channel
 
@@ -166,6 +166,8 @@ for package preparation.
 ### Seed input
 
 The seed contains plaintext console key material. Save the output privately.
+Builds accept seeds from EUR, USA and JPN consoles only. Other `AREA` values,
+such as AUS or KOR, are rejected.
 A footer-bearing backup supplies its own keys. For a footerless backup, pass
 its matching 1,024-byte sidecar explicitly.
 
@@ -190,16 +192,17 @@ wii-nand install-title INPUT OUTPUT TITLE_ID VERSION
 wii-nand install-wad INPUT OUTPUT PACKAGE.wad --sha256 SHA256
 wii-nand install-wad INPUT OUTPUT 'https://example.com/package.wad' --sha256 SHA256
 wii-nand remove-title INPUT OUTPUT TITLE_ID
-wii-nand install-priiloader INPUT OUTPUT --fix-480p --block-disc-updates
+wii-nand install-priiloader INPUT OUTPUT --hack fix_480p --hack block_disc_updates
 ```
 
 `wii-nand install-title` uses the same `WIIFORM_NUS_CACHE` and
 `WIIFORM_NUS_OFFLINE` environment variables as `wiiform`.
 
 Each edit requires a new output path. Run `wii-nand <command> --help` for
-settings, signature policy and Priiloader hack options. The Priiloader edit
-uses the pinned defaults. Pass a switch such as `--stop-disc` or `--fix-480p`
-to enable it, or `--white-background` to choose a white background.
+settings and Priiloader options. `install-wad` takes `--allow-unsigned` for a
+community channel. The Priiloader edit uses the pinned defaults. Pass a switch
+such as `--stop-disc` or `--white-background` to enable it, and `--hack NAME`
+once per hack.
 An edit uses about 528 MiB of memory for the working NAND plus the payload.
 
 ## Release packaging

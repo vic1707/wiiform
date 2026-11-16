@@ -64,7 +64,7 @@ impl StockSeed {
             boot_blocks,
             bad_blocks: manifest.bad_blocks,
             settings: manifest.settings.fields,
-            settings_sha256: *manifest.settings.sha256.as_bytes(),
+            settings_sha256: manifest.settings.sha256.0,
         })
     }
 
@@ -168,8 +168,7 @@ impl From<ffi::BootMiiState> for BootMiiState {
 }
 
 fn digest(bytes: impl AsRef<[u8]>) -> Sha256 {
-    let digest: [u8; 32] = Sha256Hasher::digest(bytes).into();
-    Sha256::from(digest)
+    Sha256(Sha256Hasher::digest(bytes).into())
 }
 
 fn decode_xz(compressed: &[u8]) -> Result<Vec<u8>> {
@@ -210,7 +209,7 @@ fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
             xz: Binary(encode_xz(&parts.boot_blocks)?),
         },
         settings: Settings {
-            sha256: Sha256::from(parts.settings_sha256),
+            sha256: Sha256(parts.settings_sha256),
             fields: parts.settings,
         },
         info: Some(SeedInfo {
@@ -240,7 +239,7 @@ mod tests {
                 xz: Binary(encode_xz(&vec![0x5a; BOOT_BYTES])?),
             },
             settings: Settings {
-                sha256: Sha256::from([0; 32]),
+                sha256: Sha256([0; 32]),
                 fields: ConsoleSettings {
                     area: "EUR".into(),
                     model: "RVL-001(EUR)".into(),

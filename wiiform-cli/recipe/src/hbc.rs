@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use std::{borrow::Cow, path::Path};
+use std::borrow::Cow;
 
 use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use semver::Version;
 use serde::Deserialize;
 
-use crate::{Data, Sha256, titles::WAD_BOUNDS};
+use crate::{Data, Sha256};
 
 const REPO: &str = "Monsterray/hbc-reborn";
 
@@ -38,12 +38,6 @@ struct ReleaseAsset {
 }
 
 impl Hbc {
-    pub(crate) fn rebase(&mut self, directory: &Path) {
-        if let Self::Custom { source, .. } = self {
-            source.rebase(directory);
-        }
-    }
-
     pub fn resolve(
         &self,
         mut fetch: impl FnMut(&str, usize) -> Result<Vec<u8>>,
@@ -77,11 +71,11 @@ impl Hbc {
                     "https://github.com/{REPO}/releases/download/v{version}/{}",
                     asset.name
                 );
-                let wad = fetch(&url, *WAD_BOUNDS.end())
+                let wad = fetch(&url, *Data::WAD_BOUNDS.end())
                     .with_context(|| format!("cannot download {}", asset.name))?;
                 Ok((Cow::Owned(wad), digest))
             }
-            Self::Custom { source, sha256 } => Ok((source.resolve(WAD_BOUNDS, fetch)?, *sha256)),
+            Self::Custom { source, sha256 } => Ok((source.resolve_wad(fetch)?, *sha256)),
         }
     }
 }

@@ -26,7 +26,7 @@
       "$ref": "#/$defs/Menu"
     },
     "priiloader": {
-      "description": "Optional pinned Priiloader install with settings and hacks.",
+      "description": "Optional pinned Priiloader install with its settings and hacks.",
       "anyOf": [
         {
           "$ref": "#/$defs/Priiloader"
@@ -38,11 +38,12 @@
       "default": null
     },
     "remove": {
-      "description": "Channels to remove. Names expand using the effective menu's region.",
+      "description": "Stock channels to remove.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/RemovalInput"
-      }
+        "$ref": "#/$defs/RemovableChannel"
+      },
+      "uniqueItems": true
     },
     "setup": {
       "description": "Supply a mapping to complete first-run setup with these settings and defaults.\nOmit this section or use null to run the Wii setup wizard.",
@@ -94,7 +95,7 @@
       "contentEncoding": "base64"
     },
     "Cios": {
-      "description": "One WAD source and the SHA-256 of its exact bytes.",
+      "description": "A prebuilt Wii d2x cIOS WAD and the slot it is expected to fill.",
       "type": "object",
       "properties": {
         "sha256": {
@@ -312,72 +313,70 @@
       },
       "additionalProperties": false
     },
-    "HackSettings": {
-      "description": "Complete supported System Menu hack state. Each hack defaults to off.",
-      "type": "object",
-      "properties": {
-        "auto_press_a": {
-          "description": "Auto-press A at the health screen.",
-          "type": "boolean",
-          "default": false
-        },
-        "block_disc_autoboot": {
-          "description": "Block disc autoboot.",
-          "type": "boolean",
-          "default": false
-        },
-        "block_disc_updates": {
-          "description": "Block disc updates.",
-          "type": "boolean",
-          "default": false
-        },
-        "block_online_updates": {
-          "description": "Block online updates.",
-          "type": "boolean",
-          "default": false
-        },
-        "fix_480p": {
+    "Hack": {
+      "description": "A System Menu hack from the pinned Priiloader definitions.",
+      "oneOf": [
+        {
           "description": "Fix 480p graphics in the System Menu.",
-          "type": "boolean",
-          "default": false
+          "type": "string",
+          "const": "fix_480p"
         },
-        "move_disc_channel": {
-          "description": "Move the Disc Channel.",
-          "type": "boolean",
-          "default": false
+        {
+          "description": "Block online updates.",
+          "type": "string",
+          "const": "block_online_updates"
         },
-        "no_background_music": {
-          "description": "Disable System Menu background music.",
-          "type": "boolean",
-          "default": false
+        {
+          "description": "Block disc updates.",
+          "type": "string",
+          "const": "block_disc_updates"
         },
-        "region_free_everything": {
-          "description": "Enable Region Free EVERYTHING (Japanese menu uses the JP hack name).",
-          "type": "boolean",
-          "default": false
+        {
+          "description": "Block disc autoboot.",
+          "type": "string",
+          "const": "block_disc_autoboot"
         },
-        "remove_deflicker": {
+        {
+          "description": "Auto-press A at the health screen.",
+          "type": "string",
+          "const": "auto_press_a"
+        },
+        {
           "description": "Remove deflicker.",
-          "type": "boolean",
-          "default": false
+          "type": "string",
+          "const": "remove_deflicker"
         },
-        "remove_nocopy_save_protection": {
+        {
+          "description": "Move the Disc Channel.",
+          "type": "string",
+          "const": "move_disc_channel"
+        },
+        {
           "description": "Remove NoCopy save protection.",
-          "type": "boolean",
-          "default": false
+          "type": "string",
+          "const": "remove_nocopy_save_protection"
         },
-        "replace_health_screen": {
+        {
           "description": "Replace the health screen with Backmenu.",
-          "type": "boolean",
-          "default": false
+          "type": "string",
+          "const": "replace_health_screen"
         },
-        "wiimmfi": {
+        {
+          "description": "Disable System Menu background music.",
+          "type": "string",
+          "const": "no_background_music"
+        },
+        {
           "description": "Apply the Wiimmfi patch.",
-          "type": "boolean",
-          "default": false
+          "type": "string",
+          "const": "wiimmfi"
+        },
+        {
+          "description": "Enable Region Free EVERYTHING (the Japanese menu uses the JP definition).",
+          "type": "string",
+          "const": "region_free_everything"
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "Hbc": {
       "description": "Homebrew Channel to install before Priiloader is configured.",
@@ -445,7 +444,7 @@
       ]
     },
     "Language": {
-      "description": "Wii first-run language value written to SYSCONF.",
+      "description": "Wii first-run language.",
       "type": "string",
       "enum": [
         "ja",
@@ -493,62 +492,7 @@
       "minLength": 1
     },
     "Priiloader": {
-      "description": "Priiloader installation and configuration.",
-      "type": "object",
-      "properties": {
-        "hacks": {
-          "description": "Complete state for supported hacks. Unlisted hacks default to off.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/HackSettings"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": {
-            "auto_press_a": false,
-            "block_disc_autoboot": false,
-            "block_disc_updates": false,
-            "block_online_updates": false,
-            "fix_480p": false,
-            "move_disc_channel": false,
-            "no_background_music": false,
-            "region_free_everything": false,
-            "remove_deflicker": false,
-            "remove_nocopy_save_protection": false,
-            "replace_health_screen": false,
-            "wiimmfi": false
-          }
-        },
-        "settings": {
-          "description": "Complete settings. Omitted values use pinned Priiloader defaults.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PriiloaderSettings"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": {
-            "autoboot": "system_menu",
-            "black_background": true,
-            "dump_gecko_text": false,
-            "ignore_shutdown_mode": false,
-            "lid_slot_on_error": false,
-            "preferred_mount_point": "auto",
-            "return_to": "system_menu",
-            "show_rc_updates": false,
-            "shutdown_to": "none",
-            "stop_disc": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "PriiloaderSettings": {
-      "description": "Complete Priiloader settings written to its settings file.\n\nMissing recipe values use the pinned 0.10.0 defaults. Applying this type\nwrites every configurable setting, replacing values already present in NAND.",
+      "description": "Complete Priiloader configuration. Applying it writes every setting and\nhack state, replacing what the NAND holds; omitted values use the pinned\n0.10.0 defaults.",
       "type": "object",
       "properties": {
         "autoboot": {
@@ -556,23 +500,27 @@
           "$ref": "#/$defs/Autoboot",
           "default": "system_menu"
         },
-        "black_background": {
-          "description": "Use a black background. The pinned default is on.",
-          "type": "boolean",
-          "default": true
-        },
         "dump_gecko_text": {
-          "description": "Dump Gecko output. Defaults to off.",
+          "description": "Dump Gecko output.",
           "type": "boolean",
           "default": false
         },
+        "hacks": {
+          "description": "Hacks to enable. Every other hack is disabled.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Hack"
+          },
+          "uniqueItems": true
+        },
         "ignore_shutdown_mode": {
-          "description": "Ignore standby mode. Defaults to off.",
+          "description": "Ignore standby mode.",
           "type": "boolean",
           "default": false
         },
         "lid_slot_on_error": {
-          "description": "Light the drive slot when an error occurs. Defaults to off.",
+          "description": "Light the drive slot when an error occurs.",
           "type": "boolean",
           "default": false
         },
@@ -582,12 +530,12 @@
           "default": "auto"
         },
         "return_to": {
-          "description": "Destination used by Priiloader's Return to option.",
+          "description": "Destination used by Priiloader's Return to option. Defaults to the System Menu.",
           "$ref": "#/$defs/ReturnTo",
           "default": "system_menu"
         },
         "show_rc_updates": {
-          "description": "Show Priiloader update notices. Defaults to off.",
+          "description": "Show Priiloader update notices.",
           "type": "boolean",
           "default": false
         },
@@ -597,36 +545,28 @@
           "default": "none"
         },
         "stop_disc": {
-          "description": "Stop the disc drive at startup. Defaults to off.",
+          "description": "Stop the disc drive at startup.",
+          "type": "boolean",
+          "default": false
+        },
+        "white_background": {
+          "description": "Use a white background instead of the default black one.",
           "type": "boolean",
           "default": false
         }
       },
       "additionalProperties": false
     },
-    "RemovalInput": {
-      "description": "One removal entry as written in a recipe: a known name or quoted title ID.",
-      "anyOf": [
-        {
-          "description": "Supported channel name.",
-          "$ref": "#/$defs/RemovalName"
-        },
-        {
-          "description": "A quoted title ID from the removal allowlist.",
-          "$ref": "#/$defs/TitleId"
-        }
-      ]
-    },
-    "RemovalName": {
-      "description": "Channel shortcuts supported by `remove`.",
+    "RemovableChannel": {
+      "description": "A stock channel that `remove` can take off the image.",
       "oneOf": [
         {
-          "description": "Expand to the forecast channel title for the selected menu and its common stub.",
+          "description": "The menu region's Forecast Channel and its common stub.",
           "type": "string",
           "const": "forecast-channel"
         },
         {
-          "description": "Expand to the news channel title for the selected menu and its common stub.",
+          "description": "The menu region's News Channel and its common stub.",
           "type": "string",
           "const": "news-channel"
         },
@@ -665,7 +605,7 @@
       "type": "object",
       "properties": {
         "country": {
-          "description": "Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote \"NO\" in YAML.",
+          "description": "Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote \"NO\" in YAML.\nDefaults to GB, US, or JP for the menu's region.",
           "anyOf": [
             {
               "$ref": "#/$defs/CountryCode"
@@ -685,7 +625,7 @@
           }
         },
         "language": {
-          "description": "Setup language, constrained by the effective menu region.",
+          "description": "Setup language, constrained by the effective menu region.\nDefaults to en for 4.3E and 4.3U, and ja for 4.3J.",
           "anyOf": [
             {
               "$ref": "#/$defs/Language"
@@ -724,31 +664,18 @@
         "autoboot"
       ]
     },
-    "SignaturePolicy": {
-      "description": "WAD signature requirements.",
-      "oneOf": [
-        {
-          "description": "Require Nintendo signatures.",
-          "type": "string",
-          "const": "nintendo"
-        },
-        {
-          "description": "Permit an unsigned community channel after content validation.",
-          "type": "string",
-          "const": "allow-unsigned"
-        }
-      ]
-    },
     "Title": {
-      "description": "One WAD source and the SHA-256 of its exact bytes.",
+      "description": "A WAD to install when its title is absent, or to verify when it is present.",
       "type": "object",
       "properties": {
+        "allow_unsigned": {
+          "description": "Permit an unsigned community channel after content validation.\nBy default the WAD must carry Nintendo signatures.",
+          "type": "boolean",
+          "default": false
+        },
         "sha256": {
           "description": "SHA-256 of the exact WAD bytes.",
           "$ref": "#/$defs/Sha256"
-        },
-        "signature_policy": {
-          "$ref": "#/$defs/SignaturePolicy"
         },
         "source": {
           "$ref": "#/$defs/Data"
@@ -759,16 +686,6 @@
         "source",
         "sha256"
       ]
-    },
-    "TitleId": {
-      "description": "Nonzero Wii title ID written as 16 hex digits.",
-      "type": "string",
-      "maxLength": 16,
-      "minLength": 16,
-      "not": {
-        "const": "0000000000000000"
-      },
-      "pattern": "^[0-9a-fA-F]{16}$"
     }
   }
 }

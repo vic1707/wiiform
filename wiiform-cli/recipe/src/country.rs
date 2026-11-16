@@ -97,15 +97,16 @@ country_codes! {
 }
 
 impl CountryCode {
+    /// The byte SYSCONF stores for this country.
     pub const fn as_u8(self) -> u8 {
         self as u8
     }
 
-    pub const fn is_americas(self) -> bool {
+    pub(crate) const fn is_americas(self) -> bool {
         matches!(self.as_u8(), 8..=52)
     }
 
-    pub const fn is_pal(self) -> bool {
+    pub(crate) const fn is_pal(self) -> bool {
         self.as_u8() >= 65
     }
 }

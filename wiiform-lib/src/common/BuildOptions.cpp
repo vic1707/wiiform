@@ -32,7 +32,7 @@ namespace nand_build {
     require((area_original == "EUR" && game_original == "EU" && video_original == "PAL") ||
                 (area_original == "USA" && game_original == "US" && video_original == "NTSC") ||
                 (area_original == "JPN" && game_original == "JP" && video_original == "NTSC"),
-            "Seed region, game and video settings disagree");
+            "Seed must come from a EUR, USA or JPN console with matching GAME and VIDEO settings");
 
     const QStringList model_regions{"EUR)", "USA)", "JPN)", "UAE)"};
     const auto qmodel = QString::fromStdString(model);

@@ -3,13 +3,12 @@
 # Local paths are read at install time, relative to this file. Titles require a SHA-256.
 menu: 4.3E
 
-# Names expand to the correct region's title IDs. Explicit IDs must be quoted.
+# Stock channels to remove. Names expand to the menu region's title IDs.
 remove:
   - forecast-channel
   - news-channel
   # - wii-shop-channel
   # - photo-channel
-  # - "0001000248414650"
 
 # A setup mapping completes first-run setup. Use {} for all defaults.
 # Omit setup or set it to null to run the Wii setup wizard.
@@ -27,7 +26,7 @@ titles:
   - source:
       path: wads/example-pal-channel.wad
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-    signature_policy: nintendo # or allow-unsigned for verified community WADs
+    allow_unsigned: false # true permits an unsigned community channel WAD
   # Stock IOS9 v1034 also uses titles with the default Nintendo signature policy.
   # - source:
   #     path: wads/IOS9-64-v1034.wad
@@ -67,30 +66,29 @@ titles:
 #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
-  settings:
-    # Every configurable Priiloader setting is written. Omitted keys use the
-    # pinned 0.10.0 defaults; prior NAND values are not preserved.
-    autoboot: system_menu # disabled/homebrew_channel/bootmii_ios/system_menu/file
-    return_to: system_menu # system_menu/priiloader/autoboot/file
-    shutdown_to: none # none/priiloader/autoboot
-    preferred_mount_point: auto # auto/sd/usb
-    stop_disc: false
-    lid_slot_on_error: false
-    ignore_shutdown_mode: false
-    black_background: true
-    dump_gecko_text: false
-    show_rc_updates: false
+  # Every Priiloader setting and hack state is written. Omitted keys use the
+  # pinned 0.10.0 defaults; prior NAND values are not preserved.
+  autoboot: system_menu # disabled/homebrew_channel/bootmii_ios/system_menu/file
+  return_to: system_menu # system_menu/priiloader/autoboot/file
+  shutdown_to: none # none/priiloader/autoboot
+  preferred_mount_point: auto # auto/sd/usb
+  stop_disc: false
+  lid_slot_on_error: false
+  ignore_shutdown_mode: false
+  white_background: false
+  dump_gecko_text: false
+  show_rc_updates: false
+  # Hacks to enable; every hack not listed is disabled.
   hacks:
-    # Hacks default to off. This is the complete desired state for supported hacks.
-    fix_480p: true
-    block_online_updates: false
-    block_disc_updates: false
-    block_disc_autoboot: false
-    auto_press_a: false
-    remove_deflicker: false
-    move_disc_channel: false
-    remove_nocopy_save_protection: false
-    replace_health_screen: false
-    no_background_music: false
-    wiimmfi: false
-    region_free_everything: false # Japanese menus use the pinned JP definition.
+    - fix_480p
+    # - block_online_updates
+    # - block_disc_updates
+    # - block_disc_autoboot
+    # - auto_press_a
+    # - remove_deflicker
+    # - move_disc_channel
+    # - remove_nocopy_save_protection
+    # - replace_health_screen
+    # - no_background_music
+    # - wiimmfi
+    # - region_free_everything # Japanese menus use the pinned JP definition.

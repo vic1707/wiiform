@@ -4,6 +4,7 @@
 //! Everything here translates between recipe types and the bridge; decisions
 //! about what to build live in [`crate::workflow`].
 use std::{
+    collections::BTreeSet,
     marker::PhantomData,
     path::Path,
     sync::OnceLock,
@@ -14,8 +15,8 @@ use anyhow::{Context, Result, ensure};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    self, Aspect, CiosTarget, HackSettings, Menu, PriiloaderHack, PriiloaderSettings, Region,
-    SensorBar, Setup, Sha256, TitleId, read_bounded,
+    self, Aspect, CiosTarget, Hack, Menu, Priiloader, Region, SensorBar, Setup, Sha256, TitleId,
+    read_bounded,
 };
 use crate::seed::{ExtractedSeed, StockSeed};
 
@@ -45,12 +46,11 @@ same_variants! {
     recipe::ReturnTo => ffi::ReturnTo { SystemMenu, Priiloader, Autoboot, File }
     recipe::ShutdownTo => ffi::ShutdownTo { None, Priiloader, Autoboot }
     recipe::MountPoint => ffi::MountPoint { Auto, Sd, Usb }
-    PriiloaderHack => ffi::Hack {
+    Hack => ffi::Hack {
         Fix480p, BlockOnlineUpdates, BlockDiscUpdates, BlockDiscAutoboot, AutoPressA,
         RemoveDeflicker, MoveDiscChannel, RemoveNocopySaveProtection, ReplaceHealthScreen,
         NoBackgroundMusic, Wiimmfi, RegionFreeEverything,
     }
-    WadKind => ffi::WadPolicy { Standard, LegacyChannel, HomebrewChannel }
 }
 
 /// Boot-area validation policy for stock NAND creation.
@@ -60,16 +60,10 @@ pub enum BootPolicy {
     PreserveSource,
 }
 
-/// What a WAD is allowed to be.
-#[derive(Clone, Copy, Debug)]
-pub enum WadKind {
-    /// Nintendo-signed title.
-    Standard,
-    /// Downloadable channel that may be unsigned.
-    LegacyChannel,
-    /// A Homebrew Channel release.
-    HomebrewChannel,
-}
+/// What a WAD is allowed to be: a Nintendo-signed title (`Standard`), a
+/// downloadable channel that may be unsigned (`LegacyChannel`), or a Homebrew
+/// Channel release (`HomebrewChannel`).
+pub use ffi::WadPolicy;
 
 /// Where Nintendo titles come from.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -256,9 +250,9 @@ impl Session {
         nand: &mut Nand,
         wad: &[u8],
         sha256: &Sha256,
-        kind: WadKind,
+        policy: WadPolicy,
     ) -> Result<InstalledWad> {
-        ffi::install_wad(&mut nand.0[..], wad, sha256.as_bytes(), kind.into())?.try_into()
+        ffi::install_wad(&mut nand.0[..], wad, &sha256.0, policy)?.try_into()
     }
 
     pub fn install_cios(
@@ -269,12 +263,12 @@ impl Session {
         target: &CiosTarget,
     ) -> Result<InstalledWad> {
         let options = ffi::CiosOptions {
-            slot: target.slot.get(),
-            base: target.base.get(),
+            slot: target.slot.into(),
+            base: target.base.into(),
             revision: target.revision,
             replace_stock_stub: target.replace_stock_stub,
         };
-        ffi::install_cios(&mut nand.0[..], wad, sha256.as_bytes(), &options)?.try_into()
+        ffi::install_cios(&mut nand.0[..], wad, &sha256.0, &options)?.try_into()
     }
 
     pub fn remove_title(&self, nand: &mut Nand, title_id: TitleId) -> Result<()> {
@@ -299,22 +293,19 @@ impl Session {
         Ok(ffi::install_priiloader(&mut nand.0[..], app)?)
     }
 
-    pub fn configure_priiloader(
-        &self,
-        nand: &mut Nand,
-        settings: &PriiloaderSettings,
-    ) -> Result<()> {
+    /// Writes the settings. Hacks are a separate file: see [`Self::set_priiloader_hacks`].
+    pub fn configure_priiloader(&self, nand: &mut Nand, config: &Priiloader) -> Result<()> {
         let settings = ffi::PriiloaderSettings {
-            autoboot: settings.autoboot.into(),
-            return_to: settings.return_to.into(),
-            shutdown_to: settings.shutdown_to.into(),
-            preferred_mount_point: settings.preferred_mount_point.into(),
-            stop_disc: settings.stop_disc,
-            lid_slot_on_error: settings.lid_slot_on_error,
-            ignore_shutdown_mode: settings.ignore_shutdown_mode,
-            black_background: settings.black_background,
-            dump_gecko_text: settings.dump_gecko_text,
-            show_rc_updates: settings.show_rc_updates,
+            autoboot: config.autoboot.into(),
+            return_to: config.return_to.into(),
+            shutdown_to: config.shutdown_to.into(),
+            preferred_mount_point: config.preferred_mount_point.into(),
+            stop_disc: config.stop_disc,
+            lid_slot_on_error: config.lid_slot_on_error,
+            ignore_shutdown_mode: config.ignore_shutdown_mode,
+            black_background: !config.white_background,
+            dump_gecko_text: config.dump_gecko_text,
+            show_rc_updates: config.show_rc_updates,
         };
         Ok(ffi::configure_priiloader(&mut nand.0[..], &settings)?)
     }
@@ -323,9 +314,10 @@ impl Session {
         &self,
         nand: &mut Nand,
         definitions: &[u8],
-        hacks: &HackSettings,
+        enabled: &[Hack],
     ) -> Result<()> {
-        let enabled: Vec<ffi::Hack> = hacks.enabled().map(Into::into).collect();
+        let enabled: BTreeSet<Hack> = enabled.iter().copied().collect();
+        let enabled: Vec<ffi::Hack> = enabled.into_iter().map(Into::into).collect();
         Ok(ffi::set_priiloader_hacks(
             &mut nand.0[..],
             definitions,

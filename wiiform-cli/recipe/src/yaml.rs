@@ -3,8 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_saphyr::MergeKeyPolicy;
 
-pub const MAX_EVENTS: usize = 20_000;
-pub const MAX_DEPTH: usize = 24;
+const MAX_DEPTH: usize = 24;
 
 /// Bytes stored as a YAML `!!binary` scalar.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -44,7 +43,7 @@ pub fn options() -> serde_saphyr::Options {
         no_schema: true,
         with_snippet: false,
         budget: serde_saphyr::budget! {
-            max_events: MAX_EVENTS,
+            max_events: 20_000,
             max_aliases: 0,
             max_anchors: 0,
             max_depth: MAX_DEPTH,

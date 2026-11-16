@@ -57,9 +57,7 @@ The project-owned C++ library wraps the following areas:
   `2b70b3693e9dc3e144db1a73224921d405081663` (0.10.0). Wiiform's host-side
   NAND installation and settings support are project code. Release packaging
   extracts the installer app, hack definitions, and license from the pinned
-  upstream ZIP. The native writer verifies the payload hashes. Building the app
-  from the submodule is an optional development task and requires devkitPPC,
-  libogc, and their environment setup.
+  upstream ZIP. The native writer verifies the payload hashes.
 - **Rust dependencies** provide CLI parsing (`clap`), serialization and JSON
   (`serde`, `serde_json`), YAML parsing (`serde-saphyr`), schema generation
   (`schemars`), hashing (`sha2`), temporary files (`tempfile`), C++ interop
@@ -95,11 +93,13 @@ CI generates the schema and checks it against the committed copy under
 
 Move keys under the old `system:` block up one indentation level. Keep
 `menu`, `remove`, `setup`, `titles`, `cios`, `hbc`, and `priiloader` as top-level keys.
-Move `display` under `setup`. Move each WAD's `path` or `inline` under `source`. Keep `sha256` and
-`signature_policy` beside `source`. WAD paths resolve relative to the recipe.
+Move `display` under `setup`. Move each WAD's `path` or `inline` under `source`. Keep `sha256`
+beside `source`. WAD paths resolve relative to the recipe.
 For inline data, use `inline: !!binary |` followed by indented base64. Either source
 requires a SHA-256 of the raw WAD bytes. For a WAD that the recipe deliberately
-permits without a Nintendo signature, use `signature_policy: allow-unsigned`.
+permits without a Nintendo signature, replace `signature_policy: allow-unsigned`
+with `allow_unsigned: true`. List channels to `remove` by name; title IDs are
+no longer accepted there.
 Regenerate earlier unreleased seeds with the current `wii-seed`.
 Remove `--reference` from scripts. A `setup` mapping, including any
 `setup.display` options, generates SYSCONF and completes first-run setup.
@@ -114,8 +114,11 @@ downloads stay in memory by default.
 Use `priiloader: {}` to install with pinned defaults. Remove old `app` fields
 and the `--app` and
 `--hack-definitions` flags. The commands use the bundled installer and definitions.
-Pass `--stop-disc` to enable the setting or omit it for the default. Use
-`--white-background` for a white background and `--fix-480p` to enable that hack.
+Move the keys under `priiloader.settings` up into `priiloader`, replace
+`black_background: false` with `white_background: true`, and turn the `hacks`
+mapping into a list of the hacks to enable, such as `hacks: [fix_480p]`.
+On the command line, pass `--stop-disc` or `--white-background` to enable a
+setting and `--hack fix_480p` to enable a hack.
 Rebuild from the seed and recipe to migrate an early image containing the
 480p-only Priiloader definitions.
 

@@ -12,9 +12,9 @@ use tempfile::Builder;
 
 use crate::{
     https::fetch,
-    native::{InstalledWad, Nand, Session, StockIdentity, WadKind},
+    native::{InstalledWad, Nand, Session, StockIdentity, WadPolicy},
     priiloader_payload,
-    recipe::{Menu, Recipe, Region, ResolvedPath, SignaturePolicy, open_regular_file},
+    recipe::{Menu, Recipe, Region, ResolvedPath, TitleId, open_regular_file},
     seed::StockSeed,
 };
 
@@ -160,24 +160,19 @@ fn build_with(
         .iter()
         .enumerate()
         .map(|(index, title)| {
-            let kind = match title.options.signature_policy {
-                SignaturePolicy::Nintendo => WadKind::Standard,
-                SignaturePolicy::AllowUnsigned => WadKind::LegacyChannel,
-            };
-            title
-                .resolve(fetch)
-                .map(|(wad, sha256)| (wad, sha256, kind))
-                .with_context(|| format!("cannot read titles[{index}] WAD"))
+            let wad = (title.source.resolve_wad(fetch))
+                .with_context(|| format!("cannot read titles[{index}] WAD"))?;
+            Ok((wad, title))
         })
         .collect::<Result<Vec<_>>>()?;
     let cios = recipe
         .cios
         .iter()
         .map(|cios| {
-            let target = &cios.options.target;
-            cios.resolve(fetch)
-                .map(|(wad, sha256)| (wad, sha256, target))
-                .with_context(|| format!("cannot read the cIOS WAD for slot {}", target.slot))
+            let slot = cios.target.slot;
+            let wad = (cios.source.resolve_wad(fetch))
+                .with_context(|| format!("cannot read the cIOS WAD for slot {slot}"))?;
+            Ok((wad, cios))
         })
         .collect::<Result<Vec<_>>>()?;
     let hbc = recipe
@@ -192,7 +187,10 @@ fn build_with(
     let (mut nand, identity) =
         create_stock(&session, &recipe).context("cannot create stock NAND")?;
 
-    for &id in &recipe.removals {
+    let removals: Vec<TitleId> = (recipe.remove.iter())
+        .flat_map(|channel| channel.title_ids(recipe.menu))
+        .collect();
+    for &id in &removals {
         session
             .remove_title(&mut nand, id)
             .with_context(|| format!("cannot remove title {id}"))?;
@@ -204,12 +202,17 @@ fn build_with(
             .context("cannot generate system settings")?;
     }
 
-    for (index, (wad, sha256, kind)) in titles.iter().enumerate() {
+    for (index, (wad, title)) in titles.iter().enumerate() {
+        let policy = if title.allow_unsigned {
+            WadPolicy::LegacyChannel
+        } else {
+            WadPolicy::Standard
+        };
         let installed = session
-            .install_wad(&mut nand, wad, sha256, *kind)
+            .install_wad(&mut nand, wad, &title.sha256, policy)
             .with_context(|| format!("cannot install titles[{index}] WAD"))?;
         ensure!(
-            !recipe.removals.contains(&installed.title_id),
+            !removals.contains(&installed.title_id),
             "recipe both removes and installs title {}",
             installed.title_id
         );
@@ -217,23 +220,23 @@ fn build_with(
             !recipe
                 .cios
                 .iter()
-                .any(|cios| cios.options.target.title_id() == installed.title_id),
+                .any(|cios| cios.target.title_id() == installed.title_id),
             "recipe lists a title WAD and a cIOS for the same slot ({})",
             installed.title_id
         );
         report_installed(&installed, recipe.menu);
     }
 
-    for (wad, sha256, target) in &cios {
+    for (wad, cios) in &cios {
         let installed = session
-            .install_cios(&mut nand, wad, sha256, target)
-            .with_context(|| format!("cannot configure cIOS slot {}", target.slot))?;
+            .install_cios(&mut nand, wad, &cios.sha256, &cios.target)
+            .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?;
         warn_if_already_present(&installed);
     }
 
     if let Some((wad, sha256)) = &hbc {
         let installed = session
-            .install_wad(&mut nand, wad, sha256, WadKind::HomebrewChannel)
+            .install_wad(&mut nand, wad, sha256, WadPolicy::HomebrewChannel)
             .context("cannot install Homebrew Channel")?;
         report_installed(&installed, recipe.menu);
     }
@@ -243,7 +246,7 @@ fn build_with(
             .install_priiloader(&mut nand, app)
             .context("cannot install Priiloader")?;
         session
-            .configure_priiloader(&mut nand, &config.settings)
+            .configure_priiloader(&mut nand, config)
             .context("cannot configure Priiloader")?;
         session
             .set_priiloader_hacks(&mut nand, definitions, &config.hacks)
@@ -276,9 +279,8 @@ fn report_installed(wad: &InstalledWad, menu: Menu) {
             format!("{region:?}")
         });
         eprintln!(
-            "warning: WAD {} declares {region}. Launching on {} may require a region-free System Menu.",
+            "warning: WAD {} declares {region}. Launching on {menu} may require a region-free System Menu.",
             wad.title_id,
-            menu.as_str(),
         );
     }
 }
@@ -448,7 +450,7 @@ mod tests {
         fs::write(
             &recipe,
             format!(
-                "menu: 4.3E\ntitles:\n  - source: {{ path: fixture.wad }}\n    sha256: \"{}\"\n    signature_policy: allow-unsigned\n",
+                "menu: 4.3E\ntitles:\n  - source: {{ path: fixture.wad }}\n    sha256: \"{}\"\n    allow_unsigned: true\n",
                 expected.trim()
             ),
         )?;

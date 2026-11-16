@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
+use clap::{
+    Args, Parser, Subcommand,
+    builder::{PathBufValueParser, TypedValueParser},
+};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    native::{Nand, Session, WadKind},
+    native::{Nand, Session, WadPolicy},
     priiloader_payload,
-    recipe::{
-        Cios, CiosOptions, CiosTarget, HackSettings, PriiloaderSettings, ResolvedPath, Sha256,
-        Title, TitleId, TitleOptions,
-    },
+    recipe::{CiosTarget, Data, Priiloader, ResolvedPath, Sha256, TitleId},
     workflow::{NusCache, publish_edit, validate_output, warn_if_already_present},
 };
 
@@ -53,20 +53,21 @@ enum Command {
         #[command(flatten)]
         image: ImagePaths,
         /// Local WAD path or HTTPS URL.
-        #[arg(value_name = "WAD")]
-        wad: PathBuf,
+        #[arg(value_name = "WAD", value_parser = wad_source())]
+        wad: Data,
         #[arg(long)]
         sha256: Sha256,
+        /// Permit an unsigned community channel after content validation.
         #[arg(long)]
-        allow_unverified_signatures: bool,
+        allow_unsigned: bool,
     },
     /// Install a prebuilt, hash-pinned Wii d2x cIOS WAD.
     InstallCios {
         #[command(flatten)]
         image: ImagePaths,
         /// Local WAD path or HTTPS URL.
-        #[arg(value_name = "WAD")]
-        wad: PathBuf,
+        #[arg(value_name = "WAD", value_parser = wad_source())]
+        wad: Data,
         #[arg(long)]
         sha256: Sha256,
         #[command(flatten)]
@@ -83,10 +84,12 @@ enum Command {
         #[command(flatten)]
         image: ImagePaths,
         #[command(flatten)]
-        settings: PriiloaderSettings,
-        #[command(flatten)]
-        hacks: HackSettings,
+        config: Priiloader,
     },
+}
+
+fn wad_source() -> impl TypedValueParser<Value = Data> {
+    PathBufValueParser::new().try_map(Data::try_from)
 }
 
 fn main() -> ExitCode {
@@ -111,17 +114,16 @@ fn run(cli: Cli) -> Result<()> {
             image,
             wad,
             sha256,
-            allow_unverified_signatures,
+            allow_unsigned,
         } => {
-            let kind = if allow_unverified_signatures {
-                WadKind::LegacyChannel
+            let policy = if allow_unsigned {
+                WadPolicy::LegacyChannel
             } else {
-                WadKind::Standard
+                WadPolicy::Standard
             };
-            let title = Title::from_argument(wad, sha256, TitleOptions::default())?;
-            let (wad, sha256) = title.resolve(wiiform::fetch)?;
+            let wad = wad.resolve_wad(wiiform::fetch)?;
             image.edit(|session, nand| {
-                warn_if_already_present(&session.install_wad(nand, &wad, sha256, kind)?);
+                warn_if_already_present(&session.install_wad(nand, &wad, &sha256, policy)?);
                 Ok(())
             })
         }
@@ -131,27 +133,21 @@ fn run(cli: Cli) -> Result<()> {
             sha256,
             target,
         } => {
-            let cios = Cios::from_argument(wad, sha256, CiosOptions { target })?;
-            let (wad, sha256) = cios.resolve(wiiform::fetch)?;
+            let wad = wad.resolve_wad(wiiform::fetch)?;
             image.edit(|session, nand| {
-                let installed = session.install_cios(nand, &wad, sha256, &cios.options.target)?;
-                warn_if_already_present(&installed);
+                warn_if_already_present(&session.install_cios(nand, &wad, &sha256, &target)?);
                 Ok(())
             })
         }
         Command::RemoveTitle { image, title_id } => {
             image.edit(|session, nand| session.remove_title(nand, title_id))
         }
-        Command::InstallPriiloader {
-            image,
-            settings,
-            hacks,
-        } => {
+        Command::InstallPriiloader { image, config } => {
             let (app, definitions) = priiloader_payload::load()?;
             image.edit(|session, nand| {
                 session.install_priiloader(nand, &app)?;
-                session.configure_priiloader(nand, &settings)?;
-                session.set_priiloader_hacks(nand, &definitions, &hacks)
+                session.configure_priiloader(nand, &config)?;
+                session.set_priiloader_hacks(nand, &definitions, &config.hacks)
             })
         }
     }
@@ -160,41 +156,32 @@ fn run(cli: Cli) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiiform::recipe::{Autoboot, Hack};
 
     #[test]
     fn priiloader_cli_uses_defaults_and_accepts_named_flags() {
         let parse = |args: &[&str]| {
-            let cli = Cli::try_parse_from(
-                [
-                    "wii-nand",
-                    "install-priiloader",
-                    concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
-                    "output",
-                ]
-                .into_iter()
-                .chain(args.iter().copied()),
-            )
-            .unwrap();
-            let Command::InstallPriiloader {
-                settings, hacks, ..
-            } = cli.command
-            else {
+            let input = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+            let fixed = ["wii-nand", "install-priiloader", input, "output"];
+            let cli = Cli::try_parse_from(fixed.into_iter().chain(args.iter().copied())).unwrap();
+            let Command::InstallPriiloader { config, .. } = cli.command else {
                 unreachable!()
             };
-            (settings, hacks)
+            config
         };
-        let (settings, hacks) = parse(&[]);
-        assert_eq!(settings, PriiloaderSettings::default());
-        assert_eq!(hacks, HackSettings::default());
-
-        let (settings, hacks) = parse(&["--white-background", "--stop-disc", "--fix-480p"]);
-        assert!(!settings.black_background);
-        assert!(settings.stop_disc);
+        assert_eq!(parse(&[]), Priiloader::default());
         assert_eq!(
-            hacks,
-            HackSettings {
-                fix_480p: true,
-                ..HackSettings::default()
+            parse(&[
+                "--white-background",
+                "--autoboot=homebrew_channel",
+                "--hack=fix_480p",
+                "--hack=wiimmfi"
+            ]),
+            Priiloader {
+                white_background: true,
+                autoboot: Autoboot::HomebrewChannel,
+                hacks: vec![Hack::Fix480p, Hack::Wiimmfi],
+                ..Priiloader::default()
             }
         );
     }
