@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     native, priiloader_payload,
     recipe::{
@@ -86,8 +86,13 @@ enum Command {
     },
 }
 
-fn main() -> Result<()> {
-    match Cli::parse().command {
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    wiiform::cli::run("wii-nand", || run(cli))
+}
+
+fn run(cli: Cli) -> Result<()> {
+    match cli.command {
         Command::InstallTitle {
             image,
             title_id,

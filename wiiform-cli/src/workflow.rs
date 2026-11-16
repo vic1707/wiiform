@@ -291,29 +291,34 @@ pub fn publish_edit(nand: &[u8], output: &Path) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wii-nand-")
         .permissions(fs::Permissions::from_mode(0o700))
-        .tempdir_in(output_parent(output)?)?;
+        .tempdir_in(output_parent(output)?)
+        .context("cannot create a staging directory next to the output")?;
     let candidate = staging.path().join("nand.bin");
     write_private(&candidate, nand).context("cannot write edited NAND")?;
-    rename_noreplace(&candidate, output).context("cannot publish edited NAND")
+    publish(&candidate, output).context("cannot publish edited NAND")
 }
 
 fn publish_bundle(nand: &[u8], output: &Path) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wiiform-")
         .permissions(fs::Permissions::from_mode(0o700))
-        .tempdir_in(output_parent(output)?)?;
+        .tempdir_in(output_parent(output)?)
+        .context("cannot create a staging directory next to the output")?;
     let bundle = staging.path().join("bundle");
-    fs::create_dir(&bundle)?;
+    fs::create_dir(&bundle).context("cannot create the staging bundle")?;
     fs::set_permissions(&bundle, fs::Permissions::from_mode(0o700))?;
     write_private(&bundle.join("nand.bin"), nand).context("cannot write NAND")?;
     write_private(&bundle.join("keys.bin"), &nand[native::RAW_NAND_BYTES..])
         .context("cannot write keys sidecar")?;
     File::open(&bundle)?.sync_all()?;
-    rename_noreplace(&bundle, output).context("cannot publish NAND restore bundle")
+    publish(&bundle, output).context("cannot publish NAND restore bundle")
 }
 
-fn rename_noreplace(source: &Path, target: &Path) -> std::io::Result<()> {
-    renameat_with(CWD, source, CWD, target, RenameFlags::NOREPLACE).map_err(Into::into)
+/// Moves a staged file or directory to `target` without replacing anything, then makes the move durable.
+fn publish(source: &Path, target: &Path) -> Result<()> {
+    renameat_with(CWD, source, CWD, target, RenameFlags::NOREPLACE)?;
+    File::open(output_parent(target)?)?.sync_all()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -345,7 +350,7 @@ mod tests {
         let to = work.path().join("existing");
         fs::create_dir(&from)?;
         fs::create_dir(&to)?;
-        assert!(rename_noreplace(&from, &to).is_err());
+        assert!(publish(&from, &to).is_err());
         assert!(from.is_dir() && to.is_dir());
         Ok(())
     }

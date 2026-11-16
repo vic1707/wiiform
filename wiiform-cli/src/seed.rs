@@ -201,7 +201,8 @@ pub fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> 
             footer_header: (!parts.footer_header.is_empty()).then_some(parts.footer_header),
         }),
     };
-    serde_saphyr::to_io_writer(&mut writer, &manifest).context("cannot serialize Wii seed YAML")
+    serde_saphyr::to_io_writer(&mut writer, &manifest).context("cannot serialize Wii seed YAML")?;
+    writer.flush().context("cannot write Wii seed YAML")
 }
 
 #[cfg(test)]

@@ -1891,7 +1891,6 @@ dependencies = [
  "clap",
  "cxx",
  "cxx-build",
- "libc",
  "lzma-rust2",
  "reqwest",
  "rustix",

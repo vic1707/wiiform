@@ -51,7 +51,7 @@ pub(crate) fn fetch(url: &str, limit: usize) -> Result<Vec<u8>> {
     );
     let mut bytes = Vec::new();
     response
-        .take(limit as u64 + 1)
+        .take((limit as u64).saturating_add(1))
         .read_to_end(&mut bytes)
         .context("incomplete HTTPS download")?;
     ensure!(bytes.len() <= limit, "download exceeds size limit");

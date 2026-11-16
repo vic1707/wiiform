@@ -7,7 +7,10 @@ pub const APP_BYTES: usize = 747_968;
 const DEFINITIONS_LIMIT: usize = 64 * 1024;
 
 pub fn load() -> Result<(Vec<u8>, Vec<u8>)> {
-    let executable = std::env::current_exe()?;
+    // Resolve symlinks so a linked binary finds the assets next to the real one.
+    let executable = std::env::current_exe()?
+        .canonicalize()
+        .context("cannot resolve the executable path")?;
     let bundled = executable
         .parent()
         .context("executable has no parent directory")?

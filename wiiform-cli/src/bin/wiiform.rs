@@ -55,15 +55,6 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 fn main() -> ExitCode {
-    #[cfg(unix)]
-    unsafe {
-        libc::umask(0o077);
-    }
-    match run(Cli::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("wiiform: {error:#}");
-            ExitCode::FAILURE
-        }
-    }
+    let cli = Cli::parse();
+    wiiform::cli::run("wiiform", || run(cli))
 }

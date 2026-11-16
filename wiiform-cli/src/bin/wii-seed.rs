@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::io;
+use std::{io, process::ExitCode};
 use wiiform::{
     native,
     recipe::{ResolvedPath, read_bounded},
@@ -21,8 +21,12 @@ struct Cli {
     keys: Option<ResolvedPath>,
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
+    wiiform::cli::run("wii-seed", || run(cli))
+}
+
+fn run(cli: Cli) -> Result<()> {
     let (nand, sidecar) = match cli.keys {
         Some(keys) => (
             read_bounded(
