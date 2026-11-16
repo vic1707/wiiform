@@ -56,12 +56,15 @@ namespace {
     const auto ticket = read_file(ticket_path, 64 * 1024);
     require(CheckTitleMetadata(title_tmd, ticket), "Installed channel TMD or ticket is malformed");
     const auto count = qFromBigEndian<quint16>(title_tmd.constData() + 0x1de);
-    require(title_tmd.size() == 0x1e4 + count * 0x24 && ticket.size() == 0x2a4,
+    // A console appends each ticket it receives for a title to the same file.
+    constexpr qsizetype ticket_size = 0x2a4;
+    require(title_tmd.size() == 0x1e4 + count * 0x24 && ticket.size() % ticket_size == 0,
             "Installed channel TMD or ticket has an unsupported size");
     Tmd tmd(title_tmd);
-    Ticket tik(ticket, false);
-    require(tmd.Tid() == id && tik.Tid() == id && tmd.Count() > 0,
-            "Installed channel metadata does not match its title ID");
+    require(tmd.Tid() == id && tmd.Count() > 0, "Installed channel metadata does not match its title ID");
+    for (qsizetype offset = 0; offset < ticket.size(); offset += ticket_size)
+      require(Ticket(ticket.mid(offset, ticket_size), false).Tid() == id,
+              "Installed channel metadata does not match its title ID");
     const auto app_count = tmd.Count();
     quint64 total_size = 0;
     QSet<QString> expected_paths{"title.tmd"};
