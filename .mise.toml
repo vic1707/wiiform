@@ -2,9 +2,6 @@
 cmake = "3.31.8"
 rust = "1.99.0"
 
-[env]
-CARGO_TARGET_DIR = "{{ config_root }}/build/cargo"
-
 [tools."github:xmake-io/xmake"]
 version = "3.1.2"
 bin = "xmake"
@@ -12,3 +9,52 @@ bin = "xmake"
 [tools."github:xmake-io/xmake".platforms]
 linux-arm64 = { asset_pattern = "xmake-bundle-v*.cosmocc", format = "raw" }
 linux-x64 = { asset_pattern = "xmake-bundle-v*.linux.x86_64", format = "raw" }
+
+[env]
+CARGO_TARGET_DIR = "{{ config_root }}/build/cargo"
+
+[tasks.configure]
+description = "Configure xmake; set QT_ROOT_DIR when it cannot find Qt by itself"
+run = 'xmake f -y -m release ${QT_ROOT_DIR:+--qt="$QT_ROOT_DIR"}'
+
+[tasks."build:native"]
+description = "Build the C++ library into build/lib"
+depends = ["configure"]
+run = 'xmake build -y ${WIIFORM_BUILD_JOBS:+-j"$WIIFORM_BUILD_JOBS"} wiiform-core'
+
+[tasks.build]
+description = "Build the library and the three commands into build/bin"
+depends = ["build:native"]
+run = [
+  "cargo build --locked --release -p wiiform --bins",
+  "mkdir -p build/bin",
+  "cp build/cargo/release/wiiform build/cargo/release/wii-seed build/cargo/release/wii-nand build/bin/",
+]
+
+[tasks."test:native"]
+description = "Build and run the C++ tests"
+depends = ["configure"]
+run = "xmake test -y"
+
+[tasks."test:rust"]
+description = "Check formatting, lint, and run the Rust tests (which also check the schema)"
+depends = ["build:native", "test:native"]
+env = { LD_LIBRARY_PATH = "{{ config_root }}/build/lib", DYLD_LIBRARY_PATH = "{{ config_root }}/build/lib", WIIFORM_TEST_FIXTURE_BUILDER = "{{ config_root }}/build/bin/nand-buffer-regressions" }
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --locked --release --workspace --all-targets",
+  "cargo test --locked --release --workspace",
+]
+
+[tasks.test]
+description = "Run every check"
+depends = ["test:native", "test:rust"]
+
+[tasks.schema]
+description = "Rewrite docs/wiiform.recipe.schema.json from the recipe types"
+env = { UPDATE_SCHEMA = "1" }
+run = "cargo test --locked -p wiiform-recipe committed_schema"
+
+[tasks.image]
+description = "Build the three container images"
+run = "docker buildx bake"

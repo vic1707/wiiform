@@ -26,13 +26,12 @@ occurs after writes begin.
 
 To use the public C++ API, include `wiiform/read.hpp` or `wiiform/write.hpp`.
 Initialize the native API from the application's main thread. An application
-that already uses Qt can keep its own application instance. To link against
-the extracted archive, set `WIIFORM_HOME` to its root.
+that already uses Qt can keep its own application instance. Build the library
+with `mise run build:native`, then link against the checkout.
 
 ```sh
-c++ -std=c++20 -I"$WIIFORM_HOME/include" example.cpp \
-  -L"$WIIFORM_HOME/lib" -lwiiform-core \
-  -Wl,-rpath,"$WIIFORM_HOME/lib" -o example
+c++ -std=c++20 -Iwiiform-lib/include example.cpp \
+  -Lbuild/lib -lwiiform-core -Wl,-rpath,"$PWD/build/lib" -o example
 ```
 
 ## Native implementation and provenance
@@ -55,16 +54,18 @@ The project-owned C++ library wraps the following areas:
 - **Priiloader** 0.10.0 (upstream commit
   `2b70b3693e9dc3e144db1a73224921d405081663`) is the reference for the
   Wii-side installer. Wiiform's host-side
-  NAND installation and settings support are project code. Release packaging
-  extracts the installer app, hack definitions, and license from the pinned
-  upstream ZIP. The native writer verifies the payload hashes.
+  NAND installation and settings support are project code. The installer app
+  and hack definitions from the upstream release are committed under
+  `wiiform-cli/assets/priiloader/` and compiled into the commands. The native
+  writer verifies the payload hashes.
 - **Rust dependencies** provide CLI parsing (`clap`), serialization and JSON
   (`serde`, `serde_json`), YAML parsing (`serde-saphyr`), schema generation
   (`schemars`), hashing (`sha2`), temporary files (`tempfile`), C++ interop
   (`cxx`), and supporting crates. Exact versions are recorded in Cargo files.
 
 Xmake builds the pinned WiiQt package. The host supplies its C++ toolchain,
-`make`, and Qt SDK with `qmake`. Release archives carry the Qt runtime.
+`make`, and Qt SDK with `qmake`. The container images install the Qt runtime
+from Debian.
 The [README](../README.md#host-dependencies) lists the prerequisites.
 
 ## Commands and supported operations
@@ -84,10 +85,10 @@ directory operation after the last native check succeeds.
 ## Developer tasks
 
 `mise run build` configures and builds Xmake before running Cargo.
-`mise run test` runs the C++, Rust, Clippy, and schema checks. Use
-`mise run schema` to regenerate the JSON Schema without a native build.
-CI generates the schema and checks it against the committed copy under
-`docs/`.
+`mise run test` runs the C++ tests (`xmake test`), rustfmt, Clippy and the
+Rust tests. One Rust test compares the committed JSON Schema under `docs/`
+with the recipe types; `mise run schema` rewrites the file. `mise run image`
+builds the container images. Every task is a few lines in `.mise.toml`.
 
 ## Update an existing recipe
 
@@ -138,13 +139,8 @@ padding remain byte-identical to the seed. The build publishes the verified
 NAND footer as `keys.bin`.
 Use `wiiform --seed -` to read plaintext YAML from stdin.
 
-## Release archive and mise
+## Releases
 
-Run `mise run package` on macOS arm64 or Linux x86_64 to build the archive.
-Once the archives and checksums are published on GitHub, this mise
-configuration installs the commands with their shared native runtime.
-
-```toml
-[tools]
-"github:vic1707/wiiform" = { version = "0.1.0", strip_components = 1, bin_path = "bin" }
-```
+Wiiform is released as container images only: `wiiform`, `wii-seed` and
+`wii-nand`, built from the `Containerfile` by CI. See the
+[README](../README.md#container-images).

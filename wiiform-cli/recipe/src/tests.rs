@@ -329,3 +329,19 @@ fn cios_slots_and_bases_are_checked_when_the_recipe_is_read() {
     assert!(recipe(&[cios(249, 55)]).is_err());
     assert!(message(recipe(&[cios(249, 56), cios(249, 57)])).contains("twice"));
 }
+
+/// The committed schema is what editors use, so it must match the types.
+/// Run with `UPDATE_SCHEMA=1` to rewrite it.
+#[test]
+fn committed_schema_matches_the_recipe_types() -> Result<()> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/wiiform.recipe.schema.json");
+    let schema = crate::json_schema()? + "\n";
+    if std::env::var_os("UPDATE_SCHEMA").is_some() {
+        fs::write(&path, &schema)?;
+    }
+    assert!(
+        fs::read_to_string(&path)? == schema,
+        "docs/wiiform.recipe.schema.json is stale: run `mise run schema`"
+    );
+    Ok(())
+}

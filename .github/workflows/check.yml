@@ -8,119 +8,84 @@ permissions:
   contents: read
 
 jobs:
-  recipe-schema:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@v3
-        with:
-          version: 2026.11.4
-      - name: Generate and verify recipe schema
-        run: |
-          mise run schema
-          git diff --exit-code -- docs/wiiform.recipe.schema.json
-      - uses: actions/upload-artifact@v7
-        with:
-          name: wiiform-recipe-schema
-          path: docs/wiiform.recipe.schema.json
-          if-no-files-found: error
-
-  build-test-package:
+  test:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-24.04
-            platform: linux-x86_64
-          - runner: macos-15
-            platform: macos-arm64
+        runner: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-
       - uses: jdx/mise-action@v3
         with:
           version: 2026.11.4
-
-      - name: Install Linux build and archive dependencies
+      - name: Install Qt on Linux
         if: runner.os == 'Linux'
         run: |
-          test "$(uname -m)" = x86_64
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential qtbase5-dev qt5-qmake patchelf pax-utils
+          sudo apt-get install -y --no-install-recommends build-essential qtbase5-dev qt5-qmake
           echo "QT_ROOT_DIR=/usr" >> "$GITHUB_ENV"
-
-      - name: Install macOS Qt SDK
+      - name: Install Qt on macOS
         if: runner.os == 'macOS'
-        run: |
-          test "$(uname -m)" = arm64
-          brew install qt@5
-          echo "QT_ROOT_DIR=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
+        run: brew install qt@5
+      - run: mise run test
 
-      - name: Configure and build
-        run: mise run build
-
-      - name: Run synthetic regressions and Clippy
-        run: mise run test
-
-      - name: Package archive
-        run: |
-          mise run package
-          (cd dist && shasum -a 256 -c ./*.sha256)
-
-      - name: Test relocated Linux bundle in a clean container
-        if: runner.os == 'Linux'
-        run: |
-          unpacked="$RUNNER_TEMP/relocated Wiiform"
-          mkdir "$unpacked"
-          tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
-          test -s "$unpacked/share/wiiform/priiloader/priiloader.app"
-          test -s "$unpacked/share/wiiform/priiloader/hacks_hash.ini"
-          test -s "$unpacked/share/wiiform/priiloader/LICENSE"
-          fixture="$RUNNER_TEMP/synthetic"
-          build/bin/nand-buffer-regressions --make-fixtures "$fixture"
-          docker run --rm --network none -v "$unpacked:/opt/wiiform:ro" \
-            -v "$fixture:/fixtures:ro" ubuntu:24.04 \
-            sh -ec 'export WIIFORM_NUS_CACHE=/tmp/cache WIIFORM_NUS_OFFLINE=1
-              /opt/wiiform/bin/wiiform --version
-              /opt/wiiform/bin/wii-seed --version
-              mkdir /tmp/cache
-              if /opt/wiiform/bin/wii-nand install-title \
-                /fixtures/nand.bin /tmp/new.nand 0000000100000002 514 >/tmp/error 2>&1; then exit 1; fi
-              grep -F "Offline mode" /tmp/error'
-
-      - name: Test relocated macOS bundle
-        if: runner.os == 'macOS'
-        run: |
-          unpacked="$RUNNER_TEMP/relocated Wiiform"
-          mkdir "$unpacked"
-          tar -xf dist/*.tar.gz --strip-components=1 -C "$unpacked"
-          test -s "$unpacked/share/wiiform/priiloader/priiloader.app"
-          test -s "$unpacked/share/wiiform/priiloader/hacks_hash.ini"
-          test -s "$unpacked/share/wiiform/priiloader/LICENSE"
-          env -i PATH=/usr/bin:/bin "$unpacked/bin/wiiform" --version
-          env -i PATH=/usr/bin:/bin "$unpacked/bin/wii-seed" --version
-          fixture="$RUNNER_TEMP/synthetic"
-          build/bin/nand-buffer-regressions --make-fixtures "$fixture"
-          mkdir "$fixture/cache"
-          if env -i PATH=/usr/bin:/bin WIIFORM_NUS_CACHE="$fixture/cache" WIIFORM_NUS_OFFLINE=1 \
-            "$unpacked/bin/wii-nand" install-title \
-            "$fixture/nand.bin" "$fixture/new.nand" 0000000100000002 514 \
-            >"$fixture/error" 2>&1; then
-            exit 1
-          fi
-          grep -F "Offline mode" "$fixture/error"
-
-      - uses: actions/upload-artifact@v7
+  # Each image runs its command's --version while it builds, which is the smoke test.
+  images:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+      # Branch and pull request names are not valid tags; only published builds use the ref name.
+      TAG: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) && github.ref_name || 'ci' }}-${{ matrix.arch }}
+      PUBLISH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+    steps:
+      - uses: actions/checkout@v7
         with:
-          name: wiiform-${{ matrix.platform }}
-          path: |
-            dist/*.tar.gz
-            dist/*.sha256
-          if-no-files-found: error
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: env.PUBLISH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/bake-action@v6
+        with:
+          source: .
+          push: ${{ env.PUBLISH == 'true' }}
+
+  # Joins the two architectures of each image under one tag.
+  manifests:
+    needs: images
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    env:
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          for image in wiiform wii-seed wii-nand; do
+            docker buildx imagetools create -t "$REGISTRY/$image:$TAG" \
+              "$REGISTRY/$image:$TAG-amd64" "$REGISTRY/$image:$TAG-arm64"
+          done

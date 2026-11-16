@@ -14,7 +14,7 @@ fn main() {
     let library = native.join(format!("libwiiform-core.{extension}"));
     assert!(
         library.is_file(),
-        "Run mise run native:build to create {}",
+        "Run `mise run build:native` to create {}",
         library.display()
     );
 
@@ -28,9 +28,6 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", native.display());
     println!("cargo:rustc-link-lib=dylib=wiiform-core");
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,{loader}/../lib");
-    if extension == "dylib" {
-        println!("cargo:rustc-link-arg-bins=-Wl,-headerpad_max_install_names");
-    }
     for path in [
         "src/ffi.rs",
         "src/interop/ffi_adapter.cpp",

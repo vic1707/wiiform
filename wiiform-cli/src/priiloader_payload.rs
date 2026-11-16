@@ -1,23 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
-use anyhow::{Context, Result};
+//! Priiloader 0.10.0, redistributed unmodified from its release (see `THIRD_PARTY.md`).
+//! The library checks both payloads against their pinned hashes before writing them.
 
-use crate::recipe::read_bounded;
-
-pub const APP_BYTES: usize = 747_968;
-const DEFINITIONS_LIMIT: usize = 64 * 1024;
-
-pub fn load() -> Result<(Vec<u8>, Vec<u8>)> {
-    // Resolve symlinks so a linked binary finds the assets next to the real one.
-    let executable = std::env::current_exe()?
-        .canonicalize()
-        .context("cannot resolve the executable path")?;
-    let bundled = executable
-        .parent()
-        .context("executable has no parent directory")?
-        .join("../share/wiiform/priiloader");
-    let app = read_bounded(&bundled.join("priiloader.app"), APP_BYTES..=APP_BYTES)
-        .context("cannot read Priiloader app")?;
-    let definitions = read_bounded(&bundled.join("hacks_hash.ini"), 1..=DEFINITIONS_LIMIT)
-        .context("cannot read pinned Priiloader hack definitions")?;
-    Ok((app, definitions))
-}
+/// The NAND application Priiloader's own installer writes.
+pub const APP: &[u8] = include_bytes!("../assets/priiloader/priiloader.app");
+/// The System Menu hack definitions that ship with it.
+pub const DEFINITIONS: &[u8] = include_bytes!("../assets/priiloader/hacks_hash.ini");

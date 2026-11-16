@@ -9,10 +9,6 @@ publish = false
 default = []
 cli = ["dep:clap"]
 
-[[bin]]
-name = "schema"
-path = "bin/schema.rs"
-
 [dependencies]
 anyhow.workspace = true
 base64 = "0.23"

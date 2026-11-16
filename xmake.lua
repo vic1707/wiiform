@@ -23,9 +23,6 @@ target("wiiform-core")
     add_files("wiiform-lib/src/**/*.cpp")
     add_cxxflags("-Wall", "-Wextra", "-pedantic")
     set_targetdir("build/lib")
-    if is_plat("macosx") then
-        add_shflags("-Wl,-headerpad_max_install_names")
-    end
 target_end()
 
 for name, source in pairs({
@@ -43,5 +40,6 @@ for name, source in pairs({
         add_includedirs(private_headers)
         add_files(source)
         set_targetdir("build/bin")
+        add_tests("default", {rundir = os.projectdir()})
     target_end()
 end

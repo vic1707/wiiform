@@ -144,12 +144,6 @@ fn build_with(
         recipe.menu = menu;
         recipe.validate()?;
     }
-    let priiloader = recipe
-        .priiloader
-        .as_ref()
-        .map(|config| priiloader_payload::load().map(|assets| (config, assets)))
-        .transpose()?;
-
     let (mut nand, identity) = create_stock(&recipe).context("cannot create stock NAND")?;
 
     let removals: Vec<TitleId> = (recipe.remove.iter())
@@ -202,12 +196,12 @@ fn build_with(
         report_installed(&installed, recipe.menu);
     }
 
-    if let Some((config, (app, definitions))) = &priiloader {
-        nand.install_priiloader(app)
+    if let Some(config) = &recipe.priiloader {
+        nand.install_priiloader(priiloader_payload::APP)
             .context("cannot install Priiloader")?;
         nand.configure_priiloader(config)
             .context("cannot configure Priiloader")?;
-        nand.set_priiloader_hacks(definitions, &config.hacks)
+        nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
             .context("cannot set Priiloader hacks")?;
     }
 

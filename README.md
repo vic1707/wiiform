@@ -21,14 +21,14 @@ mise run build
 mise run test
 ```
 
-The build task configures Xmake, builds the C++ library, then builds and stages
-the Rust commands in `build/bin/`. Mise gives Xmake a checkout-local temp
-directory for its bundled Lua files. Use `mise tasks` to list individual tasks.
+`mise run build` builds the C++ library with xmake, then the Rust commands with
+Cargo, and puts them in `build/bin/`. `mise tasks` lists the tasks; they are
+all defined in `.mise.toml`.
 
 ```sh
-mise run run:wiiform -- --help
-mise run run:wii-nand -- --help
-mise run run:wii-seed -- --help
+build/bin/wiiform --help
+build/bin/wii-nand --help
+build/bin/wii-seed --help
 ```
 
 ### Host dependencies
@@ -37,21 +37,19 @@ mise run run:wii-seed -- --help
 | --- | --- |
 | mise | Xmake, CMake, Rust and Cargo, rustfmt, and Clippy |
 | Xmake and Cargo | Pinned WiiQt and locked Rust crates |
-| Host | Git, a C++20 compiler and linker, make, and a Qt SDK with qmake, Qt Core, Gui, Widgets, and Network |
-| Archive creation | Python 3 and Xcode linker tools on macOS. patchelf and pax-utils on Linux |
+| Host | Git, a C++20 compiler and linker, make, and a Qt SDK with qmake, Qt Core, and Qt Network |
 
-On macOS, install Xcode Command Line Tools and a Qt SDK. The build task
-detects Homebrew Qt 5 under `/opt/homebrew/opt/qt@5`. Set `QT_ROOT_DIR` for a
-different SDK. On Ubuntu 24.04, install `build-essential`, `git`,
+On macOS, install Xcode Command Line Tools and Homebrew's `qt@5`; xmake finds
+it by itself. On Debian or Ubuntu, install `build-essential`, `git`,
 `qtbase5-dev`, and `qt5-qmake`, then run `QT_ROOT_DIR=/usr mise run build`.
-A first build retrieves dependencies if the caches are empty. The prebuilt
-archive carries its Qt runtime.
+Set `QT_ROOT_DIR` for any other SDK location.
+A first build retrieves dependencies if the caches are empty.
 
 ## Recipe build
 
 See the [example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
-regenerate the schema from the Rust recipe model. A WAD entry names exactly
+regenerate the schema from the Rust recipe model; the tests fail when it is stale. A WAD entry names exactly
 one source next to its `sha256`: `path` for a local file (relative to the
 recipe), `url` for an HTTPS download, or `inline` for the file as base64 text.
 The SHA-256 is of the raw WAD bytes. Reading a recipe loads, downloads and
@@ -100,9 +98,8 @@ apply all defaults. Omit `setup` or set it to `null` to run the Wii setup wizard
 Pair Wii Remotes
 again after restoring a prepared image.
 
-Wiiform uses the pinned Priiloader assets included in the release archive.
-When running from a checkout, run `mise run assets:priiloader` once before
-using a Priiloader recipe. Use `priiloader: {}` to install with pinned defaults.
+The commands carry the pinned Priiloader app and hack definitions.
+Use `priiloader: {}` to install with pinned defaults.
 Settings sit directly under `priiloader`, and `hacks` lists the hacks to
 enable. Each application replaces the settings and disables unlisted hacks.
 
@@ -202,24 +199,11 @@ such as `--stop-disc` or `--white-background` to enable it, and `--hack NAME`
 once per hack.
 An edit uses about 528 MiB of memory for the working NAND plus the payload.
 
-## Release packaging
-
-Run `mise run package` on macOS arm64 or Linux x86_64. The task builds the
-commands and writes an archive and its SHA-256 file to `dist/`. Set
-`WIIFORM_DIST_DIR` to choose a different output directory. The package task
-prepares the pinned Priiloader assets from the upstream release ZIP. Set
-`WIIFORM_PRIILOADER_ARCHIVE` to a local copy to package without fetching it.
-
-The archive includes the three commands under `bin/`, runtime libraries under
-`lib/`, Priiloader assets under `share/wiiform/`, and public C++ headers under
-`include/`. Keep the extracted directory layout together. See the
-[migration guide](docs/migration.md) for the old recipe mapping and the mise
-configuration for GitHub releases.
-
 ## Container images
 
-The `Containerfile` builds one image per command. Each carries the command, its
-shared libraries and, where needed, the Priiloader assets under `/opt/wiiform`.
+Wiiform is released as container images, one per command. `mise run image`
+(`docker buildx bake`) builds all three; with podman, build one target at a
+time.
 
 ```sh
 podman build --target wiiform -t wiiform .
@@ -236,6 +220,9 @@ podman run --rm -v "$PWD/backups:/in:ro" wii-seed /in/nand.bin |
     podman run --rm -i -v "$PWD/work:/work" wiiform \
         --seed - --recipe /work/recipe.yaml --output /work/bundle
 ```
+
+CI builds the images for amd64 and arm64 and publishes them to the GitHub
+container registry from `main` and from tags.
 
 ## License and attribution
 

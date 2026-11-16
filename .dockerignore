@@ -3,7 +3,6 @@
 .xmake/
 build/
 dist/
-docs/
 private/
 target/
 *.seed.yaml

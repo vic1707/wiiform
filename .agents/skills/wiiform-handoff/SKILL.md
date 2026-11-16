@@ -37,14 +37,15 @@ revision for this handoff is `e6549f7`.
   the two-file bundle. Compare the output against the recipe and baseline as a
   separate check.
 - **Download or packaging behavior.** Exercise the actual download path and a
-  failure case if it changed. For runtime or distribution changes, run
-  `mise run package` and exercise the relocated archive. The CI workflow builds
-  both supported platforms and checks relocation with synthetic inputs.
+  failure case if it changed. For runtime or distribution changes, build the
+  container images (`mise run image`, or `podman build --target ...`) and run
+  a build inside them. The CI workflow tests both platforms and builds the
+  images for amd64 and arm64.
 - **Wii behavior.** Label results as host-verified, RestoreMii simulation, or
   hardware restore and boot, according to what ran. Restore, first-run setup,
   Wii Menu recovery, and app launch need observations from the target Wii.
 
-For a real NAND or archive check, use the recorded real-seed commands and
+For a real NAND or image check, use the recorded real-seed commands and
 comparison criteria. [Manual validation](references/manual-validation.md)
 
 ## Use adjacent repos when relevant

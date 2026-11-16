@@ -17,8 +17,7 @@ Set `backup` and `nus_cache` to approved absolute paths and run these commands
 from Wiiform in one Bash session so the later blocks reuse its variables.
 This case uses the parents 4.3E capture with BootMii in
 boot2, so it selects `preserve-source`. Use the default stock policy for an
-appropriate stock-boot capture. Run `mise run assets:priiloader` if the
-pinned assets are missing and the recipe uses Priiloader.
+appropriate stock-boot capture.
 
 ```bash
 set -euo pipefail
@@ -139,30 +138,24 @@ intentional change, account for each logical difference. The legacy reader
 shares WiiQt with Wiiform, so this check compares the resulting state and
 exercises independent orchestration around the same backend.
 
-## Exercise an archive or URL change
+## Exercise an image or URL change
 
-Use a new output and extraction directory. Supply the supported
-`platform` value, `macos-arm64` or `linux-x86_64`. The package task may need
-the pinned Priiloader archive if the assets are uncached. See the
-[release instructions](../../../../README.md#release-packaging) and
-[CI smoke commands](../../../../.github/workflows/check.yml).
+Build the images and repeat the prepared build inside them, mounting the
+backup and the NUS cache read-only and a writable output directory. See the
+[container section](../../../../README.md#container-images).
 
 ```bash
-: "${platform:?set platform to macos-arm64 or linux-x86_64}"
-WIIFORM_DIST_DIR="$scratch/dist" mise run package
-version=$(awk -F '"' '/^version = / { print $2; exit }' wiiform-cli/Cargo.toml)
-archive="wiiform-$version-$platform.tar.gz"
-(cd "$scratch/dist" && shasum -a 256 -c "$archive.sha256")
-mkdir "$scratch/relocated Wiiform"
-tar -xf "$scratch/dist/$archive" --strip-components=1 -C "$scratch/relocated Wiiform"
-env -i PATH=/usr/bin:/bin "$scratch/relocated Wiiform/bin/wiiform" --version
+podman build --target wii-seed -t wii-seed .
+podman build --target wiiform -t wiiform .
+podman run --rm -v "$(dirname "$backup"):/in:ro" wii-seed "/in/$(basename "$backup")" |
+    podman run --rm -i -v "$scratch:/work" -v "$nus_cache:/cache:ro" \
+        -e WIIFORM_NUS_CACHE=/cache -e WIIFORM_NUS_OFFLINE=1 wiiform \
+        --seed - --recipe /work/recipe.yaml --output /work/bundle
 ```
 
-For a stronger smoke, repeat the prepared build with this relocated binary
-and give it only the required NUS variables. Exercise a real HTTPS payload
-when working on downloads, and check that a bad SHA-256 fails without
-publishing a bundle. Test Linux packaging in the Linux CI job when working
-from macOS.
+Compare the result with a native build using the logical comparator. Exercise
+a real HTTPS payload when working on downloads, and check that a bad SHA-256
+fails without publishing a bundle.
 
 ## What has actually been checked
 

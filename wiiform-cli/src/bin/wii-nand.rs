@@ -132,14 +132,11 @@ fn run(cli: Cli) -> Result<()> {
             })
         }
         Command::RemoveTitle { image, title_id } => image.edit(|nand| nand.remove_title(title_id)),
-        Command::InstallPriiloader { image, config } => {
-            let (app, definitions) = priiloader_payload::load()?;
-            image.edit(|nand| {
-                nand.install_priiloader(&app)?;
-                nand.configure_priiloader(&config)?;
-                nand.set_priiloader_hacks(&definitions, &config.hacks)
-            })
-        }
+        Command::InstallPriiloader { image, config } => image.edit(|nand| {
+            nand.install_priiloader(priiloader_payload::APP)?;
+            nand.configure_priiloader(&config)?;
+            nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
+        }),
     }
 }
 
