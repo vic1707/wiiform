@@ -149,7 +149,7 @@ namespace {
     require(tmd_entry && ticket_entry, "The occupied cIOS slot is not a complete stock stub");
     const auto metadata = read_authenticated_file(nand, tmd_entry, 2 * 1024 * 1024);
     const auto ticket_data = read_authenticated_file(nand, ticket_entry, 64 * 1024);
-    require(check_title_metadata(metadata, ticket_data) &&
+    require(CheckTitleMetadata(metadata, ticket_data) &&
                 check_cert_chain(metadata) == ERROR_SUCCESS && check_cert_chain(ticket_data) == ERROR_SUCCESS,
             "The occupied cIOS slot is not an authentic Nintendo stub");
     const auto count = qFromBigEndian<quint16>(metadata.constData() + 0x1de);

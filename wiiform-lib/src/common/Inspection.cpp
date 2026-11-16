@@ -267,7 +267,7 @@ namespace {
     const auto content_dir = "/title/" + id_text.left(8) + "/" + id_text.mid(8) + "/content";
     const auto metadata = index.read(content_dir + "/title.tmd", 2 * 1024 * 1024);
     const auto ticket = index.read("/ticket/" + id_text.left(8) + "/" + id_text.mid(8) + ".tik", 64 * 1024);
-    require(check_title_metadata(metadata, ticket) &&
+    require(CheckTitleMetadata(metadata, ticket) &&
                 check_cert_chain(metadata) == ERROR_SUCCESS && check_cert_chain(ticket) == ERROR_SUCCESS,
             "Stock title metadata signature failed");
     Tmd tmd(metadata);

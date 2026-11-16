@@ -54,7 +54,7 @@ namespace {
 
   auto authentic_ticket(NandBin& nand, const QByteArray& tmd) -> QByteArray {
     const auto ticket = read_authenticated_file(nand, find_path(nand, ticket_path), 0x2a4);
-    require(ticket.size() == 0x2a4 && check_title_metadata(tmd, ticket) &&
+    require(ticket.size() == 0x2a4 && CheckTitleMetadata(tmd, ticket) &&
                 check_cert_chain(ticket) == ERROR_SUCCESS && Ticket(ticket, false).Tid() == 0x100000002ull,
             "System Menu ticket is not an authentic stock ticket");
     return ticket;

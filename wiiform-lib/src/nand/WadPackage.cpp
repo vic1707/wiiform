@@ -84,7 +84,7 @@ namespace {
 
     auto ticket_bytes = bytes.mid(ticket_offset, ticket_size);
     const auto tmd_bytes = bytes.mid(tmd_offset, tmd_size);
-    require(check_title_metadata(tmd_bytes, ticket_bytes), "Invalid WAD ticket or TMD");
+    require(CheckTitleMetadata(tmd_bytes, ticket_bytes), "Invalid WAD ticket or TMD");
     const auto count = qFromBigEndian<quint16>(tmd_bytes.constData() + 0x1de);
     require(tmd_size == quint32(tmd_header_size + count * content_record_size),
             "WAD TMD size does not match its content table");

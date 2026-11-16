@@ -22,6 +22,5 @@ private:
   friend auto validate_title(NusJob job, const QString& failure_message) -> ValidatedTitleJob;
 };
 
-bool check_title_metadata(const QByteArray& tmd, const QByteArray& ticket);
 bool decrypt_title(NusJob& job);
 auto validate_title(NusJob job, const QString& failure_message) -> ValidatedTitleJob;

@@ -61,7 +61,7 @@ namespace {
     };
     const auto title_tmd = read_file(content_path + "/title.tmd", 2 * 1024 * 1024);
     const auto ticket = read_file(ticket_path, 64 * 1024);
-    require(check_title_metadata(title_tmd, ticket), "Installed channel TMD or ticket is malformed");
+    require(CheckTitleMetadata(title_tmd, ticket), "Installed channel TMD or ticket is malformed");
     const auto count = qFromBigEndian<quint16>(title_tmd.constData() + 0x1de);
     require(title_tmd.size() == 0x1e4 + count * 0x24 && ticket.size() == 0x2a4,
             "Installed channel TMD or ticket has an unsupported size");

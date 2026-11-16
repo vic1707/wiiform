@@ -104,7 +104,7 @@ namespace factory {
     };
     const auto metadata = load("tmd." + QString::number(version), 2 * 1024 * 1024);
     const auto ticket = load("cetk", 64 * 1024);
-    require(check_title_metadata(metadata, ticket), "Malformed title metadata: " + text);
+    require(CheckTitleMetadata(metadata, ticket), "Malformed title metadata: " + text);
     require(static_cast<uchar>(ticket[0x1f1]) == 0, "WiiQt does not support this ticket's common-key index");
     Tmd tmd(metadata);
     Ticket tik(ticket, false);

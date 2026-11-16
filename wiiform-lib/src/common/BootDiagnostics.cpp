@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Boot2 map layout follows giantpune's WiiQt Blocks0to7 parser.
 #include <BootDiagnostics.hpp>
+#include <tiktmd.h>
 #include <BootFlags.hpp>
 
 #include <Titles.hpp>
@@ -86,7 +87,7 @@ namespace {
             "Boot2 metadata extends outside its header block");
     const auto ticket = first.mid(ticket_offset, ticket_size);
     const auto tmd = first.mid(tmd_offset, tmd_size);
-    require(check_title_metadata(tmd, ticket) && qFromBigEndian<quint16>(tmd.constData() + 0x1de) == 1 &&
+    require(CheckTitleMetadata(tmd, ticket) && qFromBigEndian<quint16>(tmd.constData() + 0x1de) == 1 &&
                 ticket[0x1f1] == '\0', "Malformed boot2 ticket or TMD");
     const auto bytes = qFromBigEndian<quint64>(tmd.constData() + 0x1ec);
     const auto payload_end = quint64(first.size()) + kMapOffset;
