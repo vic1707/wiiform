@@ -5,10 +5,10 @@
 
 #include <QtEndian>
 
-#include <array>
 #include <functional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
   constexpr qint64 nand_bytes = 0x21000000;
@@ -146,19 +146,20 @@ namespace {
     return static_cast<quint16>(current_cluster);
   }
 
-  auto read_fats(const QByteArray& metadata) -> std::array<quint16, cluster_count> {
+  // These tables are heap-allocated: together they would take about 350 KB of stack.
+  auto read_fats(const QByteArray& metadata) -> std::vector<quint16> {
     require(metadata.size() >= fst_offset, "Active metadata FAT is truncated");
-    std::array<quint16, cluster_count> fats{};
+    std::vector<quint16> fats(cluster_count);
     const auto* bytes = reinterpret_cast<const uchar*>(metadata.constData() + metadata_header_bytes);
     for (quint32 i = 0; i < cluster_count; ++i)
       fats[i] = qFromBigEndian<quint16>(bytes + i * sizeof(quint16));
     return fats;
   }
 
-  auto read_fsts(const QByteArray& metadata) -> std::array<FstEntry, fst_entry_count> {
+  auto read_fsts(const QByteArray& metadata) -> std::vector<FstEntry> {
     constexpr int fst_bytes = int(fst_entry_count) * fst_entry_bytes;
     require(metadata.size() >= fst_offset + fst_bytes, "Active metadata FST is truncated");
-    std::array<FstEntry, fst_entry_count> entries{};
+    std::vector<FstEntry> entries(fst_entry_count);
     for (quint32 i = 0; i < fst_entry_count; ++i) {
       const int offset = fst_offset + int(i) * fst_entry_bytes;
       const auto* raw = metadata.constData() + offset;
@@ -168,69 +169,71 @@ namespace {
     return entries;
   }
 
-  auto validate_tree_and_chains(const QByteArray& metadata, const std::array<quint16, cluster_count>& fats,
-                                const std::array<FstEntry, fst_entry_count>& entries, bool generated)
+  auto validate_tree_and_chains(const QByteArray& metadata, const std::vector<quint16>& fats,
+                                const std::vector<FstEntry>& entries, bool generated)
       -> inspect::LayoutSummary {
     const auto& root = entries[0];
     require(root.name == "/" && (root.attr & 3) == 2 && root.size == 0 && root.sibling == fst_end,
             "Invalid NAND FST root");
 
-    std::array<bool, fst_entry_count> visited{};
-    std::array<bool, cluster_count> live_clusters{};
+    std::vector<bool> visited(fst_entry_count);
+    std::vector<bool> live_clusters(cluster_count);
     inspect::LayoutSummary summary;
     int visited_count = 0;
+    // Siblings are followed iteratively, so only directory nesting counts as depth.
     std::function<void(quint16, int)> walk = [&](quint16 index, int depth) {
-      require(index < fst_entry_count && depth <= maximum_tree_depth,
-              "NAND FST traversal exceeds safety limits");
-      require(!visited[index], "NAND FST contains a cycle or duplicate entry reference");
-      const auto& entry = entries[index];
-      read_name(metadata.mid(fst_offset + int(index) * fst_entry_bytes, 12), index == 0);
-      require(!entry.name.empty() && ++visited_count <= fst_entry_count,
-              "NAND FST references an unused entry");
-      visited[index] = true;
+      require(depth <= maximum_tree_depth, "NAND FST traversal exceeds safety limits");
+      for (;;) {
+        require(index < fst_entry_count, "NAND FST traversal exceeds safety limits");
+        require(!visited[index], "NAND FST contains a cycle or duplicate entry reference");
+        const auto& entry = entries[index];
+        read_name(metadata.mid(fst_offset + int(index) * fst_entry_bytes, 12), index == 0);
+        require(!entry.name.empty() && ++visited_count <= fst_entry_count,
+                "NAND FST references an unused entry");
+        visited[index] = true;
 
-      const auto mode = entry.attr & 3;
-      require(mode == 1 || mode == 2, "NAND FST contains an unsupported entry type");
-      if (mode == 2) {
-        require(entry.size == 0, "NAND directory has a nonzero size");
-        if (entry.sub != fst_end) {
-          require(entry.sub > 0 && entry.sub <= fst_entry_last,
-                  "NAND directory child index is out of bounds");
-        }
-      } else {
-        require(entry.size <= static_cast<quint32>(nand_bytes), "NAND file exceeds layout limits");
-        const quint64 cluster_bytes = static_cast<quint64>(data_cluster_bytes);
-        const quint64 needed = (quint64(entry.size) + cluster_bytes - 1) / cluster_bytes;
-        require(needed <= metadata_cluster_first - data_cluster_first,
-                "NAND file cluster count exceeds the data area");
-        if (!needed) {
-          require(entry.sub >= 0xfff0 && (!generated || entry.sub == fat_end),
-                  "Empty NAND file has an invalid cluster marker");
+        const auto mode = entry.attr & 3;
+        require(mode == 1 || mode == 2, "NAND FST contains an unsupported entry type");
+        if (mode == 2) {
+          require(entry.size == 0, "NAND directory has a nonzero size");
+          if (entry.sub != fst_end) {
+            require(entry.sub > 0 && entry.sub <= fst_entry_last,
+                    "NAND directory child index is out of bounds");
+          }
         } else {
-          require(valid_data_cluster(entry.sub), "NAND file starts outside the data area");
-          quint16 cluster = entry.sub;
-          for (quint64 i = 0; i < needed; ++i) {
-            require(valid_data_cluster(cluster) && !live_clusters[cluster],
-                    "NAND file chains overlap or leave the data area");
-            live_clusters[cluster] = true;
-            const auto next = fats[cluster];
-            if (i + 1 == needed) {
-              require(next == fat_end, "NAND file chain length does not match its FST size");
-            } else {
-              require(valid_data_cluster(next), "NAND file chain ends before its FST size");
-              cluster = next;
+          require(entry.size <= static_cast<quint32>(nand_bytes), "NAND file exceeds layout limits");
+          const quint64 cluster_bytes = static_cast<quint64>(data_cluster_bytes);
+          const quint64 needed = (quint64(entry.size) + cluster_bytes - 1) / cluster_bytes;
+          require(needed <= metadata_cluster_first - data_cluster_first,
+                  "NAND file cluster count exceeds the data area");
+          if (!needed) {
+            require(entry.sub >= 0xfff0 && (!generated || entry.sub == fat_end),
+                    "Empty NAND file has an invalid cluster marker");
+          } else {
+            require(valid_data_cluster(entry.sub), "NAND file starts outside the data area");
+            quint16 cluster = entry.sub;
+            for (quint64 i = 0; i < needed; ++i) {
+              require(valid_data_cluster(cluster) && !live_clusters[cluster],
+                      "NAND file chains overlap or leave the data area");
+              live_clusters[cluster] = true;
+              const auto next = fats[cluster];
+              if (i + 1 == needed) {
+                require(next == fat_end, "NAND file chain length does not match its FST size");
+              } else {
+                require(valid_data_cluster(next), "NAND file chain ends before its FST size");
+                cluster = next;
+              }
             }
           }
         }
-      }
 
-      if (entry.sibling != fst_end) {
+        if (mode == 2 && entry.sub != fst_end)
+          walk(entry.sub, depth + 1);
+        if (entry.sibling == fst_end) return;
         require(entry.sibling > 0 && entry.sibling <= fst_entry_last,
                 "NAND FST sibling index is out of bounds");
-        walk(entry.sibling, depth + 1);
+        index = entry.sibling;
       }
-      if (mode == 2 && entry.sub != fst_end)
-        walk(entry.sub, depth + 1);
     };
     walk(0, 0);
 

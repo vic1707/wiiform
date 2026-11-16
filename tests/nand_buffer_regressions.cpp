@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Factory.hpp>
+#include <Layout.hpp>
 #include <Titles.hpp>
 #include <WorkingImage.hpp>
 #include <tiktmd.h>
@@ -201,6 +202,25 @@ namespace {
                          QByteArray(0x108000, '\xff')) &&
               initialize_system(nand, uid.Data()) && nand.WriteMetaData(),
           "Cannot construct an empty synthetic NAND");
+  }
+
+  // A directory holding more entries than the validator's nesting limit must still be accepted,
+  // and the validator must fit on a secondary thread's stack.
+  void test_wide_directory_layout(const QString& directory) {
+    const auto path = QDir(directory).filePath("wide.bin");
+    create_empty_nand(path);
+    {
+      NandBin nand;
+      check(nand.SetPath(path) && nand.InitNand(), "Cannot reopen wide-directory NAND");
+      check(nand.CreateEntry("/wide", 0, 0, NAND_DIR, NAND_RW, NAND_RW, 0), "Cannot create wide directory");
+      for (int i = 0; i < 300; ++i)
+        check(nand.CreateEntry(QString("/wide/%1").arg(i, 8, 16, QChar('0')), 0, 0, NAND_DIR,
+                               NAND_RW, NAND_RW, 0),
+              "Cannot create wide directory child");
+      check(nand.WriteMetaData(), "Cannot flush wide-directory NAND");
+    }
+    const auto image = read_bytes(path, nand_file_size);
+    std::async(std::launch::async, [&] { inspect::validate_layout(image, true); }).get();
   }
 
   auto make_fixtures(const QString& directory) -> void {
@@ -472,6 +492,7 @@ int main(int argc, char** argv) {
       test_wad_rejections(image, make_wad());
       test_ios_wad_policy(image);
     }
+    test_wide_directory_layout(temporary.path());
     test_wad_installation(temporary.path());
     test_shared_wad_matching(temporary.path());
     test_cios_installation(temporary.path());
