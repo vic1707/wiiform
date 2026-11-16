@@ -4,7 +4,7 @@ package("wiiqt-nand")
   set_license("GPL-2.0-only")
   -- WIIQT_GIT_URL points the build at a local checkout of the fork while developing against it.
   add_urls(os.getenv("WIIQT_GIT_URL") or "https://github.com/vic1707/wiiqt-tools.git")
-  add_versions("0.2.0", "f5ca487786c8458f2ebee15e993ed8584bfc2d84")
+  add_versions("0.2.0", "a0f38e8185342bd996e9d4e279c613ec66b4b5e8")
   add_configs("qt_sdk", {description = "Detected Qt SDK and version", type = "string", readonly = true})
   add_links("wiiqt-nand")
 
