@@ -25,6 +25,18 @@ impl CardPath {
         Ok(joined)
     }
 
+    /// `other` below this directory.
+    pub(crate) fn join_path(&self, other: &CardPath) -> Result<Self> {
+        let mut joined = self.clone();
+        joined.0.extend(other.0.iter().cloned());
+        Ok(joined)
+    }
+
+    /// The path as FAT compares it: ignoring case.
+    pub fn folded(&self) -> String {
+        self.to_string().to_lowercase()
+    }
+
     /// This path below `root`.
     pub fn under(&self, root: &std::path::Path) -> PathBuf {
         self.0

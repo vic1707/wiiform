@@ -81,7 +81,7 @@ impl Source {
     }
 }
 
-fn base64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
+pub(crate) fn base64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
     let text = String::deserialize(deserializer)?;
     let compact: String = text.split_ascii_whitespace().collect();
     STANDARD.decode(compact).map_err(serde::de::Error::custom)

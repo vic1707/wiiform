@@ -96,16 +96,31 @@ nand:
       # - wiimmfi
       # - region_free_everything # Japanese menus use the pinned JP definition.
 
-# Files for the SD card, written next to nand.bin and keys.bin in --output.
-# Each entry takes one source (path, url, inline, or a GitHub release asset)
-# and one placement: unzip into a card directory, or copy to a card path.
-# sha256 is required, except for GitHub assets whose release states one.
+# Files for the SD card, published in sd/ next to nand.bin and keys.bin. Every
+# file takes one source (path, url, inline, or github: {repo, tag, asset}) and a
+# sha256, which a GitHub release asset may omit when its release states one.
 sd:
-  - path: sd/example-app.zip
-    sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-    unzip: / # Homebrew zips usually hold apps/<name>/.
-  # - github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
-  #   unzip: / # sha256 may be omitted: this release states one.
-  # - url: "https://example.com/loader.dol"
-  #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  #   to: apps/Nintendont/boot.dol
+  apps: # Each key is the card folder apps/<key>/.
+    Example: # From an archive, its folder holding boot.dol or boot.elf becomes apps/Example/.
+      path: sd/example-app.zip
+      sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    # usbloader_gx:
+    #   github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
+    # Nintendont: # Loose files instead of an archive.
+    #   files:
+    #     boot.dol: {url: "https://example.com/loader.dol", sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+  # bundles: # Anything else, placed from the card's root.
+  #   - github: {repo: Fledge68/WiiFlow_Lite, tag: v5.6.2, asset: wiiflow_v5.6.2.zip}
+  #     unzip: / # The whole archive.
+  #   - path: covers.zip
+  #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  #     extract: {"**/*.png": /rvloader/covers/} # Glob -> directory; unmatched files stay out.
+
+# Files for a USB drive, published in usb/. Same shape as sd.
+# usb:
+#   bundles:
+#     - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
+#       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+#       extract: # The RVLoader app and its data, without the bundled BBLoader and Nintendont.
+#         "RVLoader_v2.1/apps/RVLoader/**": /apps/RVLoader/
+#         "RVLoader_v2.1/rvloader/**": /rvloader/

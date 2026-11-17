@@ -94,10 +94,11 @@ builds (including CI), set both
 `WIIFORM_NUS_CACHE` and `WIIFORM_NUS_OFFLINE=1`. An offline cache miss fails.
 The cache stores only files that pass Wii title signature and content checks.
 
-The output must be a new directory, laid out as the SD card's root: a successful
-build publishes `nand.bin` and its matching BootMii `keys.bin` (where BootMii
-restores from) together with the recipe's `sd` files. Copy its contents to the
-card. A `setup` mapping completes
+The output must be a new directory. A successful build publishes it whole:
+`sd/` holds `nand.bin` and its matching BootMii `keys.bin` (where BootMii
+restores from) together with the recipe's `sd` files, and `usb/` holds the
+recipe's `usb` files when it has any. Copy the contents of `sd/` to the card's
+root and those of `usb/` to the drive's. A `setup` mapping completes
 first-run setup using your values and defaults for omitted fields. Put display
 options such as the aspect ratio under `setup.display`. Use `setup: {}` to
 apply all defaults. Omit `setup` or set it to `null` to run the Wii setup wizard.
@@ -108,6 +109,11 @@ The commands carry the pinned Priiloader app and hack definitions.
 Use `priiloader: {}` to install with pinned defaults.
 Settings sit directly under `priiloader`, and `hacks` lists the hacks to
 enable. Each application replaces the settings and disables unlisted hacks.
+Every Wii hack Priiloader 0.10.0 defines for 4.3 is available; the schema and
+`wii-nand install-priiloader --help` describe each, following Priiloader's
+[hack list](https://github.com/DacoTaco/priiloader/blob/master/docs/HACKSLIST.md).
+Hacks that cancel each other (the two music hacks, the two USB Gecko ones, the
+four "run disc games under IOS" ones) cannot be combined.
 
 ### Homebrew Channel
 
@@ -191,40 +197,70 @@ IOS fails, because IOS36, IOS58 and IOS80 are no longer stock.
 
 Booting RVLoader from a prepared image has not yet been confirmed on a console.
 
-### SD card
+### SD card and USB drive
 
 ```yaml
 sd:
-  - github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
-    unzip: /
-  - github: {repo: emukidid/cleanrip, tag: "2.4", asset: CleanRip-v2.4.zip}
-    unzip: /
-  - url: https://raw.githubusercontent.com/FIX94/Nintendont/COMMIT/loader/loader.dol
-    sha256: "…"
-    to: apps/Nintendont/boot.dol
+  apps: # Each key is the folder apps/<key>/.
+    usbloader_gx:
+      github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
+    riivolution:
+      url: https://aerialx.github.io/rvlution.net/riivolution.zip
+      sha256: "…"
+    Nintendont:
+      files:
+        boot.dol: {url: "https://raw.githubusercontent.com/FIX94/Nintendont/COMMIT/loader/loader.dol", sha256: "…"}
+  bundles:
+    - github: {repo: Fledge68/WiiFlow_Lite, tag: v5.6.2, asset: wiiflow_v5.6.2.zip}
+      unzip: /
+usb:
+  bundles:
+    - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
+      sha256: "…"
+      extract:
+        "RVLoader_v2.1/apps/RVLoader/**": /apps/RVLoader/
+        "RVLoader_v2.1/rvloader/**": /rvloader/
 ```
 
-Each `sd` entry names one source and one placement:
+`sd` and `usb` take the same two keys. Every file names one source and its
+SHA-256: `path`, `url` and `inline` work as for WADs, and `github` takes a
+release asset by `repo`, `tag` and exact `asset` name. `sha256` may be left out
+only for a GitHub asset whose release states one (GitHub records it for assets
+uploaded since June 2025); a given `sha256` always wins.
 
-- **Sources:** `path`, `url` and `inline` work as for WADs. `github` takes a
-  release asset by `repo`, `tag` and `asset` name.
-- **Hashes:** `sha256` is required, except for a GitHub asset whose release
-  states one (GitHub records it for assets uploaded since June 2025). A given
-  `sha256` always wins.
-- **Placement:** `unzip: DIR` unpacks a zip into that card directory (homebrew
-  zips usually hold `apps/<name>/`, so `/`); `to: PATH` copies the file there.
-  macOS `__MACOSX/` and `._*` entries are skipped; other entries must be plain
-  files with relative paths.
-- **Conflicts:** files are compared ignoring case, as FAT does. Two entries
-  writing different bytes to one path, a path used as both a file and a
-  directory, or a root `nand.bin` or `keys.bin` stop the build.
+- **`apps`:** each key is the app's folder, `apps/<key>/`.
+  - **From an archive:** the archive's one folder holding `boot.dol` or
+    `boot.elf` becomes `apps/<key>/`, wherever it sits in the archive
+    (`apps/<name>/`, `<name>/`, or the root). An archive with several such
+    folders, or with files outside it, needs `extract`.
+  - **With `extract`:** glob → directory pairs choose the files, with
+    directories relative to the app folder.
+  - **From loose files:** `files` maps each file name to its own source and
+    SHA-256.
+  - **Either way,** the app must end up with a `boot.dol` or `boot.elf`.
+- **`bundles`:** anything else, placed from the root: `unzip: DIR` unpacks the
+  whole archive there, `extract` unpacks the files its globs choose, and
+  `to: PATH` copies a single file.
+- **`extract`:** each key is a glob over the archive's paths (`*`, `**`, `?`,
+  `[…]`, `{a,b}`), each value a directory. A matching file keeps its path
+  below the glob's fixed leading folders: with `"pkg/data/**": /data/`,
+  `pkg/data/x/y` lands at `/data/x/y`. Files no glob matches are left out, as
+  RVLoader's bundled BBLoader and old Nintendont are above. A glob matching no
+  file, or a file matching two globs, stops the build.
+- **Archives:** archives are zips. macOS `__MACOSX/` and `._*` entries are
+  skipped; other entries must be plain files with relative paths.
+- **Conflicts:** paths are compared ignoring case, as FAT does. Two files with
+  different bytes at one path, a path used as both a file and a directory, or
+  a root `nand.bin` or `keys.bin` on the card stop the build.
 
 All files are downloaded and checked when the recipe is read, before the NAND
-build. Open Shop Channel only serves the latest version of each app, so
-recipes pin releases on GitHub (or a URL) instead.
+build. Open Shop Channel only serves the latest version of each app, so recipes
+pin releases on GitHub (or a URL) instead. mega.nz links cannot be downloaded
+(their key is in the URL fragment and the file is decrypted in the browser):
+mirror the file and use `path`, `inline` or another URL.
 
-Format the card MBR with one FAT32 partition: libfat, which Wii homebrew uses
-to read cards and drives, does not read GPT partition tables or exFAT.
+Format cards and drives MBR with one FAT32 partition: libfat, which Wii
+homebrew uses to read them, does not read GPT partition tables or exFAT.
 RVLoader cannot run from the card; it needs its release on a USB drive.
 
 ### cIOS packages

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <Factory.hpp>
 #include <Layout.hpp>
+#include <PriiloaderHacks.hpp>
 #include <Titles.hpp>
 #include <WorkingImage.hpp>
 #include <tiktmd.h>
@@ -13,6 +14,8 @@
 #include <QTemporaryDir>
 #include <uidmap.h>
 #include <algorithm>
+#include <array>
+#include <string>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -320,6 +323,27 @@ namespace {
     check(before == buffer_digest(image), "Rejected boot file changed the NAND buffer");
   }
 
+  // Every hack wiiform offers exists in the pinned definitions for each 4.3 menu.
+  void test_priiloader_hacks() {
+    QFile file("wiiform-cli/assets/priiloader/hacks_hash.ini");
+    check(file.open(QIODevice::ReadOnly), "Cannot read the bundled hacks_hash.ini");
+    const auto ini = file.readAll();
+    const std::span<const std::uint8_t> definitions(reinterpret_cast<const std::uint8_t*>(ini.constData()),
+                                                    static_cast<std::size_t>(ini.size()));
+    constexpr int hack_count = 27;
+    for (const int menu : {512, 513, 514}) {
+      for (int index = 0; index < hack_count; ++index) {
+        const std::array hack{static_cast<wiiform::Hack>(index)};
+        const auto files = priiloader::prepare_hacks(definitions, menu, hack);
+        const auto message = "Hack " + std::to_string(index) + " enables nothing on menu " + std::to_string(menu);
+        check(files.states.count(char(1)) >= 1, message.c_str());
+      }
+    }
+    rejects([&] {
+      priiloader::prepare_hacks(definitions, 514, std::array{static_cast<wiiform::Hack>(hack_count)});
+    }, "Unsupported Priiloader hack");
+  }
+
   void test_wad_installation(const QString& temporary_path) {
     const auto nand_path = QDir(temporary_path).filePath("empty-nand.bin");
     create_empty_nand(nand_path);
@@ -495,6 +519,7 @@ int main(int argc, char** argv) {
       test_wad_rejections(image, make_wad());
       test_ios_wad_policy(image);
       test_priiloader_boot_file(image);
+      test_priiloader_hacks();
     }
     test_wide_directory_layout(temporary.path());
     test_wad_installation(temporary.path());

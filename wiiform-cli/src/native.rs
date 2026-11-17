@@ -48,7 +48,11 @@ same_variants! {
     Hack => ffi::Hack {
         Fix480p, BlockOnlineUpdates, BlockDiscUpdates, BlockDiscAutoboot, AutoPressA,
         RemoveDeflicker, MoveDiscChannel, RemoveNocopySaveProtection, ReplaceHealthScreen,
-        NoBackgroundMusic, Wiimmfi, RegionFreeEverything,
+        NoBackgroundMusic, Wiimmfi, RegionFreeEverything, NoSfxAndBackgroundMusic,
+        ReEnableBannerbomb, UsbGeckoReport, UsbGeckoReportGeckoOs, ForceDataManagement,
+        ForceRecoveryMode, RemoveDiagnosticDiscCheck, NoDeleteHomebrew, ForceDiscIos248,
+        ForceDiscIos249, ForceDiscIos250, ForceDiscIos251, UnblockServiceDiscs,
+        RemoveIos16DiscError, MarkNetworkTested,
     }
 }
 

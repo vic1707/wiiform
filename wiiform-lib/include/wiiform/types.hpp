@@ -121,7 +121,8 @@ namespace wiiform {
   enum class Hack : std::uint8_t {
     fix_480p = 0, block_online_updates = 1, block_disc_updates = 2, block_disc_autoboot = 3,
     auto_press_a = 4, remove_deflicker = 5, move_disc_channel = 6, remove_nocopy_save_protection = 7,
-    replace_health_screen = 8, no_background_music = 9, wiimmfi = 10, region_free_everything = 11
+    replace_health_screen = 8, no_background_music = 9, wiimmfi = 10, region_free_everything = 11,
+    no_sfx_and_background_music = 12, re_enable_bannerbomb = 13, usb_gecko_report = 14, usb_gecko_report_geckoos = 15, force_data_management = 16, force_recovery_mode = 17, remove_diagnostic_disc_check = 18, no_delete_homebrew = 19, force_disc_ios248 = 20, force_disc_ios249 = 21, force_disc_ios250 = 22, force_disc_ios251 = 23, unblock_service_discs = 24, remove_ios16_disc_error = 25, mark_network_tested = 26
   };
 
 }

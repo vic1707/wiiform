@@ -428,16 +428,16 @@ fn the_documented_example_is_a_valid_recipe() -> Result<()> {
         .replacen(placeholder, &sha(&WAD), 1);
     let app = zip_of(&[("apps/Example/boot.dol", b"dol")], &[]);
     let example = example.replacen(
-        &format!("path: sd/example-app.zip\n    sha256: \"{placeholder}\""),
+        &format!("path: sd/example-app.zip\n      sha256: \"{placeholder}\""),
         &format!(
-            "inline: {}\n    sha256: {}",
+            "inline: {}\n      sha256: {}",
             STANDARD.encode(&app),
             sha(&app)
         ),
         1,
     );
     let recipe = read_recipe(&example)?;
-    assert_eq!(recipe.sd[0].files().len(), 1);
+    assert_eq!(recipe.sd.as_ref().context("expected sd")?.files().len(), 1);
     let recipe = recipe.nand;
     assert_eq!(recipe.remove.len(), 2);
     assert_eq!(&*recipe.titles[0].wad, WAD);
@@ -493,119 +493,234 @@ fn zip_of(files: &[(&str, &[u8])], symlinks: &[(&str, &str)]) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
-/// An `sd` entry carrying `bytes` inline, placed by `placement`.
-fn inline_sd(bytes: &[u8], placement: &str) -> String {
-    format!(
-        "{{inline: {}, sha256: {}, {placement}}}",
-        STANDARD.encode(bytes),
-        sha(bytes)
-    )
+/// The keys of a source carrying `bytes` inline, with their SHA-256.
+fn inline_file(bytes: &[u8]) -> String {
+    format!("inline: {}, sha256: {}", STANDARD.encode(bytes), sha(bytes))
 }
 
-fn sd_files(entries: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
-    let recipe = read_recipe(&format!(
-        "nand: {{menu: 4.3E}}\nsd: [{}]",
-        entries.join(", ")
-    ))?;
+/// The files a device mapping such as `{apps: …}` puts on the card.
+fn card(device: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    let recipe = read_recipe(&format!("nand: {{menu: 4.3E}}\nsd: {device}"))?;
     Ok((recipe.sd.iter())
-        .flat_map(|entry| entry.files())
+        .flat_map(|sd| sd.files())
         .map(|(path, bytes)| (path.to_string(), bytes.clone()))
         .collect())
 }
 
+fn paths(files: &[(String, Vec<u8>)]) -> Vec<&str> {
+    files.iter().map(|(path, _)| path.as_str()).collect()
+}
+
 #[test]
-fn sd_entries_copy_or_unzip_files_onto_the_card() -> Result<()> {
-    let app = zip_of(
+fn apps_find_their_folder_in_the_archive() -> Result<()> {
+    let app =
+        |name: &str, zip: &[u8]| card(&format!("{{apps: {{{name}: {{{}}}}}}}", inline_file(zip)));
+    for (layout, files) in [
+        (
+            "apps/App/",
+            zip_of(
+                &[("apps/App/boot.dol", b"d"), ("apps/App/meta.xml", b"m")],
+                &[],
+            ),
+        ),
+        (
+            "App/",
+            zip_of(&[("App/boot.elf", b"d"), ("App/meta.xml", b"m")], &[]),
+        ),
+        (
+            "root",
+            zip_of(&[("BOOT.DOL", b"d"), ("meta.xml", b"m")], &[]),
+        ),
+        (
+            "nested",
+            zip_of(
+                &[
+                    ("x/y/App/boot.dol", b"d"),
+                    ("x/y/App/meta.xml", b"m"),
+                    ("__MACOSX/._x", b""),
+                ],
+                &[],
+            ),
+        ),
+    ] {
+        let placed = app("app", &files)?;
+        assert_eq!(placed.len(), 2, "{layout}");
+        assert!(
+            placed.iter().any(|(path, _)| path == "/apps/app/meta.xml"),
+            "{layout}"
+        );
+    }
+    let one_folder_many_files = zip_of(
         &[
-            ("apps/App/boot.dol", b"dol"),
-            ("apps/App/._boot.dol", b"apple"),
-            ("__MACOSX/apps/App/._meta.xml", b"apple"),
-            ("apps/App/meta.xml", b"xml"),
+            ("a/boot.dol", b"d"),
+            ("a/meta.xml", b"m"),
+            ("a/boot.elf", b"e"),
         ],
         &[],
     );
-    assert_eq!(
-        sd_files(&[
-            inline_sd(&app, "unzip: /"),
-            inline_sd(b"loader", "to: /apps/Nintendont/boot.dol")
-        ])?,
-        [
-            ("/apps/App/boot.dol".to_owned(), b"dol".to_vec()),
-            ("/apps/App/meta.xml".to_owned(), b"xml".to_vec()),
-            ("/apps/Nintendont/boot.dol".to_owned(), b"loader".to_vec()),
-        ]
-    );
-    let below = sd_files(&[inline_sd(&app, "unzip: extra/")])?;
-    assert_eq!(below[0].0, "/extra/apps/App/boot.dol");
+    assert_eq!(app("app", &one_folder_many_files)?.len(), 3);
 
-    for (entry, error) in [
-        (inline_sd(b"x", "to: /"), "not the card root"),
-        (inline_sd(b"x", "to: a/../b"), ". or .. component"),
-        (inline_sd(b"x", "to: a//b"), "empty"),
-        (inline_sd(b"x", "to: 'a:b'"), "cannot store"),
-        (inline_sd(b"not a zip", "unzip: /"), "needs a zip"),
+    for (zip, error) in [
         (
-            inline_sd(&zip_of(&[("../evil", b"x")], &[]), "unzip: /"),
-            ". or .. component",
+            zip_of(&[("readme.txt", b"r")], &[]),
+            "no boot.dol or boot.elf",
         ),
         (
-            inline_sd(&zip_of(&[("/abs", b"x")], &[]), "unzip: /"),
-            "absolute",
+            zip_of(&[("a/boot.dol", b"d"), ("b/boot.dol", b"d")], &[]),
+            "several app folders",
         ),
         (
-            inline_sd(&zip_of(&[], &[("apps/link", "/etc/passwd")]), "unzip: /"),
+            zip_of(&[("apps/a/boot.dol", b"d"), ("data/x", b"x")], &[]),
+            "outside the app folder",
+        ),
+        (
+            zip_of(&[], &[("apps/a/boot.dol", "/etc/passwd")]),
             "not a regular file",
         ),
-        (inline_sd(b"x", "to: a, unzip: /"), ""),
-        (
-            format!("{{inline: {}, to: a}}", STANDARD.encode(b"x")),
-            "sha256 is required",
-        ),
-        (
-            format!(
-                "{{inline: {}, sha256: {}, to: a}}",
-                STANDARD.encode(b"x"),
-                sha(b"y")
-            ),
-            "SHA-256",
-        ),
-        (inline_sd(b"x", "to: a, extra: 1"), "unknown field"),
-        (
-            format!(
-                "{{inline: {}, sha256: {}}}",
-                STANDARD.encode(b"x"),
-                sha(b"x")
-            ),
-            "",
-        ),
+        (b"not a zip".to_vec(), "zip archive"),
     ] {
-        let result = sd_files(std::slice::from_ref(&entry));
-        assert!(message(result).contains(error), "{entry}");
+        assert!(message(app("app", &zip)).contains(error), "{error}");
     }
-
-    let conflict = [inline_sd(b"one", "to: a/b"), inline_sd(b"two", "to: a/b")];
-    assert!(message(sd_files(&conflict)).contains("different files to /a/b"));
-    sd_files(&[inline_sd(b"same", "to: a/b"), inline_sd(b"same", "to: a/b")])?;
-    let file_and_directory = [inline_sd(b"one", "to: a"), inline_sd(b"two", "to: a/b")];
-    assert!(message(sd_files(&file_and_directory)).contains("both a file and a directory"));
-    let case = [
-        inline_sd(b"one", "to: Apps/x"),
-        inline_sd(b"two", "to: apps/X"),
-    ];
-    assert!(message(sd_files(&case)).contains("different files"));
-    for reserved in ["to: nand.bin", "to: /KEYS.BIN"] {
-        assert!(message(sd_files(&[inline_sd(b"x", reserved)])).contains("NAND and its keys"));
-    }
-    sd_files(&[inline_sd(b"x", "to: backup/nand.bin")])?;
+    assert!(message(app("a/b", &one_folder_many_files)).contains("single folder name"));
+    assert!(message(app("a:b", &one_folder_many_files)).contains("cannot store"));
     Ok(())
 }
 
 #[test]
-fn sd_github_assets_use_the_release_digest_or_a_given_hash() -> Result<()> {
+fn apps_take_loose_files_or_an_extract_mapping() -> Result<()> {
+    let loose = card(&format!(
+        "{{apps: {{Nintendont: {{files: {{boot.dol: {{{}}}, meta.xml: {{{}}}}}}}}}}}",
+        inline_file(b"dol"),
+        inline_file(b"xml")
+    ))?;
+    assert_eq!(
+        paths(&loose),
+        ["/apps/Nintendont/boot.dol", "/apps/Nintendont/meta.xml"]
+    );
+    let no_boot = format!(
+        "{{apps: {{x: {{files: {{meta.xml: {{{}}}}}}}}}}}",
+        inline_file(b"xml")
+    );
+    assert!(message(card(&no_boot)).contains("gets no boot.dol or boot.elf"));
+    let hashed = format!(
+        "{{apps: {{x: {{files: {{boot.dol: {{{}}}}}, sha256: {}}}}}}}",
+        inline_file(b"dol"),
+        sha(b"dol")
+    );
+    assert!(message(card(&hashed)).contains("per file"));
+
+    // Two app folders: extract picks one and leaves the rest out.
+    let release = zip_of(
+        &[
+            ("pkg/apps/Main/boot.dol", b"main"),
+            ("pkg/apps/Main/lang/fr.lang", b"fr"),
+            ("pkg/apps/Old/boot.dol", b"old"),
+        ],
+        &[],
+    );
+    let extract = |pairs: &str| {
+        card(&format!(
+            "{{apps: {{Main: {{{}, extract: {{{pairs}}}}}}}}}",
+            inline_file(&release)
+        ))
+    };
+    assert_eq!(
+        paths(&extract("'pkg/apps/Main/**': /")?),
+        ["/apps/Main/boot.dol", "/apps/Main/lang/fr.lang"]
+    );
+    assert!(
+        message(extract("'pkg/apps/Main/lang/*': /lang/")).contains("gets no boot.dol"),
+        "the result needs a boot file"
+    );
+    Ok(())
+}
+
+#[test]
+fn bundles_unzip_extract_or_copy_from_the_root() -> Result<()> {
+    let release = zip_of(
+        &[
+            ("RVLoader_v2.1/apps/RVLoader/boot.dol", b"rvl"),
+            ("RVLoader_v2.1/apps/BBLoader/boot.dol", b"rvl"),
+            ("RVLoader_v2.1/rvloader/themes/main/theme.xml", b"t"),
+            ("RVLoader_v2.1/LCDDriver.bit", b"lcd"),
+        ],
+        &[],
+    );
+    let bundle = |placement: &str| {
+        card(&format!(
+            "{{bundles: [{{{}, {placement}}}]}}",
+            inline_file(&release)
+        ))
+    };
+    assert_eq!(
+        paths(&bundle(
+            "extract: {'RVLoader_v2.1/apps/RVLoader/**': /apps/RVLoader/, 'RVLoader_v2.1/rvloader/**': /rvloader/, 'RVLoader_v2.1/LCDDriver.bit': /}"
+        )?),
+        [
+            "/LCDDriver.bit",
+            "/apps/RVLoader/boot.dol",
+            "/rvloader/themes/main/theme.xml"
+        ]
+    );
+    assert_eq!(bundle("unzip: /extra")?.len(), 4);
+    assert_eq!(
+        paths(&bundle("extract: {'**/*.xml': /x/}")?),
+        ["/x/RVLoader_v2.1/rvloader/themes/main/theme.xml"]
+    );
+    for (placement, error) in [
+        ("extract: {'nothing/**': /}", "matches no file"),
+        ("extract: {'**': /a/, '**/*.bit': /b/}", "matches both"),
+        ("extract: {}", "at least one glob"),
+        ("extract: {'[': /}", ""),
+        ("unzip: /, to: x", ""),
+        ("to: /", "not the root"),
+        ("unzip: /, extra: 1", "unknown field"),
+    ] {
+        assert!(message(bundle(placement)).contains(error), "{placement}");
+    }
+    let copy = card(&format!(
+        "{{bundles: [{{{}, to: a/b}}]}}",
+        inline_file(b"x")
+    ))?;
+    assert_eq!(paths(&copy), ["/a/b"]);
+    Ok(())
+}
+
+#[test]
+fn device_files_must_not_collide() -> Result<()> {
+    let to = |bytes: &[u8], path: &str| format!("{{{}, to: '{path}'}}", inline_file(bytes));
+    let bundles = |entries: &[String]| card(&format!("{{bundles: [{}]}}", entries.join(", ")));
+    assert!(message(bundles(&[to(b"one", "a/b"), to(b"two", "A/B")])).contains("different files"));
+    bundles(&[to(b"same", "a/b"), to(b"same", "a/b")])?;
+    assert!(
+        message(bundles(&[to(b"one", "a"), to(b"two", "a/b")]))
+            .contains("both a file and a directory")
+    );
+    let app_and_bundle = format!(
+        "{{apps: {{x: {{files: {{boot.dol: {{{}}}}}}}}}, bundles: [{}]}}",
+        inline_file(b"dol"),
+        to(b"other", "apps/X/BOOT.DOL")
+    );
+    assert!(message(card(&app_and_bundle)).contains("different files"));
+    for reserved in ["nand.bin", "/KEYS.BIN"] {
+        assert!(message(bundles(&[to(b"x", reserved)])).contains("NAND and its keys"));
+    }
+    bundles(&[to(b"x", "backup/nand.bin")])?;
+    // usb has no NAND at its root.
+    let usb = read_recipe(&format!(
+        "nand: {{menu: 4.3E}}\nusb: {{bundles: [{}]}}",
+        to(b"x", "nand.bin")
+    ))?;
+    assert_eq!(usb.usb.context("expected usb")?.files().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn github_sources_use_the_release_digest_or_a_given_hash() -> Result<()> {
     const ASSET: &[u8] = b"release asset";
     let entry = |sha256: &str| {
         format!(
-            "{{github: {{repo: owner/app, tag: v1.0, asset: app.dol}}, {sha256} to: apps/app/boot.dol}}"
+            "{{bundles: [{{github: {{repo: owner/app, tag: v1.0, asset: app.dol}}, {sha256} to: apps/app/boot.dol}}]}}"
         )
     };
     let read = |entry: String, digest: Option<String>| {
@@ -619,7 +734,7 @@ fn sd_github_assets_use_the_release_digest_or_a_given_hash() -> Result<()> {
                 "https://github.com/owner/app/releases/download/v1.0/app.dol" => Ok(ASSET.to_vec()),
                 _ => panic!("unexpected download of {url}"),
             },
-            || sd_files(&[entry]),
+            || card(&entry),
         )
     };
     let published = Some(format!("sha256:{}", sha(ASSET)));
@@ -631,8 +746,28 @@ fn sd_github_assets_use_the_release_digest_or_a_given_hash() -> Result<()> {
     assert!(message(read(entry(""), None)).contains("sha256 is required"));
     let wrong = format!("sha256: {},", sha(b"other"));
     assert!(message(read(entry(&wrong), published)).contains("SHA-256"));
-    let bad_repo = "{github: {repo: owner, tag: v1.0, asset: app.dol}, to: a}".to_owned();
+    let bad_repo =
+        "{bundles: [{github: {repo: owner, tag: v1.0, asset: app.dol}, to: a}]}".to_owned();
     assert!(message(read(bad_repo, None)).contains("owner/name"));
+    Ok(())
+}
+
+#[test]
+fn exclusive_hacks_are_refused() -> Result<()> {
+    for hacks in [
+        "[no_background_music, no_sfx_and_background_music]",
+        "[usb_gecko_report, usb_gecko_report_geckoos]",
+        "[force_disc_ios249, force_disc_ios250]",
+    ] {
+        let result = read(&format!("menu: 4.3E\npriiloader: {{hacks: {hacks}}}"));
+        assert!(
+            message(result).contains("cannot be enabled together"),
+            "{hacks}"
+        );
+    }
+    read(
+        "menu: 4.3E\npriiloader: {hacks: [force_disc_ios249, no_sfx_and_background_music, remove_ios16_disc_error]}",
+    )?;
     Ok(())
 }
 

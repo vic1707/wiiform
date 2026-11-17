@@ -56,7 +56,7 @@ Run the following with the same footer-bearing input and scratch directory.
 For a footerless input, use the matching sidecar as the source footer.
 
 ```bash
-python3 - "$backup" "$scratch/prepared" <<'PY'
+python3 - "$backup" "$scratch/prepared/sd" <<'PY'
 from pathlib import Path
 import sys
 
@@ -127,9 +127,9 @@ unverified.
 build/bin/wiiform --seed "$scratch/console.seed.yaml" \
   --recipe "$scratch/recipe.yaml" --output "$scratch/repeat" \
   --boot-policy preserve-source
-cmp -s "$scratch/prepared/keys.bin" "$scratch/repeat/keys.bin"
+cmp -s "$scratch/prepared/sd/keys.bin" "$scratch/repeat/sd/keys.bin"
 python3 -B "$reference/tests/nand_lab/nand_compare.py" \
-  "$scratch/prepared/nand.bin" "$scratch/repeat/nand.bin" "$scratch/comparison"
+  "$scratch/prepared/sd/nand.bin" "$scratch/repeat/sd/nand.bin" "$scratch/comparison"
 ```
 
 For a repeat, require `comparison_complete: true` and `logical_equal: true`

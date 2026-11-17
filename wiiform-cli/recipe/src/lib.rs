@@ -5,15 +5,15 @@
 //! [`Recipe`] reads, downloads and checks every file it names.
 use std::{io::Read, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+pub mod device;
 mod files;
 mod github;
 pub mod nand;
 mod region;
-pub mod sd;
 mod source;
 #[cfg(test)]
 mod tests;
@@ -22,6 +22,7 @@ mod wad;
 pub mod yaml;
 
 pub use self::{
+    device::Device,
     files::{ResolvedPath, open_regular_file, read_bounded},
     nand::{
         Nand, cios::Cios, hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel,
@@ -37,9 +38,10 @@ pub use self::{
 pub struct Recipe {
     /// The NAND image to build.
     pub nand: Nand,
-    /// Files for the SD card, published next to nand.bin and keys.bin.
-    #[serde(default)]
-    pub sd: Vec<sd::File>,
+    /// Files for the SD card, published in sd/ next to nand.bin and keys.bin.
+    pub sd: Option<Device>,
+    /// Files for a USB drive, published in usb/.
+    pub usb: Option<Device>,
 }
 
 impl Recipe {
@@ -56,7 +58,14 @@ impl Recipe {
     /// Checks what the types cannot express. Call it again after changing a field.
     pub fn validate(&self) -> Result<()> {
         self.nand.validate()?;
-        sd::check_conflicts(&self.sd)
+        // The card's root also holds the NAND and its keys.
+        for path in self.sd.iter().flat_map(|sd| sd.files().keys()) {
+            ensure!(
+                !["/nand.bin", "/keys.bin"].contains(&path.folded().as_str()),
+                "sd: {path} is where wiiform puts the NAND and its keys"
+            );
+        }
+        Ok(())
     }
 }
 

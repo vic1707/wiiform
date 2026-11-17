@@ -55,6 +55,9 @@ impl Nand {
     /// Checks what the types cannot express. Call it again after changing a field.
     pub fn validate(&self) -> Result<()> {
         let menu = self.menu;
+        if let Some(priiloader) = &self.priiloader {
+            priiloader.validate()?;
+        }
         if let Some(setup) = &self.setup {
             ensure!(
                 menu.allows_language(setup.language_for(menu)),

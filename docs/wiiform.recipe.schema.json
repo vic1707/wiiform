@@ -8,11 +8,26 @@
       "$ref": "#/$defs/Nand"
     },
     "sd": {
-      "description": "Files for the SD card, published next to nand.bin and keys.bin.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/SdFile"
-      }
+      "description": "Files for the SD card, published in sd/ next to nand.bin and keys.bin.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Device"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "usb": {
+      "description": "Files for a USB drive, published in usb/.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Device"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -20,6 +35,101 @@
     "nand"
   ],
   "$defs": {
+    "App": {
+      "description": "A Homebrew Channel app. From an archive, its folder holding boot.dol or\nboot.elf becomes apps/<name>/, unless `extract` says what goes where.",
+      "type": "object",
+      "properties": {
+        "extract": {
+          "description": "Which archive files go where, relative to the app folder (/ is the folder\nitself). Without it, the archive must hold exactly one app folder.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Extract"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "description": "SHA-256 of the exact archive. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Local archive, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of the archive.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "The archive itself, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        },
+        {
+          "description": "An archive attached to a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
+          ]
+        },
+        {
+          "description": "Loose files instead of an archive, by path inside the app folder.",
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/LooseFile"
+              }
+            }
+          },
+          "required": [
+            "files"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "Aspect": {
       "description": "Screen aspect ratio.",
       "type": "string",
@@ -51,6 +161,119 @@
       ],
       "maximum": 255,
       "minimum": 0
+    },
+    "Bundle": {
+      "description": "A file or archive placed from the device's root.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "description": "Local path, relative to the recipe.",
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            },
+            {
+              "description": "HTTPS URL of the raw file.",
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            {
+              "description": "The file itself, base64-encoded.",
+              "type": "object",
+              "properties": {
+                "inline": {
+                  "type": "string",
+                  "contentEncoding": "base64"
+                }
+              },
+              "required": [
+                "inline"
+              ]
+            },
+            {
+              "description": "An asset of a tagged GitHub release.",
+              "type": "object",
+              "properties": {
+                "github": {
+                  "$ref": "#/$defs/GithubAsset"
+                }
+              },
+              "required": [
+                "github"
+              ]
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "description": "Unpack the whole archive into this directory.",
+              "type": "object",
+              "properties": {
+                "unzip": {
+                  "$ref": "#/$defs/CardPath"
+                }
+              },
+              "required": [
+                "unzip"
+              ]
+            },
+            {
+              "description": "Unpack the chosen archive files: see `Extract`.",
+              "type": "object",
+              "properties": {
+                "extract": {
+                  "$ref": "#/$defs/Extract"
+                }
+              },
+              "required": [
+                "extract"
+              ]
+            },
+            {
+              "description": "Copy the file to this path.",
+              "type": "object",
+              "properties": {
+                "to": {
+                  "$ref": "#/$defs/CardPath"
+                }
+              },
+              "required": [
+                "to"
+              ]
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
     },
     "CardPath": {
       "description": "A path on the SD card, relative to its root. A leading / is accepted and\nmeans the root; empty, `.` and `..` components are not.",
@@ -198,6 +421,27 @@
         "GB"
       ]
     },
+    "Device": {
+      "description": "The files of an SD card or a USB drive.",
+      "type": "object",
+      "properties": {
+        "apps": {
+          "description": "Homebrew apps. Each key is the folder apps/<key>/ the app goes in.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/App"
+          }
+        },
+        "bundles": {
+          "description": "Anything else, placed from the device's root: packages spanning several\nroot folders, single files, covers.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bundle"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "Display": {
       "description": "Display configuration applied during first-run setup.",
       "type": "object",
@@ -219,6 +463,13 @@
         }
       },
       "additionalProperties": false
+    },
+    "Extract": {
+      "description": "Which archive files go where. Each key is a glob over paths inside the\narchive (`*`, `**`, `?`, `[…]`, `{a,b}`); each value a directory. A matching\nfile keeps its path below the glob's fixed leading folders: with\n`\"pkg/data/**\": /data/`, `pkg/data/x/y` lands at `/data/x/y`. Files no glob\nmatches are left out; a glob matching nothing, or a file matching two, is\nan error.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/CardPath"
+      }
     },
     "GithubAsset": {
       "description": "An asset of a tagged GitHub release.",
@@ -245,67 +496,142 @@
       ]
     },
     "Hack": {
-      "description": "A System Menu hack from the pinned Priiloader definitions.",
+      "description": "A System Menu hack from the pinned Priiloader 0.10.0 definitions. Descriptions\nfollow Priiloader's docs/HACKSLIST.md.",
       "oneOf": [
         {
-          "description": "Fix 480p graphics in the System Menu.",
+          "description": "Fixes an image display issue of the System Menu in 480p (analog video only).\nIt fixes the System Menu, not games.",
           "type": "string",
           "const": "fix_480p"
         },
         {
-          "description": "Block online updates.",
+          "description": "Makes System Menu updates fail (error 32007), to stay on this System Menu.",
           "type": "string",
           "const": "block_online_updates"
         },
         {
-          "description": "Block disc updates.",
+          "description": "Skips the \"Wii System Update\" some game discs force before playing.",
           "type": "string",
           "const": "block_disc_updates"
         },
         {
-          "description": "Block disc autoboot.",
+          "description": "Stops discs whose ID starts with 0 or 1 (diagnostic discs) from booting automatically.",
           "type": "string",
           "const": "block_disc_autoboot"
         },
         {
-          "description": "Auto-press A at the health screen.",
+          "description": "Presses A automatically to get past the health and safety screen.",
           "type": "string",
           "const": "auto_press_a"
         },
         {
-          "description": "Remove deflicker.",
+          "description": "Disables the System Menu's blur filter; recommended with 480p.",
           "type": "string",
           "const": "remove_deflicker"
         },
         {
-          "description": "Move the Disc Channel.",
+          "description": "Lets the Disc Channel be moved like any channel (hold A+B).",
           "type": "string",
           "const": "move_disc_channel"
         },
         {
-          "description": "Remove NoCopy save protection.",
+          "description": "Lets Data Management copy save files that are normally protected from copying\nto the SD card. It does not allow moving them.",
           "type": "string",
           "const": "remove_nocopy_save_protection"
         },
         {
-          "description": "Replace the health screen with Backmenu.",
+          "description": "Skips the health warning screen and goes straight to the channels.",
           "type": "string",
           "const": "replace_health_screen"
         },
         {
-          "description": "Disable System Menu background music.",
+          "description": "Disables the System Menu's background music.",
           "type": "string",
           "const": "no_background_music"
         },
         {
-          "description": "Apply the Wiimmfi patch.",
+          "description": "Patches disc games launched from the Disc Channel to use Wiimmfi (not WiiWare).",
           "type": "string",
           "const": "wiimmfi"
         },
         {
-          "description": "Enable Region Free EVERYTHING (the Japanese menu uses the JP definition).",
+          "description": "Unblocks region-locked Wii and GameCube discs and channels (WiiWare, VC). Not every\ngame works; video modes may misbehave. The Japanese menu uses the JP definition.",
           "type": "string",
           "const": "region_free_everything"
+        },
+        {
+          "description": "Disables the System Menu's sound effects and background music.",
+          "type": "string",
+          "const": "no_sfx_and_background_music"
+        },
+        {
+          "description": "Re-enables the Bannerbomb exploit on 4.3. Not needed with the Homebrew Channel.",
+          "type": "string",
+          "const": "re_enable_bannerbomb"
+        },
+        {
+          "description": "Sends the Wii Menu's logs to a USB Gecko in memory card slot B.",
+          "type": "string",
+          "const": "usb_gecko_report"
+        },
+        {
+          "description": "Sends the Wii Menu's logs to a USB Gecko in slot B when Gecko OS launched the menu.",
+          "type": "string",
+          "const": "usb_gecko_report_geckoos"
+        },
+        {
+          "description": "Boots straight into Data Management. Can help with a banner brick by deleting\nthe channel data causing it.",
+          "type": "string",
+          "const": "force_data_management"
+        },
+        {
+          "description": "Starts the console in recovery mode, to launch recovery discs.",
+          "type": "string",
+          "const": "force_recovery_mode"
+        },
+        {
+          "description": "In recovery mode, lets any disc boot instead of waiting for the Wii Backup Disc.",
+          "type": "string",
+          "const": "remove_diagnostic_disc_check"
+        },
+        {
+          "description": "Prevents the System Menu from deleting the Homebrew Channel, DVDX and others\n(HAXX, JODI, DVDX, DISC, DISK, RZDx).",
+          "type": "string",
+          "const": "no_delete_homebrew"
+        },
+        {
+          "description": "Runs disc games under IOS248, for a cIOS installed there. Disc games without\none there stop working.",
+          "type": "string",
+          "const": "force_disc_ios248"
+        },
+        {
+          "description": "Runs disc games under IOS249 (see force_disc_ios248).",
+          "type": "string",
+          "const": "force_disc_ios249"
+        },
+        {
+          "description": "Runs disc games under IOS250 (see force_disc_ios248).",
+          "type": "string",
+          "const": "force_disc_ios250"
+        },
+        {
+          "description": "Runs disc games under IOS251 (see force_disc_ios248).",
+          "type": "string",
+          "const": "force_disc_ios251"
+        },
+        {
+          "description": "Unblocks service discs: the Wii Startup Disc and the Wii Backup Discs.",
+          "type": "string",
+          "const": "unblock_service_discs"
+        },
+        {
+          "description": "Stops the System Menu from blocking discs that use IOS16 (the Wii Backup Disc).",
+          "type": "string",
+          "const": "remove_ios16_disc_error"
+        },
+        {
+          "description": "Marks the network connection as tested, so \"Use this connection\" works\nwithout running the test.",
+          "type": "string",
+          "const": "mark_network_tested"
         }
       ]
     },
@@ -373,6 +699,75 @@
         "it",
         "nl"
       ]
+    },
+    "LooseFile": {
+      "description": "One loose file of an app.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Local path, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of the raw file.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "The file itself, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        },
+        {
+          "description": "An asset of a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
     },
     "Menu": {
       "description": "Stock System Menu version used by the generated image.",
@@ -644,107 +1039,6 @@
       "description": "RVLoader release number: major.minor, without the leading v.",
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+$"
-    },
-    "SdFile": {
-      "description": "A file for the SD card: one source, where it goes, and its SHA-256.",
-      "type": "object",
-      "properties": {
-        "sha256": {
-          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Sha256"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "oneOf": [
-            {
-              "description": "Local path, relative to the recipe.",
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path"
-              ]
-            },
-            {
-              "description": "HTTPS URL of the raw file.",
-              "type": "object",
-              "properties": {
-                "url": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "url"
-              ]
-            },
-            {
-              "description": "The file itself, base64-encoded.",
-              "type": "object",
-              "properties": {
-                "inline": {
-                  "type": "string",
-                  "contentEncoding": "base64"
-                }
-              },
-              "required": [
-                "inline"
-              ]
-            },
-            {
-              "description": "An asset of a tagged GitHub release.",
-              "type": "object",
-              "properties": {
-                "github": {
-                  "$ref": "#/$defs/GithubAsset"
-                }
-              },
-              "required": [
-                "github"
-              ]
-            }
-          ]
-        },
-        {
-          "oneOf": [
-            {
-              "description": "Unpack the file, a zip, into this card directory. Homebrew zips usually\nhold apps/<name>/, so / is the common choice.",
-              "type": "object",
-              "properties": {
-                "unzip": {
-                  "$ref": "#/$defs/CardPath"
-                }
-              },
-              "required": [
-                "unzip"
-              ]
-            },
-            {
-              "description": "Copy the file to this card path.",
-              "type": "object",
-              "properties": {
-                "to": {
-                  "$ref": "#/$defs/CardPath"
-                }
-              },
-              "required": [
-                "to"
-              ]
-            }
-          ]
-        }
-      ],
-      "unevaluatedProperties": false
     },
     "SensorBar": {
       "description": "Sensor bar position relative to the display.",

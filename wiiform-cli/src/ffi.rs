@@ -131,6 +131,36 @@ pub mod bridge {
         Wiimmfi = 10,
         #[cxx_name = "region_free_everything"]
         RegionFreeEverything = 11,
+        #[cxx_name = "no_sfx_and_background_music"]
+        NoSfxAndBackgroundMusic = 12,
+        #[cxx_name = "re_enable_bannerbomb"]
+        ReEnableBannerbomb = 13,
+        #[cxx_name = "usb_gecko_report"]
+        UsbGeckoReport = 14,
+        #[cxx_name = "usb_gecko_report_geckoos"]
+        UsbGeckoReportGeckoOs = 15,
+        #[cxx_name = "force_data_management"]
+        ForceDataManagement = 16,
+        #[cxx_name = "force_recovery_mode"]
+        ForceRecoveryMode = 17,
+        #[cxx_name = "remove_diagnostic_disc_check"]
+        RemoveDiagnosticDiscCheck = 18,
+        #[cxx_name = "no_delete_homebrew"]
+        NoDeleteHomebrew = 19,
+        #[cxx_name = "force_disc_ios248"]
+        ForceDiscIos248 = 20,
+        #[cxx_name = "force_disc_ios249"]
+        ForceDiscIos249 = 21,
+        #[cxx_name = "force_disc_ios250"]
+        ForceDiscIos250 = 22,
+        #[cxx_name = "force_disc_ios251"]
+        ForceDiscIos251 = 23,
+        #[cxx_name = "unblock_service_discs"]
+        UnblockServiceDiscs = 24,
+        #[cxx_name = "remove_ios16_disc_error"]
+        RemoveIos16DiscError = 25,
+        #[cxx_name = "mark_network_tested"]
+        MarkNetworkTested = 26,
     }
 
     struct SystemSettings<'a> {

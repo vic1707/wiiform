@@ -25,8 +25,9 @@ struct Cli {
     #[arg(long)]
     recipe: FileOrStdin,
 
-    /// New directory to copy to the SD card's root: nand.bin and its matching
-    /// keys.bin for BootMii, and the recipe's sd files.
+    /// New directory for the results: sd/ to copy to the SD card's root (nand.bin
+    /// and its matching keys.bin for BootMii, and the recipe's sd files), and
+    /// usb/ for a USB drive when the recipe has usb files.
     #[arg(long, value_name = "DIR")]
     output: PathBuf,
 

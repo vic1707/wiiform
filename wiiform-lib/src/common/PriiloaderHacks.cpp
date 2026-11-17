@@ -113,7 +113,13 @@ namespace priiloader {
         "480p graphics fix in system menu", "Block Online Updates", "Block Disc Updates",
         "Block Disc Autoboot", "Auto-Press A at Health Screen", "Remove Deflicker",
         "Move Disc Channel", "Remove NoCopy Save File Protection", "Replace Health Screen with Backmenu",
-        "No System Menu Background Music", "Wiimmfi Patch v4", "Region Free EVERYTHING"};
+        "No System Menu Background Music", "Wiimmfi Patch v4", "Region Free EVERYTHING",
+        "No System Menu SFX & Background Music", "Re-enable Bannerbomb v2", "OSReport to USB Gecko (Slot B)",
+        "OSReport to USB Gecko (GeckoOS, Slot B)", "Force Boot into Data Management",
+        "Force Standard Recovery Mode", "Remove Diagnostic Disc Check", "No-Delete HAXX,JODI,DVDX,DISC,DISK,RZDx",
+        "Force Disc Games to run under IOS248", "Force Disc Games to run under IOS249",
+        "Force Disc Games to run under IOS250", "Force Disc Games to run under IOS251", "Unblock Service Discs",
+        "Remove IOS16 Disc Error", "Mark Network Connection as Tested"};
     QSet<QString> requested;
     for (const auto hack : enabled_hacks) {
       const auto option = static_cast<std::size_t>(hack);

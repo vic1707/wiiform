@@ -75,6 +75,21 @@ pub struct Priiloader {
 }
 
 impl Priiloader {
+    /// Refuses hacks that cannot be enabled together.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for group in Hack::EXCLUSIVE {
+            let enabled: Vec<&Hack> = group
+                .iter()
+                .filter(|hack| self.hacks.contains(hack))
+                .collect();
+            anyhow::ensure!(
+                enabled.len() <= 1,
+                "Priiloader hacks {enabled:?} cannot be enabled together"
+            );
+        }
+        Ok(())
+    }
+
     /// These settings, starting the executable stored as Priiloader's boot file
     /// at power-on and whenever a program returns.
     pub fn booting_file(&self) -> Self {

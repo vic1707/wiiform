@@ -14,8 +14,8 @@ use tempfile::Builder;
 
 use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
-    priiloader_payload, recipe,
-    recipe::{Menu, Priiloader, Recipe, Region, Rvloader, TitleId},
+    priiloader_payload,
+    recipe::{Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId},
     seed::StockSeed,
 };
 
@@ -222,7 +222,12 @@ fn build_with(
 
     nand.verify_generated_nand(&identity)
         .context("cannot verify generated NAND")?;
-    publish_bundle(&nand, &recipe.sd, &options.output)
+    publish_bundle(
+        &nand,
+        recipe.sd.as_ref(),
+        recipe.usb.as_ref(),
+        &options.output,
+    )
 }
 
 /// Installs and configures Priiloader, and with `rvloader` does what RVLoader's
@@ -350,8 +355,14 @@ pub fn publish_edit(nand: &Nand, output: &Path) -> Result<()> {
     publish(&candidate, output).context("cannot publish edited NAND")
 }
 
-/// Publishes the SD card root: the NAND and its keys for BootMii, and the recipe's `sd` files.
-fn publish_bundle(nand: &Nand, card: &[recipe::sd::File], output: &Path) -> Result<()> {
+/// Publishes sd/, the SD card's root (the NAND and its keys for BootMii, and
+/// the recipe's `sd` files), and usb/ when the recipe has `usb`.
+fn publish_bundle(
+    nand: &Nand,
+    sd: Option<&Device>,
+    usb: Option<&Device>,
+    output: &Path,
+) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wiiform-")
         .permissions(fs::Permissions::from_mode(0o700))
@@ -360,17 +371,31 @@ fn publish_bundle(nand: &Nand, card: &[recipe::sd::File], output: &Path) -> Resu
     let bundle = staging.path().join("bundle");
     fs::create_dir(&bundle).context("cannot create the staging bundle")?;
     fs::set_permissions(&bundle, fs::Permissions::from_mode(0o700))?;
-    write_private(&bundle.join("nand.bin"), nand.as_bytes()).context("cannot write NAND")?;
-    write_private(&bundle.join("keys.bin"), nand.keys()).context("cannot write keys sidecar")?;
-    for (path, bytes) in card.iter().flat_map(|entry| entry.files()) {
-        let target = path.under(&bundle);
-        let parent = target.parent().context("SD file has no parent directory")?;
+    let card = bundle.join("sd");
+    fs::create_dir(&card).context("cannot create sd/")?;
+    write_private(&card.join("nand.bin"), nand.as_bytes()).context("cannot write NAND")?;
+    write_private(&card.join("keys.bin"), nand.keys()).context("cannot write keys sidecar")?;
+    if let Some(sd) = sd {
+        write_tree(&card, sd).context("cannot write the SD files")?;
+    }
+    if let Some(usb) = usb {
+        let drive = bundle.join("usb");
+        fs::create_dir(&drive).context("cannot create usb/")?;
+        write_tree(&drive, usb).context("cannot write the USB files")?;
+    }
+    File::open(&bundle)?.sync_all()?;
+    publish(&bundle, output).context("cannot publish NAND restore bundle")
+}
+
+fn write_tree(root: &Path, device: &Device) -> Result<()> {
+    for (path, bytes) in device.files() {
+        let target = path.under(root);
+        let parent = target.parent().context("file has no parent directory")?;
         fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
         write_private(&target, bytes).with_context(|| format!("cannot write {path}"))?;
     }
-    File::open(&bundle)?.sync_all()?;
-    publish(&bundle, output).context("cannot publish NAND restore bundle")
+    Ok(())
 }
 
 /// Moves a staged file or directory to `target` without replacing anything, then makes the move durable.
@@ -418,24 +443,39 @@ mod tests {
     }
 
     #[test]
-    fn the_bundle_is_the_card_root() -> Result<()> {
+    fn the_output_holds_the_card_and_the_drive() -> Result<()> {
         let work = tempfile::tempdir()?;
         let digest: String = (Sha256::digest(b"boot").iter())
             .map(|byte| format!("{byte:02x}"))
             .collect();
         // Ym9vdA== is "boot" in base64.
-        let yaml = format!(
-            "nand: {{menu: 4.3E}}\nsd: [{{inline: Ym9vdA==, sha256: {digest}, to: apps/x/boot.dol}}]"
-        );
+        let file = format!("{{inline: Ym9vdA==, sha256: {digest}, to: apps/x/boot.dol}}");
+        let names = |path: &Path| -> Result<Vec<String>> {
+            let mut names: Vec<String> = (fs::read_dir(path)?)
+                .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
+                .collect::<Result<_, _>>()?;
+            names.sort();
+            Ok(names)
+        };
+
+        let yaml =
+            format!("nand: {{menu: 4.3E}}\nsd: {{bundles: [{file}]}}\nusb: {{bundles: [{file}]}}");
         let recipe = Recipe::read(yaml.as_bytes(), work.path())?;
-        let output = work.path().join("card");
-        publish_bundle(&Nand::zeroed()?, &recipe.sd, &output)?;
-        let mut names: Vec<_> = fs::read_dir(&output)?
-            .map(|entry| entry.map(|entry| entry.file_name()))
-            .collect::<Result<_, _>>()?;
-        names.sort();
-        assert_eq!(names, ["apps", "keys.bin", "nand.bin"]);
-        assert_eq!(fs::read(output.join("apps/x/boot.dol"))?, b"boot");
+        let output = work.path().join("both");
+        publish_bundle(
+            &Nand::zeroed()?,
+            recipe.sd.as_ref(),
+            recipe.usb.as_ref(),
+            &output,
+        )?;
+        assert_eq!(names(&output)?, ["sd", "usb"]);
+        assert_eq!(names(&output.join("sd"))?, ["apps", "keys.bin", "nand.bin"]);
+        assert_eq!(fs::read(output.join("usb/apps/x/boot.dol"))?, b"boot");
+
+        let output = work.path().join("nand-only");
+        publish_bundle(&Nand::zeroed()?, None, None, &output)?;
+        assert_eq!(names(&output)?, ["sd"]);
+        assert_eq!(names(&output.join("sd"))?, ["keys.bin", "nand.bin"]);
         Ok(())
     }
 
