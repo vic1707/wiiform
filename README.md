@@ -169,6 +169,13 @@ USB drive: unpack the matching
 [RVLoader release](https://github.com/Aurelio92/RVLoader/releases) onto the
 drive. Wiiform writes the NAND only.
 
+RVLoader and the Wii Menu keep separate titles. RVLoader lists the WADs in the
+drive's `vc/` and `channels/` folders (GameCube games in `games/`, Wii discs in
+`wbfs/`) and installs a WAD into an emulated NAND on the drive
+(`rvloader/Hiidra/emunand/`) when it first launches it. Titles from the
+recipe's `titles` stay on the console's NAND: they appear in the Wii Menu,
+which RVLoader opens from its house button, but not in RVLoader's lists.
+
 On an existing image, `wii-nand install-priiloader IN OUT --rvloader 2.1
 --rvloader-sha256 HASH --rvloader-wd-sha256 HASH [--patch-out-wifi] [--vga]`
 does the same. Its `--vga` writes only the flag: the image's settings must
