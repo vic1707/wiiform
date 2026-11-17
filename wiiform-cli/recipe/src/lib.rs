@@ -1,82 +1,51 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//! The recipe a NAND is built from, as serde reads it.
+//! The recipe Wiiform works from, as serde reads it.
 //!
 //! Each top-level key has a module of the same name. Deserializing a
-//! [`Recipe`] reads, downloads and checks every WAD it names.
-use std::{
-    collections::{BTreeSet, HashSet},
-    io::Read,
-    path::Path,
-};
+//! [`Recipe`] reads, downloads and checks every file it names.
+use std::{io::Read, path::Path};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub mod cios;
 mod files;
-mod hbc;
-mod menu;
-pub mod priiloader;
+mod github;
+pub mod nand;
 mod region;
-mod remove;
-pub mod rvloader;
-pub mod setup;
+pub mod sd;
+mod source;
 #[cfg(test)]
 mod tests;
 mod title_id;
-mod titles;
 mod wad;
 pub mod yaml;
 
 pub use self::{
-    cios::Cios,
     files::{ResolvedPath, open_regular_file, read_bounded},
-    hbc::Hbc,
-    menu::Menu,
-    priiloader::Priiloader,
+    nand::{
+        Nand, cios::Cios, hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel,
+        rvloader::Rvloader, setup::Setup, titles::Title,
+    },
     region::Region,
-    remove::RemovableChannel,
-    rvloader::Rvloader,
-    setup::Setup,
     title_id::TitleId,
-    titles::Title,
     wad::{Sha256, Wad},
 };
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    /// Stock System Menu target (4.3E, 4.3U, or 4.3J).
-    pub menu: Menu,
-    /// Stock channels to remove.
+    /// The NAND image to build.
+    pub nand: Nand,
+    /// Files for the SD card, published next to nand.bin and keys.bin.
     #[serde(default)]
-    pub remove: BTreeSet<RemovableChannel>,
-    /// Supply a mapping to complete first-run setup with these settings and defaults.
-    /// Omit this section or use null to run the Wii setup wizard.
-    #[serde(default)]
-    pub setup: Option<Setup>,
-    /// WADs to install from a local file, inline bytes, or an HTTPS URL.
-    #[serde(default)]
-    pub titles: Vec<Title>,
-    /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
-    #[serde(default)]
-    pub cios: Vec<Cios>,
-    /// Optional Homebrew Channel from a tagged Reborn release or a custom WAD.
-    #[serde(default)]
-    pub hbc: Option<Hbc>,
-    /// Optional pinned Priiloader install with its settings and hacks.
-    #[serde(default)]
-    pub priiloader: Option<Priiloader>,
-    /// Optional RVLoader boot hook. Requires `priiloader`.
-    #[serde(default)]
-    pub rvloader: Option<Rvloader>,
+    pub sd: Vec<sd::File>,
 }
 
 impl Recipe {
-    /// Reads a recipe whose WAD paths are relative to `directory`.
+    /// Reads a recipe whose local paths are relative to `directory`.
     pub fn read(input: impl Read, directory: &Path) -> Result<Self> {
-        let recipe: Self = crate::wad::relative_to(directory.to_owned(), || {
+        let recipe: Self = crate::source::relative_to(directory.to_owned(), || {
             serde_saphyr::from_reader_with_options(input, crate::yaml::options())
         })
         .context("invalid recipe")?;
@@ -86,44 +55,8 @@ impl Recipe {
 
     /// Checks what the types cannot express. Call it again after changing a field.
     pub fn validate(&self) -> Result<()> {
-        let menu = self.menu;
-        if let Some(setup) = &self.setup {
-            ensure!(
-                menu.allows_language(setup.language_for(menu)),
-                "setup language is not supported by menu {menu}"
-            );
-            let country = setup.country_for(menu);
-            ensure!(
-                menu.allows_country(country),
-                "setup country {} is not supported by menu {menu}",
-                country.as_alpha2()
-            );
-        }
-        if let Some(rvloader) = &self.rvloader {
-            let priiloader = (self.priiloader.as_ref())
-                .context("rvloader requires a priiloader section: Priiloader starts it")?;
-            ensure!(
-                priiloader.autoboot.is_none() && priiloader.return_to.is_none(),
-                "rvloader sets Priiloader's autoboot and return_to: remove them from priiloader"
-            );
-            if rvloader.vga {
-                let display = self.setup.as_ref().map(|setup| &setup.display);
-                ensure!(
-                    display.is_some_and(|display| display.progressive),
-                    "rvloader.vga requires setup.display.progressive: true"
-                );
-                ensure!(
-                    menu != Menu::E43 || display.is_some_and(|display| display.pal60),
-                    "rvloader.vga on menu {menu} requires setup.display.pal60: true"
-                );
-            }
-        }
-        let mut slots = HashSet::new();
-        for cios in &self.cios {
-            let slot = cios.target.slot;
-            ensure!(slots.insert(slot), "recipe lists cIOS slot {slot} twice");
-        }
-        Ok(())
+        self.nand.validate()?;
+        sd::check_conflicts(&self.sd)
     }
 }
 

@@ -92,8 +92,11 @@ builds the container images. Every task is a few lines in `mise-tasks.toml`.
 
 ## Update an existing recipe
 
-Move keys under the old `system:` block up one indentation level. Keep
-`menu`, `remove`, `setup`, `titles`, `cios`, `hbc`, `priiloader`, and `rvloader` as top-level keys.
+Move every NAND key under a top-level `nand:` key: `menu`, `remove`, `setup`,
+`titles`, `cios`, `hbc`, `priiloader` and `rvloader` (keys from the old
+`system:` block go directly under `nand:`). Files for the SD card go in a
+top-level `sd` list, and `--output` is now the card's root: `nand.bin`,
+`keys.bin` and those files.
 Move `display` under `setup`. Write each WAD's `path`, `url` or `inline` directly
 in its entry, beside `sha256`; the `source:` level is gone. WAD paths resolve
 relative to the recipe. Write inline data as plain base64 text, without the

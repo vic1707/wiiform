@@ -4,7 +4,10 @@ use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     native::Nand,
-    recipe::{Priiloader, ResolvedPath, Rvloader, Sha256, TitleId, Wad, cios, rvloader},
+    recipe::{
+        Priiloader, ResolvedPath, Rvloader, Sha256, TitleId, Wad,
+        nand::{cios, rvloader},
+    },
     workflow::{
         NusCache, install_priiloader, publish_edit, validate_output, warn_if_already_present,
     },
@@ -152,7 +155,7 @@ fn run(cli: Cli) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiiform::recipe::priiloader::{Autoboot, Hack};
+    use wiiform::recipe::nand::priiloader::{Autoboot, Hack};
 
     fn install_priiloader(
         args: &[&str],

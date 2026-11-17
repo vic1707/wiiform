@@ -1,37 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! WAD payloads, read and checked while a recipe is deserialized.
-use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf};
+use std::{ops::RangeInclusive, path::PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use derive_more::Deref;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{ResolvedPath, read_bounded};
+use crate::ResolvedPath;
 
 const WAD_BOUNDS: RangeInclusive<usize> = 0x40..=0x2100_0000;
-
-thread_local! {
-    /// Directory of the recipe being read; its relative paths start there.
-    static DIRECTORY: RefCell<PathBuf> = const { RefCell::new(PathBuf::new()) };
-}
-
-/// Runs `read` with relative paths resolved against `directory`.
-pub(crate) fn relative_to<T>(directory: PathBuf, read: impl FnOnce() -> T) -> T {
-    let previous = DIRECTORY.replace(directory);
-    let result = read();
-    DIRECTORY.set(previous);
-    result
-}
 
 mod file;
 #[cfg_attr(test, allow(dead_code))] // Tests never download.
 mod https;
 mod sha256;
 
-use self::file::Source;
 pub(crate) use self::file::WadFile;
 pub use self::sha256::Sha256;
+use crate::source::Source;
 
 #[cfg(not(test))]
 pub(crate) use self::https::fetch;
@@ -66,17 +53,9 @@ impl TryFrom<WadFile> for Wad {
     type Error = String;
 
     fn try_from(file: WadFile) -> Result<Self, String> {
-        match file.source {
-            Source::Path(path) => {
-                let path = DIRECTORY.with_borrow(|directory| directory.join(path));
-                read_bounded(&path, WAD_BOUNDS).and_then(|bytes| Self::checked(bytes, file.sha256))
-            }
-            Source::Url(url) => {
-                Self::download(&url, file.sha256).with_context(|| format!("cannot download {url}"))
-            }
-            Source::Inline(bytes) => Self::checked(bytes, file.sha256),
-        }
-        .map_err(|error| format!("{error:#}"))
+        (file.source.read(WAD_BOUNDS))
+            .and_then(|fetched| Self::checked(fetched.bytes, file.sha256))
+            .map_err(|error| format!("{error:#}"))
     }
 }
 
@@ -95,6 +74,8 @@ impl TryFrom<(PathBuf, Sha256)> for Wad {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::cell::RefCell;
+
     use super::*;
 
     type Fetch = Box<dyn Fn(&str, usize) -> Result<Vec<u8>>>;

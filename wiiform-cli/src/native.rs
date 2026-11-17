@@ -9,10 +9,14 @@ use anyhow::{Context, Result, ensure};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
-    Menu, Priiloader, Region, Setup, TitleId, Wad, cios, priiloader,
-    priiloader::Hack,
-    read_bounded, rvloader,
-    setup::{self, SensorBar, display::Aspect},
+    Menu, Priiloader, Region, Setup, TitleId, Wad,
+    nand::{
+        cios, priiloader,
+        priiloader::Hack,
+        rvloader,
+        setup::{self, SensorBar, display::Aspect},
+    },
+    read_bounded,
 };
 use crate::seed::{ExtractedSeed, StockSeed};
 

@@ -3,82 +3,21 @@
   "title": "Recipe",
   "type": "object",
   "properties": {
-    "cios": {
-      "description": "Prebuilt, hash-pinned Wii d2x cIOS WADs.",
+    "nand": {
+      "description": "The NAND image to build.",
+      "$ref": "#/$defs/Nand"
+    },
+    "sd": {
+      "description": "Files for the SD card, published next to nand.bin and keys.bin.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/Cios"
-      }
-    },
-    "hbc": {
-      "description": "Optional Homebrew Channel from a tagged Reborn release or a custom WAD.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Hbc"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "menu": {
-      "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
-      "$ref": "#/$defs/Menu"
-    },
-    "priiloader": {
-      "description": "Optional pinned Priiloader install with its settings and hacks.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Priiloader"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "remove": {
-      "description": "Stock channels to remove.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/RemovableChannel"
-      },
-      "uniqueItems": true
-    },
-    "rvloader": {
-      "description": "Optional RVLoader boot hook. Requires `priiloader`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Rvloader"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "setup": {
-      "description": "Supply a mapping to complete first-run setup with these settings and defaults.\nOmit this section or use null to run the Wii setup wizard.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Setup"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "titles": {
-      "description": "WADs to install from a local file, inline bytes, or an HTTPS URL.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Title"
+        "$ref": "#/$defs/SdFile"
       }
     }
   },
   "additionalProperties": false,
   "required": [
-    "menu"
+    "nand"
   ],
   "$defs": {
     "Aspect": {
@@ -112,6 +51,10 @@
       ],
       "maximum": 255,
       "minimum": 0
+    },
+    "CardPath": {
+      "description": "A path on the SD card, relative to its root. A leading / is accepted and\nmeans the root; empty, `.` and `..` components are not.",
+      "type": "string"
     },
     "Cios": {
       "description": "A prebuilt Wii d2x cIOS WAD and the slot it is expected to fill.",
@@ -161,6 +104,18 @@
           },
           "required": [
             "inline"
+          ]
+        },
+        {
+          "description": "An asset of a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
           ]
         }
       ],
@@ -264,6 +219,30 @@
         }
       },
       "additionalProperties": false
+    },
+    "GithubAsset": {
+      "description": "An asset of a tagged GitHub release.",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "description": "Asset file name, such as usbloadergx_r1283.zip.",
+          "type": "string"
+        },
+        "repo": {
+          "description": "Repository as owner/name, such as wiidev/usbloadergx.",
+          "type": "string"
+        },
+        "tag": {
+          "description": "Release tag, such as v4.0-r1283.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "tag",
+        "asset"
+      ]
     },
     "Hack": {
       "description": "A System Menu hack from the pinned Priiloader definitions.",
@@ -422,6 +401,88 @@
         "auto",
         "sd",
         "usb"
+      ]
+    },
+    "Nand": {
+      "description": "The NAND image: stock menu, then everything installed on top of it.",
+      "type": "object",
+      "properties": {
+        "cios": {
+          "description": "Prebuilt, hash-pinned Wii d2x cIOS WADs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Cios"
+          }
+        },
+        "hbc": {
+          "description": "Optional Homebrew Channel from a tagged Reborn release or a custom WAD.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Hbc"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "menu": {
+          "description": "Stock System Menu target (4.3E, 4.3U, or 4.3J).",
+          "$ref": "#/$defs/Menu"
+        },
+        "priiloader": {
+          "description": "Optional pinned Priiloader install with its settings and hacks.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Priiloader"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "remove": {
+          "description": "Stock channels to remove.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RemovableChannel"
+          },
+          "uniqueItems": true
+        },
+        "rvloader": {
+          "description": "Optional RVLoader boot hook. Requires `priiloader`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rvloader"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "setup": {
+          "description": "Supply a mapping to complete first-run setup with these settings and defaults.\nOmit this section or use null to run the Wii setup wizard.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Setup"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "titles": {
+          "description": "WADs to install from a local file, inline bytes, or an HTTPS URL.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Title"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "menu"
       ]
     },
     "Nickname": {
@@ -583,6 +644,107 @@
       "description": "RVLoader release number: major.minor, without the leading v.",
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "SdFile": {
+      "description": "A file for the SD card: one source, where it goes, and its SHA-256.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "description": "Local path, relative to the recipe.",
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            },
+            {
+              "description": "HTTPS URL of the raw file.",
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            {
+              "description": "The file itself, base64-encoded.",
+              "type": "object",
+              "properties": {
+                "inline": {
+                  "type": "string",
+                  "contentEncoding": "base64"
+                }
+              },
+              "required": [
+                "inline"
+              ]
+            },
+            {
+              "description": "An asset of a tagged GitHub release.",
+              "type": "object",
+              "properties": {
+                "github": {
+                  "$ref": "#/$defs/GithubAsset"
+                }
+              },
+              "required": [
+                "github"
+              ]
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "description": "Unpack the file, a zip, into this card directory. Homebrew zips usually\nhold apps/<name>/, so / is the common choice.",
+              "type": "object",
+              "properties": {
+                "unzip": {
+                  "$ref": "#/$defs/CardPath"
+                }
+              },
+              "required": [
+                "unzip"
+              ]
+            },
+            {
+              "description": "Copy the file to this card path.",
+              "type": "object",
+              "properties": {
+                "to": {
+                  "$ref": "#/$defs/CardPath"
+                }
+              },
+              "required": [
+                "to"
+              ]
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
     },
     "SensorBar": {
       "description": "Sensor bar position relative to the display.",
@@ -752,6 +914,18 @@
           "required": [
             "inline"
           ]
+        },
+        {
+          "description": "An asset of a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
+          ]
         }
       ],
       "required": [
@@ -804,6 +978,18 @@
           },
           "required": [
             "inline"
+          ]
+        },
+        {
+          "description": "An asset of a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
           ]
         }
       ],

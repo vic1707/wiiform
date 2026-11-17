@@ -32,10 +32,11 @@ export WIIFORM_NUS_CACHE="$nus_cache" WIIFORM_NUS_OFFLINE=1
 
 build/bin/wii-seed "$backup" > "$scratch/console.seed.yaml"
 cat > "$scratch/recipe.yaml" <<'YAML'
-menu: 4.3E
-remove: [forecast-channel, news-channel]
-setup: {}
-priiloader: {}
+nand:
+  menu: 4.3E
+  remove: [forecast-channel, news-channel]
+  setup: {}
+  priiloader: {}
 YAML
 
 build/bin/wiiform --seed "$scratch/console.seed.yaml" \
@@ -88,7 +89,7 @@ For broader checks, use the legacy tools below. Run
 or `"$reference/build/bin/wii-nand" inspect-priiloader NAND` for the loader's
 boot layout, settings, and hack files. Keep those JSON reports local. For a
 stock baseline, use a recipe containing just
-`menu: 4.3E` and the same seed, cache, and boot policy. Compare it with the
+`nand.menu: 4.3E` and the same seed, cache, and boot policy. Compare it with the
 prepared image to check channel removals and added titles against the recipe.
 For WAD or cIOS changes, exercise the real package and the applicable
 reapply, conflict, or rejection case.

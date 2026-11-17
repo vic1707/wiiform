@@ -47,11 +47,15 @@ A first build retrieves dependencies if the caches are empty.
 
 ## Recipe build
 
-See the [example recipe](docs/recipe.example.yaml) and its
+A recipe has two keys: `nand`, the image to build, and the optional `sd`, files
+for the SD card. The NAND keys described below (`menu`, `setup`, `titles`,
+`hbc`, `priiloader`, `rvloader`, ...) all sit under `nand`. See the
+[example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
 regenerate the schema from the Rust recipe model; the tests fail when it is stale. A WAD entry names exactly
 one source next to its `sha256`: `path` for a local file (relative to the
-recipe), `url` for an HTTPS download, or `inline` for the file as base64 text.
+recipe), `url` for an HTTPS download, `inline` for the file as base64 text, or
+`github: {repo, tag, asset}` for a release asset.
 The SHA-256 is of the raw WAD bytes. Reading a recipe loads, downloads and
 checks every WAD it names, before the build starts.
 The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
@@ -90,8 +94,10 @@ builds (including CI), set both
 `WIIFORM_NUS_CACHE` and `WIIFORM_NUS_OFFLINE=1`. An offline cache miss fails.
 The cache stores only files that pass Wii title signature and content checks.
 
-The output must be a new directory. A successful build publishes `nand.bin`
-and its matching BootMii `keys.bin` together. A `setup` mapping completes
+The output must be a new directory, laid out as the SD card's root: a successful
+build publishes `nand.bin` and its matching BootMii `keys.bin` (where BootMii
+restores from) together with the recipe's `sd` files. Copy its contents to the
+card. A `setup` mapping completes
 first-run setup using your values and defaults for omitted fields. Put display
 options such as the aspect ratio under `setup.display`. Use `setup: {}` to
 apply all defaults. Omit `setup` or set it to `null` to run the Wii setup wizard.
@@ -184,6 +190,42 @@ unchanged; changing `--patch-out-wifi` on an image that already has the RVLoader
 IOS fails, because IOS36, IOS58 and IOS80 are no longer stock.
 
 Booting RVLoader from a prepared image has not yet been confirmed on a console.
+
+### SD card
+
+```yaml
+sd:
+  - github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
+    unzip: /
+  - github: {repo: emukidid/cleanrip, tag: "2.4", asset: CleanRip-v2.4.zip}
+    unzip: /
+  - url: https://raw.githubusercontent.com/FIX94/Nintendont/COMMIT/loader/loader.dol
+    sha256: "…"
+    to: apps/Nintendont/boot.dol
+```
+
+Each `sd` entry names one source and one placement:
+
+- **Sources:** `path`, `url` and `inline` work as for WADs. `github` takes a
+  release asset by `repo`, `tag` and `asset` name.
+- **Hashes:** `sha256` is required, except for a GitHub asset whose release
+  states one (GitHub records it for assets uploaded since June 2025). A given
+  `sha256` always wins.
+- **Placement:** `unzip: DIR` unpacks a zip into that card directory (homebrew
+  zips usually hold `apps/<name>/`, so `/`); `to: PATH` copies the file there.
+  macOS `__MACOSX/` and `._*` entries are skipped; other entries must be plain
+  files with relative paths.
+- **Conflicts:** files are compared ignoring case, as FAT does. Two entries
+  writing different bytes to one path, a path used as both a file and a
+  directory, or a root `nand.bin` or `keys.bin` stop the build.
+
+All files are downloaded and checked when the recipe is read, before the NAND
+build. Open Shop Channel only serves the latest version of each app, so
+recipes pin releases on GitHub (or a URL) instead.
+
+Format the card MBR with one FAT32 partition: libfat, which Wii homebrew uses
+to read cards and drives, does not read GPT partition tables or exFAT.
+RVLoader cannot run from the card; it needs its release on a USB drive.
 
 ### cIOS packages
 

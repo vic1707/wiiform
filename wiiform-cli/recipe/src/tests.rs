@@ -5,14 +5,28 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 
 use super::*;
 use crate::{
-    priiloader::{Autoboot, Hack, ReturnTo},
-    setup::display::Aspect,
+    nand::{
+        menu::Menu,
+        priiloader::{Autoboot, Hack, ReturnTo},
+        setup::display::Aspect,
+    },
     wad::tests::with_fetch,
 };
 
 const WAD: [u8; 0x40] = [7; 0x40];
 
-fn read(yaml: &str) -> Result<Recipe> {
+/// `yaml` as the `nand` key of a recipe.
+fn nested(yaml: &str) -> String {
+    let indented: String = yaml.lines().map(|line| format!("  {line}\n")).collect();
+    format!("nand:\n{indented}")
+}
+
+/// Reads `yaml` as the `nand` part of a recipe.
+fn read(yaml: &str) -> Result<Nand> {
+    read_recipe(&nested(yaml)).map(|recipe| recipe.nand)
+}
+
+fn read_recipe(yaml: &str) -> Result<Recipe> {
     Recipe::read(yaml.as_bytes(), Path::new("."))
 }
 
@@ -25,7 +39,7 @@ fn inline() -> String {
     format!("inline: {}, sha256: {}", STANDARD.encode(WAD), sha(&WAD))
 }
 
-fn message(result: Result<Recipe>) -> String {
+fn message<T: std::fmt::Debug>(result: Result<T>) -> String {
     format!("{:#}", result.expect_err("the recipe must be rejected"))
 }
 
@@ -201,10 +215,13 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
     let digest = sha(&WAD);
     let title = |path: &str| format!("menu: 4.3E\ntitles: [{{path: {path}, sha256: {digest}}}]");
 
-    let recipe = Recipe::read(title("linked.wad").as_bytes(), &dir)?;
+    let recipe = Recipe::read(nested(&title("linked.wad")).as_bytes(), &dir)?.nand;
     assert_eq!(&*recipe.titles[0].wad, WAD);
     for bad in [".", "missing.wad"] {
-        assert!(Recipe::read(title(bad).as_bytes(), &dir).is_err(), "{bad}");
+        assert!(
+            Recipe::read(nested(&title(bad)).as_bytes(), &dir).is_err(),
+            "{bad}"
+        );
     }
     assert!(read(&title("linked.wad")).is_err(), "another directory");
     fs::remove_dir_all(dir)?;
@@ -214,7 +231,7 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
 #[test]
 fn removals_and_setup_follow_the_menu_after_an_override() -> Result<()> {
     let mut recipe = read("menu: 4.3E\nremove: [news-channel, forecast-channel, news-channel]")?;
-    let ids = |recipe: &Recipe| -> Vec<u64> {
+    let ids = |recipe: &Nand| -> Vec<u64> {
         (recipe.remove.iter())
             .flat_map(|channel| channel.title_ids(recipe.menu))
             .map(TitleId::as_u64)
@@ -409,7 +426,19 @@ fn the_documented_example_is_a_valid_recipe() -> Result<()> {
             1,
         )
         .replacen(placeholder, &sha(&WAD), 1);
-    let recipe = read(&example)?;
+    let app = zip_of(&[("apps/Example/boot.dol", b"dol")], &[]);
+    let example = example.replacen(
+        &format!("path: sd/example-app.zip\n    sha256: \"{placeholder}\""),
+        &format!(
+            "inline: {}\n    sha256: {}",
+            STANDARD.encode(&app),
+            sha(&app)
+        ),
+        1,
+    );
+    let recipe = read_recipe(&example)?;
+    assert_eq!(recipe.sd[0].files().len(), 1);
+    let recipe = recipe.nand;
     assert_eq!(recipe.remove.len(), 2);
     assert_eq!(&*recipe.titles[0].wad, WAD);
     assert_eq!(recipe.priiloader.unwrap().hacks, [Hack::Fix480p]);
@@ -445,4 +474,169 @@ fn committed_schema_matches_the_recipe_types() -> Result<()> {
         "docs/wiiform.recipe.schema.json is stale: run `mise run schema`"
     );
     Ok(())
+}
+
+/// A zip of `files`, with `symlinks` as (name, target) pairs.
+fn zip_of(files: &[(&str, &[u8])], symlinks: &[(&str, &str)]) -> Vec<u8> {
+    use std::io::Write;
+    use zip::{ZipWriter, write::SimpleFileOptions};
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut writer = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    writer.add_directory("apps/", options).unwrap();
+    for (name, bytes) in files {
+        writer.start_file(*name, options).unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+    for (name, target) in symlinks {
+        writer.add_symlink(*name, *target, options).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+/// An `sd` entry carrying `bytes` inline, placed by `placement`.
+fn inline_sd(bytes: &[u8], placement: &str) -> String {
+    format!(
+        "{{inline: {}, sha256: {}, {placement}}}",
+        STANDARD.encode(bytes),
+        sha(bytes)
+    )
+}
+
+fn sd_files(entries: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
+    let recipe = read_recipe(&format!(
+        "nand: {{menu: 4.3E}}\nsd: [{}]",
+        entries.join(", ")
+    ))?;
+    Ok((recipe.sd.iter())
+        .flat_map(|entry| entry.files())
+        .map(|(path, bytes)| (path.to_string(), bytes.clone()))
+        .collect())
+}
+
+#[test]
+fn sd_entries_copy_or_unzip_files_onto_the_card() -> Result<()> {
+    let app = zip_of(
+        &[
+            ("apps/App/boot.dol", b"dol"),
+            ("apps/App/._boot.dol", b"apple"),
+            ("__MACOSX/apps/App/._meta.xml", b"apple"),
+            ("apps/App/meta.xml", b"xml"),
+        ],
+        &[],
+    );
+    assert_eq!(
+        sd_files(&[
+            inline_sd(&app, "unzip: /"),
+            inline_sd(b"loader", "to: /apps/Nintendont/boot.dol")
+        ])?,
+        [
+            ("/apps/App/boot.dol".to_owned(), b"dol".to_vec()),
+            ("/apps/App/meta.xml".to_owned(), b"xml".to_vec()),
+            ("/apps/Nintendont/boot.dol".to_owned(), b"loader".to_vec()),
+        ]
+    );
+    let below = sd_files(&[inline_sd(&app, "unzip: extra/")])?;
+    assert_eq!(below[0].0, "/extra/apps/App/boot.dol");
+
+    for (entry, error) in [
+        (inline_sd(b"x", "to: /"), "not the card root"),
+        (inline_sd(b"x", "to: a/../b"), ". or .. component"),
+        (inline_sd(b"x", "to: a//b"), "empty"),
+        (inline_sd(b"x", "to: 'a:b'"), "cannot store"),
+        (inline_sd(b"not a zip", "unzip: /"), "needs a zip"),
+        (
+            inline_sd(&zip_of(&[("../evil", b"x")], &[]), "unzip: /"),
+            ". or .. component",
+        ),
+        (
+            inline_sd(&zip_of(&[("/abs", b"x")], &[]), "unzip: /"),
+            "absolute",
+        ),
+        (
+            inline_sd(&zip_of(&[], &[("apps/link", "/etc/passwd")]), "unzip: /"),
+            "not a regular file",
+        ),
+        (inline_sd(b"x", "to: a, unzip: /"), ""),
+        (
+            format!("{{inline: {}, to: a}}", STANDARD.encode(b"x")),
+            "sha256 is required",
+        ),
+        (
+            format!(
+                "{{inline: {}, sha256: {}, to: a}}",
+                STANDARD.encode(b"x"),
+                sha(b"y")
+            ),
+            "SHA-256",
+        ),
+        (inline_sd(b"x", "to: a, extra: 1"), "unknown field"),
+        (
+            format!(
+                "{{inline: {}, sha256: {}}}",
+                STANDARD.encode(b"x"),
+                sha(b"x")
+            ),
+            "",
+        ),
+    ] {
+        let result = sd_files(std::slice::from_ref(&entry));
+        assert!(message(result).contains(error), "{entry}");
+    }
+
+    let conflict = [inline_sd(b"one", "to: a/b"), inline_sd(b"two", "to: a/b")];
+    assert!(message(sd_files(&conflict)).contains("different files to /a/b"));
+    sd_files(&[inline_sd(b"same", "to: a/b"), inline_sd(b"same", "to: a/b")])?;
+    let file_and_directory = [inline_sd(b"one", "to: a"), inline_sd(b"two", "to: a/b")];
+    assert!(message(sd_files(&file_and_directory)).contains("both a file and a directory"));
+    let case = [
+        inline_sd(b"one", "to: Apps/x"),
+        inline_sd(b"two", "to: apps/X"),
+    ];
+    assert!(message(sd_files(&case)).contains("different files"));
+    for reserved in ["to: nand.bin", "to: /KEYS.BIN"] {
+        assert!(message(sd_files(&[inline_sd(b"x", reserved)])).contains("NAND and its keys"));
+    }
+    sd_files(&[inline_sd(b"x", "to: backup/nand.bin")])?;
+    Ok(())
+}
+
+#[test]
+fn sd_github_assets_use_the_release_digest_or_a_given_hash() -> Result<()> {
+    const ASSET: &[u8] = b"release asset";
+    let entry = |sha256: &str| {
+        format!(
+            "{{github: {{repo: owner/app, tag: v1.0, asset: app.dol}}, {sha256} to: apps/app/boot.dol}}"
+        )
+    };
+    let read = |entry: String, digest: Option<String>| {
+        with_fetch(
+            move |url, _| match url {
+                "https://api.github.com/repos/owner/app/releases/tags/v1.0" => {
+                    Ok(serde_json::to_vec(
+                        &serde_json::json!({"assets": [{"name": "app.dol", "digest": digest}]}),
+                    )?)
+                }
+                "https://github.com/owner/app/releases/download/v1.0/app.dol" => Ok(ASSET.to_vec()),
+                _ => panic!("unexpected download of {url}"),
+            },
+            || sd_files(&[entry]),
+        )
+    };
+    let published = Some(format!("sha256:{}", sha(ASSET)));
+    assert_eq!(read(entry(""), published.clone())?[0].1, ASSET);
+    assert_eq!(
+        read(entry(&format!("sha256: {},", sha(ASSET))), None)?[0].1,
+        ASSET
+    );
+    assert!(message(read(entry(""), None)).contains("sha256 is required"));
+    let wrong = format!("sha256: {},", sha(b"other"));
+    assert!(message(read(entry(&wrong), published)).contains("SHA-256"));
+    let bad_repo = "{github: {repo: owner, tag: v1.0, asset: app.dol}, to: a}".to_owned();
+    assert!(message(read(bad_repo, None)).contains("owner/name"));
+    Ok(())
+}
+
+#[test]
+fn a_flat_recipe_is_refused() {
+    assert!(message(read_recipe("menu: 4.3E")).contains("unknown field `menu`"));
 }

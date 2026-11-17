@@ -1,95 +1,111 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/vic1707/wiiform/main/docs/wiiform.recipe.schema.json
 # Template only: replace the sample WAD path and hash with real values.
-menu: 4.3E
+# The NAND image: every key below sits under nand.
+nand:
+  menu: 4.3E
 
-# Stock channels to remove. Names expand to the menu region's title IDs.
-remove:
-  - forecast-channel
-  - news-channel
-  # - wii-shop-channel
-  # - photo-channel
+  # Stock channels to remove. Names expand to the menu region's title IDs.
+  remove:
+    - forecast-channel
+    - news-channel
+    # - wii-shop-channel
+    # - photo-channel
 
-# A setup mapping completes first-run setup. Use {} for all defaults.
-# Omit setup or set it to null to run the Wii setup wizard.
-setup:
-  nickname: "Speed Wii" # Defaults to "Wii".
-  language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.
-  country: GB # Two-letter country code. Defaults to GB (E), US (U), or JP (J). Quote "NO".
-  sensor_bar: above # above or below; defaults to above.
-  display:
-    aspect: "16:9" # Defaults to "4:3".
-    progressive: true # Enables 480p where supported, off by default. fix_480p is a separate hack.
-    pal60: false # Off by default.
+  # A setup mapping completes first-run setup. Use {} for all defaults.
+  # Omit setup or set it to null to run the Wii setup wizard.
+  setup:
+    nickname: "Speed Wii" # Defaults to "Wii".
+    language: en # E: en/de/fr/es/it/nl; U: en/fr/es; J: ja. Defaults to en for E/U and ja for J.
+    country: GB # Two-letter country code. Defaults to GB (E), US (U), or JP (J). Quote "NO".
+    sensor_bar: above # above or below; defaults to above.
+    display:
+      aspect: "16:9" # Defaults to "4:3".
+      progressive: true # Enables 480p where supported, off by default. fix_480p is a separate hack.
+      pal60: false # Off by default.
 
-# WADs to install. Each entry takes one of path, url or inline, and the
-# SHA-256 of the raw WAD. Paths are relative to this file.
-titles:
-  - path: wads/example-pal-channel.wad
+  # WADs to install. Each entry takes one of path, url or inline, and the
+  # SHA-256 of the raw WAD. Paths are relative to this file.
+  titles:
+    - path: wads/example-pal-channel.wad
+      sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      allow_unsigned: false # true permits an unsigned community channel WAD
+    # Stock IOS9 v1034 is also a title, with the default Nintendo signature check.
+    # - path: wads/IOS9-64-v1034.wad
+    #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    # - url: "https://example.com/channel.wad"
+    #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    # - inline: BASE64_OF_WAD
+    #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  # Optional prebuilt d2x WADs. Use path, url, or inline as with titles.
+  # cios:
+  #   - path: wads/d2x-wii-249-base56.wad
+  #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  #     target:
+  #       slot: 249 # 248–251.
+  #       base: 56 # 38, 56, 57, or 58. Must match d2x IOSINFO.
+  #       revision: 65535 # TMD revision of the WAD.
+  #       replace_stock_stub: true # Allows replacing the verified 249/250 v65280 stub.
+
+  # Optional Homebrew Channel, installed before Priiloader.
+  # hbc:
+  #   reborn:
+  #     version: "1.16.0" # Semver of a release with a retail OHBC WAD.
+  #     # sha256 is optional. Wiiform uses the GitHub asset digest by default.
+  #
+  # A custom HBC WAD requires its SHA-256.
+  # hbc:
+  #   custom:
+  #     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
+  #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  # Optional RVLoader, installed as its Wii-side installer does. Requires priiloader
+  # without its autoboot and return_to keys.
+  # rvloader:
+  #   version: "2.1"
+  #   sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7" # installer/data/bootloader.dol of that release.
+  #   wd_sha256: "6b7f6c95ec886899b43dcb5ca3dc15e20bbaa7c8c4e617e21166876f01cdb7b8" # installer/data/wd.bin of that release.
+  #   patch_out_wifi: false # Also remove the Wi-Fi modules from IOS36, IOS58 and IOS80.
+  #   vga: false # Requires setup.display.progressive, and pal60 on 4.3E.
+
+  priiloader: # An empty mapping installs Priiloader with pinned defaults.
+    # Every Priiloader setting and hack state is written. Omitted keys use the
+    # pinned 0.10.0 defaults; prior NAND values are not preserved.
+    autoboot: system_menu # disabled/homebrew_channel/bootmii_ios/system_menu/file
+    return_to: system_menu # system_menu/priiloader/autoboot/file
+    shutdown_to: none # none/priiloader/autoboot
+    preferred_mount_point: auto # auto/sd/usb
+    stop_disc: false
+    lid_slot_on_error: false
+    ignore_shutdown_mode: false
+    white_background: false
+    dump_gecko_text: false
+    show_rc_updates: false
+    # Hacks to enable; every hack not listed is disabled.
+    hacks:
+      - fix_480p
+      # - block_online_updates
+      # - block_disc_updates
+      # - block_disc_autoboot
+      # - auto_press_a
+      # - remove_deflicker
+      # - move_disc_channel
+      # - remove_nocopy_save_protection
+      # - replace_health_screen
+      # - no_background_music
+      # - wiimmfi
+      # - region_free_everything # Japanese menus use the pinned JP definition.
+
+# Files for the SD card, written next to nand.bin and keys.bin in --output.
+# Each entry takes one source (path, url, inline, or a GitHub release asset)
+# and one placement: unzip into a card directory, or copy to a card path.
+# sha256 is required, except for GitHub assets whose release states one.
+sd:
+  - path: sd/example-app.zip
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-    allow_unsigned: false # true permits an unsigned community channel WAD
-  # Stock IOS9 v1034 is also a title, with the default Nintendo signature check.
-  # - path: wads/IOS9-64-v1034.wad
+    unzip: / # Homebrew zips usually hold apps/<name>/.
+  # - github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
+  #   unzip: / # sha256 may be omitted: this release states one.
+  # - url: "https://example.com/loader.dol"
   #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  # - url: "https://example.com/channel.wad"
-  #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  # - inline: BASE64_OF_WAD
-  #   sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-# Optional prebuilt d2x WADs. Use path, url, or inline as with titles.
-# cios:
-#   - path: wads/d2x-wii-249-base56.wad
-#     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-#     target:
-#       slot: 249 # 248–251.
-#       base: 56 # 38, 56, 57, or 58. Must match d2x IOSINFO.
-#       revision: 65535 # TMD revision of the WAD.
-#       replace_stock_stub: true # Allows replacing the verified 249/250 v65280 stub.
-
-# Optional Homebrew Channel, installed before Priiloader.
-# hbc:
-#   reborn:
-#     version: "1.16.0" # Semver of a release with a retail OHBC WAD.
-#     # sha256 is optional. Wiiform uses the GitHub asset digest by default.
-#
-# A custom HBC WAD requires its SHA-256.
-# hbc:
-#   custom:
-#     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
-#     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-# Optional RVLoader, installed as its Wii-side installer does. Requires priiloader
-# without its autoboot and return_to keys.
-# rvloader:
-#   version: "2.1"
-#   sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7" # installer/data/bootloader.dol of that release.
-#   wd_sha256: "6b7f6c95ec886899b43dcb5ca3dc15e20bbaa7c8c4e617e21166876f01cdb7b8" # installer/data/wd.bin of that release.
-#   patch_out_wifi: false # Also remove the Wi-Fi modules from IOS36, IOS58 and IOS80.
-#   vga: false # Requires setup.display.progressive, and pal60 on 4.3E.
-
-priiloader: # An empty mapping installs Priiloader with pinned defaults.
-  # Every Priiloader setting and hack state is written. Omitted keys use the
-  # pinned 0.10.0 defaults; prior NAND values are not preserved.
-  autoboot: system_menu # disabled/homebrew_channel/bootmii_ios/system_menu/file
-  return_to: system_menu # system_menu/priiloader/autoboot/file
-  shutdown_to: none # none/priiloader/autoboot
-  preferred_mount_point: auto # auto/sd/usb
-  stop_disc: false
-  lid_slot_on_error: false
-  ignore_shutdown_mode: false
-  white_background: false
-  dump_gecko_text: false
-  show_rc_updates: false
-  # Hacks to enable; every hack not listed is disabled.
-  hacks:
-    - fix_480p
-    # - block_online_updates
-    # - block_disc_updates
-    # - block_disc_autoboot
-    # - auto_press_a
-    # - remove_deflicker
-    # - move_disc_channel
-    # - remove_nocopy_save_protection
-    # - replace_health_screen
-    # - no_background_music
-    # - wiimmfi
-    # - region_free_everything # Japanese menus use the pinned JP definition.
+  #   to: apps/Nintendont/boot.dol

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
-mod source;
-
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub(crate) use self::source::Source;
 use super::Sha256;
+use crate::source::Source;
 
 /// A WAD from one source, with the SHA-256 of its exact bytes.
 // When a WAD is flattened into an entry, this is where that entry's unknown

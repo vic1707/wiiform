@@ -4,10 +4,8 @@ use derive_more::Display;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{
-    Region,
-    setup::{CountryCode, Language},
-};
+use super::setup::{CountryCode, Language};
+use crate::Region;
 
 /// Stock System Menu version used by the generated image.
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq, Deserialize, JsonSchema)]

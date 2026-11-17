@@ -14,7 +14,7 @@ use tempfile::Builder;
 
 use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
-    priiloader_payload,
+    priiloader_payload, recipe,
     recipe::{Menu, Priiloader, Recipe, Region, Rvloader, TitleId},
     seed::StockSeed,
 };
@@ -87,7 +87,12 @@ pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |recipe| {
         let mut seed = StockSeed::from_reader(open(&options.seed)?)?;
         options.cache.prepare()?;
-        create_stock(&mut seed, recipe.menu, options.boot_policy, &options.cache)
+        create_stock(
+            &mut seed,
+            recipe.nand.menu,
+            options.boot_policy,
+            &options.cache,
+        )
     })
 }
 
@@ -150,25 +155,25 @@ fn build_with(
         Recipe::read(open(&options.recipe)?, &directory)?
     };
     if let Some(menu) = options.menu {
-        recipe.menu = menu;
+        recipe.nand.menu = menu;
         recipe.validate()?;
     }
     let (mut nand, identity) = create_stock(&recipe).context("cannot create stock NAND")?;
 
-    let removals: Vec<TitleId> = (recipe.remove.iter())
-        .flat_map(|channel| channel.title_ids(recipe.menu))
+    let removals: Vec<TitleId> = (recipe.nand.remove.iter())
+        .flat_map(|channel| channel.title_ids(recipe.nand.menu))
         .collect();
     for &id in &removals {
         nand.remove_title(id)
             .with_context(|| format!("cannot remove title {id}"))?;
     }
 
-    if let Some(setup) = &recipe.setup {
-        nand.apply_system_settings(recipe.menu, setup)
+    if let Some(setup) = &recipe.nand.setup {
+        nand.apply_system_settings(recipe.nand.menu, setup)
             .context("cannot generate system settings")?;
     }
 
-    for (index, title) in recipe.titles.iter().enumerate() {
+    for (index, title) in recipe.nand.titles.iter().enumerate() {
         let installed = if title.allow_unsigned {
             nand.install_unsigned_channel(&title.wad)
         } else {
@@ -182,36 +187,42 @@ fn build_with(
         );
         ensure!(
             !recipe
+                .nand
                 .cios
                 .iter()
                 .any(|cios| cios.target.title_id() == installed.title_id),
             "recipe lists a title WAD and a cIOS for the same slot ({})",
             installed.title_id
         );
-        report_installed(&installed, recipe.menu);
+        report_installed(&installed, recipe.nand.menu);
     }
 
-    for cios in &recipe.cios {
+    for cios in &recipe.nand.cios {
         let installed = nand
             .install_cios(&cios.wad, &cios.target)
             .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?;
         warn_if_already_present(&installed);
     }
 
-    if let Some(hbc) = &recipe.hbc {
+    if let Some(hbc) = &recipe.nand.hbc {
         let installed = nand
             .install_homebrew_channel(&hbc.0)
             .context("cannot install Homebrew Channel")?;
-        report_installed(&installed, recipe.menu);
+        report_installed(&installed, recipe.nand.menu);
     }
 
-    if let Some(config) = &recipe.priiloader {
-        install_priiloader(&mut nand, config, recipe.rvloader.as_ref(), &options.cache)?;
+    if let Some(config) = &recipe.nand.priiloader {
+        install_priiloader(
+            &mut nand,
+            config,
+            recipe.nand.rvloader.as_ref(),
+            &options.cache,
+        )?;
     }
 
     nand.verify_generated_nand(&identity)
         .context("cannot verify generated NAND")?;
-    publish_bundle(&nand, &options.output)
+    publish_bundle(&nand, &recipe.sd, &options.output)
 }
 
 /// Installs and configures Priiloader, and with `rvloader` does what RVLoader's
@@ -339,7 +350,8 @@ pub fn publish_edit(nand: &Nand, output: &Path) -> Result<()> {
     publish(&candidate, output).context("cannot publish edited NAND")
 }
 
-fn publish_bundle(nand: &Nand, output: &Path) -> Result<()> {
+/// Publishes the SD card root: the NAND and its keys for BootMii, and the recipe's `sd` files.
+fn publish_bundle(nand: &Nand, card: &[recipe::sd::File], output: &Path) -> Result<()> {
     let staging = Builder::new()
         .prefix(".wiiform-")
         .permissions(fs::Permissions::from_mode(0o700))
@@ -350,6 +362,13 @@ fn publish_bundle(nand: &Nand, output: &Path) -> Result<()> {
     fs::set_permissions(&bundle, fs::Permissions::from_mode(0o700))?;
     write_private(&bundle.join("nand.bin"), nand.as_bytes()).context("cannot write NAND")?;
     write_private(&bundle.join("keys.bin"), nand.keys()).context("cannot write keys sidecar")?;
+    for (path, bytes) in card.iter().flat_map(|entry| entry.files()) {
+        let target = path.under(&bundle);
+        let parent = target.parent().context("SD file has no parent directory")?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("cannot create {}", parent.display()))?;
+        write_private(&target, bytes).with_context(|| format!("cannot write {path}"))?;
+    }
     File::open(&bundle)?.sync_all()?;
     publish(&bundle, output).context("cannot publish NAND restore bundle")
 }
@@ -398,6 +417,28 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn the_bundle_is_the_card_root() -> Result<()> {
+        let work = tempfile::tempdir()?;
+        let digest: String = (Sha256::digest(b"boot").iter())
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        // Ym9vdA== is "boot" in base64.
+        let yaml = format!(
+            "nand: {{menu: 4.3E}}\nsd: [{{inline: Ym9vdA==, sha256: {digest}, to: apps/x/boot.dol}}]"
+        );
+        let recipe = Recipe::read(yaml.as_bytes(), work.path())?;
+        let output = work.path().join("card");
+        publish_bundle(&Nand::zeroed()?, &recipe.sd, &output)?;
+        let mut names: Vec<_> = fs::read_dir(&output)?
+            .map(|entry| entry.map(|entry| entry.file_name()))
+            .collect::<Result<_, _>>()?;
+        names.sort();
+        assert_eq!(names, ["apps", "keys.bin", "nand.bin"]);
+        assert_eq!(fs::read(output.join("apps/x/boot.dol"))?, b"boot");
+        Ok(())
+    }
+
     fn hash(path: &Path) -> Result<Vec<u8>> {
         let mut digest = Sha256::new();
         let mut reader = BufReader::new(File::open(path)?);
@@ -439,7 +480,7 @@ mod tests {
         fs::write(
             &recipe,
             format!(
-                "menu: 4.3E\ntitles:\n  - path: fixture.wad\n    sha256: \"{}\"\n    allow_unsigned: true\n",
+                "nand:\n  menu: 4.3E\n  titles:\n    - path: fixture.wad\n      sha256: \"{}\"\n      allow_unsigned: true\n",
                 expected.trim()
             ),
         )?;
