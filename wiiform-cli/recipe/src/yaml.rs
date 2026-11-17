@@ -40,8 +40,8 @@ pub fn options() -> serde_saphyr::Options {
         with_snippet: false,
         budget: serde_saphyr::budget! {
             max_events: 20_000,
-            max_aliases: 0,
-            max_anchors: 0,
+            max_aliases: 256,
+            max_anchors: 256,
             max_depth: MAX_DEPTH,
             max_documents: 1,
             max_nodes: 8_192,
