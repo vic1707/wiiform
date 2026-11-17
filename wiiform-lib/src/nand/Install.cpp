@@ -3,6 +3,7 @@
 #include <Support.hpp>
 
 #include <Factory.hpp>
+#include <RvloaderIos.hpp>
 #include <Titles.hpp>
 #include <WadPackage.hpp>
 #include <WorkingImage.hpp>
@@ -12,6 +13,7 @@
 #include <QtEndian>
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 namespace {
@@ -131,7 +133,8 @@ namespace {
     return true;
   }
 
-  void verify_stock_stub(NandBin& nand, quint64 title_id) {
+  // Checks that the slot holds exactly this Nintendo-signed title version, complete.
+  void verify_nintendo_title(NandBin& nand, quint64 title_id, quint16 version) {
     const auto tid = title_name(title_id);
     const auto title = "/title/" + tid.left(8) + "/" + tid.mid(8);
     const auto content_dir = title + "/content";
@@ -139,22 +142,22 @@ namespace {
     const auto ticket_path = "/ticket/" + tid.left(8) + "/" + tid.mid(8) + ".tik";
     const auto tmd_entry = find_path(nand, tmd_path);
     const auto ticket_entry = find_path(nand, ticket_path);
-    require(tmd_entry && ticket_entry, "The occupied cIOS slot is not a complete stock stub");
+    require(tmd_entry && ticket_entry, "The occupied slot is not a complete Nintendo title");
     const auto metadata = read_authenticated_file(nand, tmd_entry, 2 * 1024 * 1024);
     const auto ticket_data = read_authenticated_file(nand, ticket_entry, 64 * 1024);
     require(CheckTitleMetadata(metadata, ticket_data) &&
                 check_cert_chain(metadata) == ERROR_SUCCESS && check_cert_chain(ticket_data) == ERROR_SUCCESS,
-            "The occupied cIOS slot is not an authentic Nintendo stub");
+            "The occupied slot is not an authentic Nintendo title");
     const auto count = qFromBigEndian<quint16>(metadata.constData() + 0x1de);
     require(metadata.size() == 0x1e4 + count * 0x24 && ticket_data.size() == 0x2a4 && count > 0,
-            "The occupied cIOS slot has unsupported stock metadata sizes");
+            "The occupied slot has unsupported stock metadata sizes");
     require(metadata[0x183] == '\0' && qFromBigEndian<quint32>(ticket_data.constData() + 0x1d8) == 0 &&
                 static_cast<uchar>(ticket_data[0x1f1]) == 0,
-            "The occupied cIOS slot is not a universal-key Wii title");
+            "The occupied slot is not a universal-key Wii title");
     Tmd tmd(metadata);
     Ticket ticket(ticket_data, false);
-    require(tmd.Tid() == title_id && ticket.Tid() == title_id && tmd.Version() == 65280,
-            "The occupied cIOS slot is not Nintendo stub v65280");
+    require(tmd.Tid() == title_id && ticket.Tid() == title_id && tmd.Version() == version,
+            "The occupied slot is not the expected Nintendo title version");
 
     const auto map_entry = find_path(nand, "/shared1/content.map");
     const auto map_data = map_entry
@@ -165,7 +168,7 @@ namespace {
 
     NusJob job;
     job.tid = title_id;
-    job.version = 65280;
+    job.version = version;
     job.decrypt = true;
     job.data << metadata << ticket_data;
     QSet<QString> expected_local_files{"title.tmd"};
@@ -173,35 +176,35 @@ namespace {
     for (int index = 0; index < tmd.Count(); ++index) {
       const auto size = tmd.Size(index);
       require(size > 0 && size <= 0x20000000 - total_size,
-              "The occupied cIOS slot has invalid stub content");
+              "The occupied slot has invalid title content");
       total_size += size;
       QString path;
       if (tmd.Type(index) == 0x8001) {
         const auto cid = shared.GetAppFromHash(tmd.Hash(index));
-        require(!cid.isEmpty(), "The occupied cIOS slot has missing shared content");
+        require(!cid.isEmpty(), "The occupied slot has missing shared content");
         path = shared_path(cid);
       } else {
-        require(tmd.Type(index) == 1, "The occupied cIOS slot has unsupported stub content");
+        require(tmd.Type(index) == 1, "The occupied slot has unsupported title content");
         const auto cid = tmd.Cid(index);
         expected_local_files.insert(cid + ".app");
         path = content_dir + "/" + cid + ".app";
       }
       const auto app_entry = find_path(nand, path);
-      require(app_entry.has_value(), "The occupied cIOS slot has missing stub content");
+      require(app_entry.has_value(), "The occupied slot has missing title content");
       const auto app = read_authenticated_file(nand, app_entry, size);
-      require(quint64(app.size()) == size, "The occupied cIOS slot has incomplete stub content");
+      require(quint64(app.size()) == size, "The occupied slot has incomplete title content");
       job.data << app;
     }
     const auto content_entry = find_path(nand, content_dir);
     require(content_entry && content_entry->IsDir(),
-            "The occupied cIOS slot has no content directory");
+            "The occupied slot has no content directory");
     QSet<QString> actual_files;
     for (const auto& child : nand.Children(content_entry->index)) {
-      require(child.IsFile(), "The occupied cIOS slot has unexpected content entries");
+      require(child.IsFile(), "The occupied slot has unexpected content entries");
       actual_files.insert(child.name);
     }
     require(actual_files == expected_local_files && decrypt_title(job),
-            "The occupied cIOS slot does not contain the authentic Nintendo stub");
+            "The occupied slot does not contain the authentic Nintendo title");
   }
 
   void plan_and_install(NandBin& nand, int orphan_entries, const ValidatedTitleJob& validated,
@@ -340,8 +343,9 @@ namespace {
     require(nand.WriteMetaData(), "Cannot persist NAND metadata");
   }
 
+  // `replaceable` names the Nintendo title version the slot may hold and lose.
   auto install_validated_wad(std::span<std::uint8_t> image, const ValidatedTitleJob& job,
-                             bool replace_stock_stub) -> wiiform::InstalledWad {
+                             std::optional<quint16> replaceable) -> wiiform::InstalledWad {
     const auto& parsed = job.get();
     const auto title_id = parsed.tid;
     const auto region = qFromBigEndian<quint16>(parsed.data[0].constData() + 0x19c);
@@ -361,27 +365,23 @@ namespace {
       if (occupied) {
         if (installed_wad_matches(nand, content_dir, ticket_path, job))
           return {title_id, region, version, true};
-        require(replace_stock_stub, "Installed title conflicts with WAD title metadata");
-
-        const auto slot = static_cast<quint32>(title_id);
-        require((title_id >> 32) == 1 && (slot == 249 || slot == 250),
-                "Stock stub replacement is supported only in slots 249 and 250");
-        verify_stock_stub(nand, title_id);
+        require(replaceable.has_value(), "Installed title conflicts with WAD title metadata");
+        verify_nintendo_title(nand, title_id, *replaceable);
         const auto current_ticket = find_path(nand, ticket_path);
         require(current_ticket && current_ticket->IsFile(),
-                "The occupied cIOS slot has no valid ticket file");
+                "The occupied slot has no valid ticket file");
         replaced_files.insert(ticket_path);
         const auto current_content = find_path(nand, content_dir);
         require(current_content && current_content->IsDir(),
-                "The occupied cIOS slot has no content directory");
+                "The occupied slot has no content directory");
         for (const auto& child : nand.Children(current_content->index)) {
-          require(child.IsFile(), "The occupied cIOS slot has unexpected content entries");
+          require(child.IsFile(), "The occupied slot has unexpected content entries");
           replaced_files.insert(content_dir + "/" + child.name);
         }
         const auto uid_bytes = read_authenticated_file(nand, "/sys/uid.sys", 1024 * 1024);
         UIDmap uid(uid_bytes);
         require(uid.Check() && uid.GetUid(title_id, false) != 0,
-                "The authentic stock stub has no matching UID record");
+                "The replaced Nintendo title has no matching UID record");
       }
       plan_and_install(nand, working.layout.orphan_entries, job, replaced_files);
     }
@@ -403,7 +403,7 @@ namespace title_install {
   }
 
   auto install_wad(std::span<std::uint8_t> image, const ValidatedTitleJob& job) -> wiiform::InstalledWad {
-    return install_validated_wad(image, job, false);
+    return install_validated_wad(image, job, std::nullopt);
   }
 
   auto install_cios(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
@@ -413,7 +413,22 @@ namespace title_install {
     const auto expected_id = (quint64(1) << 32) | options.slot;
     require(parsed.tid == expected_id && parsed.version == options.revision,
             "cIOS WAD does not match its declared slot and revision");
-    return install_validated_wad(image, job, options.replace_stock_stub);
+    const bool stub_slot = options.slot == 249 || options.slot == 250;
+    require(!options.replace_stock_stub || stub_slot,
+            "Stock stub replacement is supported only in slots 249 and 250");
+    return install_validated_wad(image, job,
+                                 options.replace_stock_stub ? std::optional<quint16>(65280) : std::nullopt);
+  }
+
+  auto install_rvloader_ios(std::span<std::uint8_t> image, const QString& cache, bool offline,
+                            const wiiform::RvloaderIos& ios) -> wiiform::InstalledWad {
+    const auto stock = factory::read_title(cache, ios.source.id, ios.source.version, offline);
+    const auto derived = rvloader::derive_ios(stock, ios);
+    // In its own slot the derived IOS replaces the stock version it came from;
+    // any other slot must be free.
+    const bool in_place = (quint64(1) << 32 | ios.slot) == ios.source.id;
+    return install_validated_wad(image, derived,
+                                 in_place ? std::optional<quint16>(ios.source.version) : std::nullopt);
   }
 
 } // namespace title_install

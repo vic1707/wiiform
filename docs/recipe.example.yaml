@@ -57,11 +57,14 @@ titles:
 #     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
 #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-# Optional RVLoader boot hook: Priiloader starts RVLoader's bootloader, which loads
-# RVLoader from USB. Requires priiloader, without its autoboot and return_to keys.
+# Optional RVLoader, installed as its Wii-side installer does. Requires priiloader
+# without its autoboot and return_to keys.
 # rvloader:
 #   version: "2.1"
 #   sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7" # installer/data/bootloader.dol of that release.
+#   wd_sha256: "6b7f6c95ec886899b43dcb5ca3dc15e20bbaa7c8c4e617e21166876f01cdb7b8" # installer/data/wd.bin of that release.
+#   patch_out_wifi: false # Also remove the Wi-Fi modules from IOS36, IOS58 and IOS80.
+#   vga: false # Requires setup.display.progressive, and pal60 on 4.3E.
 
 priiloader: # An empty mapping installs Priiloader with pinned defaults.
   # Every Priiloader setting and hack state is written. Omitted keys use the

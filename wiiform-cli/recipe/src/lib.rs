@@ -110,13 +110,24 @@ impl Recipe {
                 country.as_alpha2()
             );
         }
-        if self.rvloader.is_some() {
+        if let Some(rvloader) = &self.rvloader {
             let priiloader = (self.priiloader.as_ref())
                 .context("rvloader requires a priiloader section: Priiloader starts it")?;
             ensure!(
                 priiloader.autoboot.is_none() && priiloader.return_to.is_none(),
                 "rvloader sets Priiloader's autoboot and return_to: remove them from priiloader"
             );
+            if rvloader.vga {
+                let display = self.setup.as_ref().map(|setup| &setup.display);
+                ensure!(
+                    display.is_some_and(|display| display.progressive),
+                    "rvloader.vga requires setup.display.progressive: true"
+                );
+                ensure!(
+                    menu != Menu::E43 || display.is_some_and(|display| display.pal60),
+                    "rvloader.vga on menu {menu} requires setup.display.pal60: true"
+                );
+            }
         }
         let mut slots = HashSet::new();
         for cios in &self.cios {

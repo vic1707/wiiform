@@ -5,13 +5,13 @@
 //! about what to build live in [`crate::workflow`].
 use std::{collections::BTreeSet, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 
 use crate::ffi::bridge as ffi;
 use crate::recipe::{
     Menu, Priiloader, Region, Setup, TitleId, Wad, cios, priiloader,
     priiloader::Hack,
-    read_bounded,
+    read_bounded, rvloader,
     setup::{self, SensorBar, display::Aspect},
 };
 use crate::seed::{ExtractedSeed, StockSeed};
@@ -67,6 +67,28 @@ pub enum NusCache {
         path: std::path::PathBuf,
         offline: bool,
     },
+}
+
+impl NusCache {
+    fn ffi(&self) -> Result<ffi::NusCache<'_>> {
+        Ok(match self {
+            Self::Memory => ffi::NusCache {
+                directory: "",
+                offline: false,
+            },
+            Self::Directory { path, offline } => {
+                let directory = path.to_str().with_context(|| {
+                    format!("NUS cache directory must be UTF-8: {}", path.display())
+                })?;
+                // The bridge spells "no cache" as an empty directory.
+                ensure!(!directory.is_empty(), "NUS cache directory is empty");
+                ffi::NusCache {
+                    directory,
+                    offline: *offline,
+                }
+            }
+        })
+    }
 }
 
 /// A complete NAND image with its 1024-byte key footer.
@@ -203,20 +225,36 @@ impl Nand {
             id: title_id.as_u64(),
             version,
         };
-        match cache {
-            NusCache::Memory => ffi::install_nus_title(&mut self.0[..], title)?,
-            NusCache::Directory { path, offline } => {
-                let directory = path.to_str().with_context(|| {
-                    format!("NUS cache directory must be UTF-8: {}", path.display())
-                })?;
-                let cache = ffi::NusCache {
-                    directory,
-                    offline: *offline,
-                };
-                ffi::install_cached_nus_title(&mut self.0[..], &cache, title)?;
-            }
-        }
-        Ok(())
+        Ok(ffi::install_nus_title(
+            &mut self.0[..],
+            &cache.ffi()?,
+            title,
+        )?)
+    }
+
+    /// Installs one IOS of RVLoader's installer, derived from a stock IOS downloaded like
+    /// [`Self::install_nus_title`].
+    pub fn install_rvloader_ios(
+        &mut self,
+        cache: &NusCache,
+        ios: &rvloader::Ios,
+        wifi_module: &[u8],
+    ) -> Result<InstalledWad> {
+        let ios = ffi::RvloaderIos {
+            source: ffi::TitleVersion {
+                id: ios.source.as_u64(),
+                version: ios.version,
+            },
+            slot: ios.slot,
+            es_patches: ios.es_patches,
+            wifi_module: if ios.without_wifi { wifi_module } else { &[] },
+        };
+        ffi::install_rvloader_ios(&mut self.0[..], &cache.ffi()?, &ios)?.try_into()
+    }
+
+    /// Creates or removes the file that makes RVLoader's bootloader enable VGA output.
+    pub fn set_rvloader_vga(&mut self, enabled: bool) -> Result<()> {
+        Ok(ffi::set_rvloader_vga(&mut self.0[..], enabled)?)
     }
 
     /// Installs a Nintendo-signed channel or IOS.

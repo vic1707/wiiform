@@ -7,7 +7,7 @@ use serde::Deserialize;
 #[nnn(
     attrs(
         doc = "RVLoader release number: major.minor, without the leading v.",
-        schemars(extend("pattern" = "^[0-9]+\\.[0-9]+$"))
+        schemars(rename = "RvloaderVersion", extend("pattern" = "^[0-9]+\\.[0-9]+$"))
     ),
     derive(Clone, Debug, Display, Eq, PartialEq, Deserialize, JsonSchema),
     nnn_derive(TryFrom, FromStr),

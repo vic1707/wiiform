@@ -209,9 +209,17 @@ pub mod bridge {
         version: u16,
     }
 
+    /// An empty directory means no cache: titles are downloaded into memory.
     struct NusCache<'a> {
         directory: &'a str,
         offline: bool,
+    }
+
+    struct RvloaderIos<'a> {
+        source: TitleVersion,
+        slot: u8,
+        es_patches: bool,
+        wifi_module: &'a [u8],
     }
 
     unsafe extern "C++" {
@@ -250,12 +258,17 @@ pub mod bridge {
             seed: &StockSeed<'_>,
             menu: Menu,
         ) -> Result<StockIdentity>;
-        fn install_nus_title(nand: &mut [u8], title: TitleVersion) -> Result<()>;
-        fn install_cached_nus_title(
+        fn install_nus_title(
             nand: &mut [u8],
             cache: &NusCache<'_>,
             title: TitleVersion,
         ) -> Result<()>;
+        fn install_rvloader_ios(
+            nand: &mut [u8],
+            cache: &NusCache<'_>,
+            ios: &RvloaderIos<'_>,
+        ) -> Result<InstalledWad>;
+        fn set_rvloader_vga(nand: &mut [u8], enabled: bool) -> Result<()>;
         fn install_wad(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
         fn install_unsigned_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
         fn install_homebrew_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;

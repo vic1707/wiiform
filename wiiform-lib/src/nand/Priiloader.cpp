@@ -26,6 +26,7 @@ namespace {
   const QString settings_path = menu + "/data/loader.ini";
   const QString boot_file_path = menu + "/data/main.bin";
   const QString boot_options_path = menu + "/data/main.nfo";
+  const QString rvloader_vga_path = menu + "/data/vga.bin";
 
   using working_image::find_path;
   using working_image::read_authenticated_file;
@@ -293,6 +294,30 @@ namespace priiloader {
     plan_data_file(operation.working.nand, operation.files, boot_file_path, dol);
     plan_data_file(operation.working.nand, operation.files, boot_options_path, options);
     operation.commit();
+  }
+
+  void set_rvloader_vga(std::span<std::uint8_t> image, bool enabled) {
+    {
+      Operation operation(image);
+      operation.require_installed();
+      auto& nand = operation.working.nand;
+      const auto existing = find_path(nand, rvloader_vga_path);
+      if (existing) require(existing->IsFile(), "The RVLoader VGA flag is not a file");
+      if (existing.has_value() == enabled) return;
+      if (enabled) {
+        working_image::require_capacity(nand, operation.working.layout.orphan_entries, 1, 0);
+        // Only the file's existence matters; it holds no data.
+        require(nand.CreateEntry(rvloader_vga_path, 0x1000, 1, NAND_FILE, NAND_RW, NAND_RW, NAND_RW),
+                "Cannot create the RVLoader VGA flag");
+      } else {
+        require(nand.Delete(rvloader_vga_path), "Cannot remove the RVLoader VGA flag");
+      }
+      require(nand.WriteMetaData(), "Cannot persist Priiloader NAND metadata");
+    }
+    working_image::Image readback(image);
+    inspect::verify_filesystem(readback.nand, false, readback.layout.active_metadata);
+    require(find_path(readback.nand, rvloader_vga_path).has_value() == enabled,
+            "The RVLoader VGA flag did not persist");
   }
 
   void configure(std::span<std::uint8_t> image, const wiiform::PriiloaderSettings& settings) {

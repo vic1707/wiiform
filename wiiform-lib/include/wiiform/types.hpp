@@ -69,6 +69,18 @@ namespace wiiform {
     bool replace_stock_stub;
   };
 
+  // One IOS as RVLoader's installer (v2.1) derives it from a stock one.
+  struct RvloaderIos {
+    // IOS36 v3608, IOS58 v6176 or IOS80 v6944, fetched like install_nus_title does.
+    TitleVersion source;
+    // Where the result goes. Its own slot replaces the stock version; any other must be free.
+    std::uint8_t slot;
+    // Patch the fakesigning bug, ES_Identify, ISFS permissions and the downgrade check out of the kernel.
+    bool es_patches;
+    // A Wi-Fi driver module replacing the stock WD and WL modules; empty keeps them.
+    std::span<const std::uint8_t> wifi_module;
+  };
+
   struct InstalledWad {
     std::uint64_t title_id;
     std::uint16_t region;

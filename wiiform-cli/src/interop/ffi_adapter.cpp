@@ -32,6 +32,11 @@ namespace {
     return {span(seed.keys), span(seed.boot_blocks), span(seed.bad_blocks), settings, seed.settings_sha256};
   }
 
+  auto native(const NusCache& cache) -> std::optional<wiiform::NusCache> {
+    if (cache.directory.empty()) return std::nullopt;
+    return wiiform::NusCache{std::string(cache.directory), cache.offline};
+  }
+
   auto shared(const wiiform::InstalledWad& wad) -> InstalledWad {
     return {wad.title_id, wad.region, wad.version, wad.already_present};
   }
@@ -77,13 +82,18 @@ auto initialize_image_with_source_boot(Nand nand, const StockSeed& seed, Menu me
   return {identity.boot_area, identity.footer};
 }
 
-void install_nus_title(Nand nand, TitleVersion title) {
-  wiiform::install_nus_title(span(nand), std::nullopt, {title.id, title.version});
+void install_nus_title(Nand nand, const NusCache& cache, TitleVersion title) {
+  wiiform::install_nus_title(span(nand), native(cache), {title.id, title.version});
 }
 
-void install_cached_nus_title(Nand nand, const NusCache& cache, TitleVersion title) {
-  wiiform::install_nus_title(span(nand), wiiform::NusCache{std::string(cache.directory), cache.offline},
-                             {title.id, title.version});
+auto install_rvloader_ios(Nand nand, const NusCache& cache, const RvloaderIos& ios) -> InstalledWad {
+  return shared(wiiform::install_rvloader_ios(
+      span(nand), native(cache),
+      {{ios.source.id, ios.source.version}, ios.slot, ios.es_patches, span(ios.wifi_module)}));
+}
+
+void set_rvloader_vga(Nand nand, bool enabled) {
+  wiiform::set_rvloader_vga(span(nand), enabled);
 }
 
 auto install_wad(Nand nand, Bytes wad) -> InstalledWad {

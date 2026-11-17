@@ -15,4 +15,6 @@ namespace title_install {
   auto install_wad(std::span<std::uint8_t> image, const ValidatedTitleJob& job) -> wiiform::InstalledWad;
   auto install_cios(std::span<std::uint8_t> image, std::span<const std::uint8_t> package,
                     const wiiform::CiosOptions& options) -> wiiform::InstalledWad;
+  auto install_rvloader_ios(std::span<std::uint8_t> image, const QString& cache, bool offline,
+                            const wiiform::RvloaderIos& ios) -> wiiform::InstalledWad;
 }

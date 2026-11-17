@@ -11,6 +11,8 @@ namespace priiloader {
   void install(std::span<std::uint8_t> image, std::span<const std::uint8_t> app);
   // The executable and launch options of Priiloader's "file" destinations.
   void install_boot_file(std::span<std::uint8_t> image, std::span<const std::uint8_t> dol, bool hardware_access);
+  // The empty data file RVLoader's bootloader looks for to enable VGA output.
+  void set_rvloader_vga(std::span<std::uint8_t> image, bool enabled);
   // Both need an installed Priiloader.
   void configure(std::span<std::uint8_t> image, const wiiform::PriiloaderSettings& settings);
   void set_hacks(std::span<std::uint8_t> image, std::span<const std::uint8_t> hack_definitions,

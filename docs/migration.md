@@ -46,7 +46,7 @@ The project-owned C++ library wraps the following areas:
 - **Wiiform C++ code** exposes one function per operation in
   `wiiform-lib/include/wiiform/` (no Qt, CXX or Rust types): seed extraction,
   image initialization, single-title install, WAD and cIOS install, channel
-  removal, SYSCONF creation, the four Priiloader steps, the BackupMii header
+  removal, SYSCONF creation, the four Priiloader steps, the RVLoader IOS and VGA flag, the BackupMii header
   and the verifications. It owns boot validation, WAD policy, capacity
   planning and the checks around WiiQt. Rust sequences these calls: the stock
   build is a loop over `stock_titles`. The CXX adapter only converts values;

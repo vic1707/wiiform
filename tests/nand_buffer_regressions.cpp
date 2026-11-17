@@ -316,6 +316,7 @@ namespace {
     no_entry.replace(0xe0, 4, QByteArray(4, '\0'));
     rejects([&] { install(no_entry); }, "not a valid DOL");
     rejects([&] { install(dol); }, "Priiloader preparation needs a stock System Menu");
+    rejects([&] { wiiform::set_rvloader_vga(image, true); }, "Priiloader preparation needs a stock System Menu");
     check(before == buffer_digest(image), "Rejected boot file changed the NAND buffer");
   }
 
@@ -458,7 +459,7 @@ namespace {
 
     const wiiform::CiosOptions replace{249, 56, 65535, true};
     rejects_unchanged(image, [&] { install(conflict, replace); },
-                      "not an authentic Nintendo stub",
+                      "not an authentic Nintendo title",
                       "Replacing a non-stock cIOS changed the NAND buffer");
   }
 }

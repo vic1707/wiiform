@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use std::{
+    borrow::Cow,
     fs::{self, File, OpenOptions},
     io::{self, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
@@ -13,7 +14,9 @@ use tempfile::Builder;
 use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
-    recipe::{Menu, Recipe, Region, ResolvedPath, TitleId, open_regular_file},
+    recipe::{
+        Menu, Priiloader, Recipe, Region, ResolvedPath, Rvloader, TitleId, open_regular_file,
+    },
     seed::StockSeed,
 };
 
@@ -197,26 +200,46 @@ fn build_with(
     }
 
     if let Some(config) = &recipe.priiloader {
-        nand.install_priiloader(priiloader_payload::APP)
-            .context("cannot install Priiloader")?;
-        let config = match &recipe.rvloader {
-            Some(bootloader) => {
-                // RVLoader's bootloader needs hardware access to bring up USB and video.
-                nand.install_priiloader_boot_file(bootloader, true)
-                    .context("cannot install the RVLoader bootloader")?;
-                &config.booting_file()
-            }
-            None => config,
-        };
-        nand.configure_priiloader(config)
-            .context("cannot configure Priiloader")?;
-        nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
-            .context("cannot set Priiloader hacks")?;
+        install_priiloader(&mut nand, config, recipe.rvloader.as_ref(), &options.cache)?;
     }
 
     nand.verify_generated_nand(&identity)
         .context("cannot verify generated NAND")?;
     publish_bundle(&nand, &options.output)
+}
+
+/// Installs and configures Priiloader, and with `rvloader` does what RVLoader's
+/// installer does on top of it.
+pub fn install_priiloader(
+    nand: &mut Nand,
+    config: &Priiloader,
+    rvloader: Option<&Rvloader>,
+    cache: &NusCache,
+) -> Result<()> {
+    nand.install_priiloader(priiloader_payload::APP)
+        .context("cannot install Priiloader")?;
+    let config = match rvloader {
+        None => Cow::Borrowed(config),
+        Some(rvloader) => {
+            // RVLoader's bootloader needs hardware access to bring up USB and video.
+            nand.install_priiloader_boot_file(&rvloader.bootloader, true)
+                .context("cannot install the RVLoader bootloader")?;
+            cache.prepare()?;
+            for ios in rvloader.ios() {
+                let installed = nand
+                    .install_rvloader_ios(cache, &ios, &rvloader.wifi_module)
+                    .with_context(|| format!("cannot install RVLoader IOS{}", ios.slot))?;
+                warn_if_already_present(&installed);
+            }
+            nand.set_rvloader_vga(rvloader.vga)
+                .context("cannot set RVLoader's VGA option")?;
+            Cow::Owned(config.booting_file())
+        }
+    };
+    nand.configure_priiloader(&config)
+        .context("cannot configure Priiloader")?;
+    nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
+        .context("cannot set Priiloader hacks")
 }
 
 pub fn warn_if_already_present(wad: &InstalledWad) {

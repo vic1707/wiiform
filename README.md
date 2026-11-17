@@ -133,31 +133,50 @@ writing it. The title installs before Priiloader settings are applied, so
 ### RVLoader
 
 ```yaml
+setup: {display: {progressive: true, pal60: true}} # Needed only for vga.
 priiloader: {}
 rvloader:
   version: "2.1"
   sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7"
+  wd_sha256: "6b7f6c95ec886899b43dcb5ca3dc15e20bbaa7c8c4e617e21166876f01cdb7b8"
+  patch_out_wifi: true
+  vga: true
 ```
 
+`rvloader` does offline what RVLoader's Wii-side installer does:
+
+- Wiiform downloads two files from the release tag, `installer/data/bootloader.dol`
+  and `installer/data/wd.bin` (the replacement Wi-Fi driver), and checks them
+  against `sha256` and `wd_sha256`. The hashes above are those of 2.1.
+- The bootloader becomes Priiloader's boot file, started with hardware access.
+  Priiloader's `autoboot` is set to that file and `return_to` to autoboot.
+- IOS236, IOS240 and IOS241 receive copies of IOS36, IOS58 and IOS80 without
+  the stock Wi-Fi modules. IOS236's kernel is patched: fakesigning,
+  ES_Identify, ISFS permissions and downgrades.
+- IOS36, IOS58 and IOS80 are reinstalled the same way, without Wi-Fi only with
+  `patch_out_wifi` (the installer's "Patch out WiFi").
+- Every one of these IOS keeps only the stock title's shared modules, gets
+  version 65535 and is fakesigned, as the installer does on a console. The
+  stock IOS come from NUS, like the other Nintendo titles.
+- `vga` is the installer's "Enable VGA": it writes the flag file the bootloader
+  looks for. It requires `setup.display.progressive`, and `pal60` on 4.3E,
+  because the installer turns those on. Component video stops working.
+
 RVLoader is started by Priiloader, so `rvloader` requires a `priiloader`
-section. Wiiform downloads the bootloader of that RVLoader release
-(`installer/data/bootloader.dol` at the release tag), checks it against
-`sha256`, stores it as Priiloader's boot file with hardware access, and sets
-Priiloader's `autoboot` to that file and `return_to` to autoboot. Leave those
-two settings out of `priiloader`; the other settings and `hacks` apply as usual.
-The hash above is the 2.1 bootloader.
+section without `autoboot` and `return_to`; the other Priiloader settings and
+`hacks` apply as usual. The bootloader loads `apps/RVLoader/boot.dol` from a
+USB drive: unpack the matching
+[RVLoader release](https://github.com/Aurelio92/RVLoader/releases) onto the
+drive. Wiiform writes the NAND only.
 
-The bootloader loads `apps/RVLoader/boot.dol` from a USB drive: unpack the
-matching [RVLoader release](https://github.com/Aurelio92/RVLoader/releases)
-onto the drive. Wiiform writes the NAND only.
+On an existing image, `wii-nand install-priiloader IN OUT --rvloader 2.1
+--rvloader-sha256 HASH --rvloader-wd-sha256 HASH [--patch-out-wifi] [--vga]`
+does the same. Its `--vga` writes only the flag: the image's settings must
+already enable 480p. Re-running it with the same options leaves the image
+unchanged; changing `--patch-out-wifi` on an image that already has the RVLoader
+IOS fails, because IOS36, IOS58 and IOS80 are no longer stock.
 
-This is the boot hook of RVLoader's installer and nothing else. The installer's
-NoWiFi IOS copies and its VGA option, which portables without a Wi-Fi module
-need, are not applied. Booting RVLoader from a prepared image has not yet
-been confirmed on a console.
-
-On an existing image, use
-`wii-nand install-priiloader IN OUT --rvloader 2.1 --rvloader-sha256 HASH`.
+Booting RVLoader from a prepared image has not yet been confirmed on a console.
 
 ### cIOS packages
 

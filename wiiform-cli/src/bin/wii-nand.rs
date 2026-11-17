@@ -4,9 +4,10 @@ use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     native::Nand,
-    priiloader_payload,
     recipe::{Priiloader, ResolvedPath, Rvloader, Sha256, TitleId, Wad, cios, rvloader},
-    workflow::{NusCache, publish_edit, validate_output, warn_if_already_present},
+    workflow::{
+        NusCache, install_priiloader, publish_edit, validate_output, warn_if_already_present,
+    },
 };
 
 #[derive(Parser)]
@@ -81,13 +82,10 @@ enum Command {
         image: ImagePaths,
         #[command(flatten)]
         config: Priiloader,
-        /// Boot this RVLoader release from USB at power-on, such as 2.1.
-        #[arg(long, value_name = "VERSION", requires = "rvloader_sha256")]
-        #[arg(conflicts_with_all = ["autoboot", "return_to"])]
-        rvloader: Option<rvloader::Version>,
-        /// SHA-256 of that release's bootloader.
-        #[arg(long, value_name = "SHA256", requires = "rvloader")]
-        rvloader_sha256: Option<Sha256>,
+        /// Also do what RVLoader's installer does. `--vga` only writes RVLoader's
+        /// flag: the image's settings must already enable 480p.
+        #[command(flatten)]
+        rvloader: Option<rvloader::Release>,
     },
 }
 
@@ -143,23 +141,10 @@ fn run(cli: Cli) -> Result<()> {
             image,
             config,
             rvloader,
-            rvloader_sha256,
         } => {
-            let bootloader = (rvloader.zip(rvloader_sha256))
-                .map(|(version, sha256)| Rvloader::download(&version, sha256))
-                .transpose()?;
-            image.edit(|nand| {
-                nand.install_priiloader(priiloader_payload::APP)?;
-                let config = match &bootloader {
-                    Some(bootloader) => {
-                        nand.install_priiloader_boot_file(bootloader, true)?;
-                        config.booting_file()
-                    }
-                    None => config,
-                };
-                nand.configure_priiloader(&config)?;
-                nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
-            })
+            let rvloader = rvloader.map(Rvloader::try_from).transpose()?;
+            let cache = NusCache::from_environment()?;
+            image.edit(|nand| install_priiloader(nand, &config, rvloader.as_ref(), &cache))
         }
     }
 }
@@ -169,17 +154,50 @@ mod tests {
     use super::*;
     use wiiform::recipe::priiloader::{Autoboot, Hack};
 
+    fn install_priiloader(
+        args: &[&str],
+    ) -> clap::error::Result<(Priiloader, Option<rvloader::Release>)> {
+        let input = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        let fixed = ["wii-nand", "install-priiloader", input, "output"];
+        let cli = Cli::try_parse_from(fixed.into_iter().chain(args.iter().copied()))?;
+        let Command::InstallPriiloader {
+            config, rvloader, ..
+        } = cli.command
+        else {
+            unreachable!()
+        };
+        Ok((config, rvloader))
+    }
+
+    #[test]
+    fn rvloader_flags_come_as_a_set() {
+        let sha = "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7";
+        let release = [
+            "--rvloader=2.1",
+            "--rvloader-sha256",
+            sha,
+            "--rvloader-wd-sha256",
+            sha,
+        ];
+        assert!(install_priiloader(&[]).unwrap().1.is_none());
+        let (_, rvloader) = install_priiloader(&[&release[..], &["--vga"]].concat()).unwrap();
+        let rvloader = rvloader.expect("expected the RVLoader flags");
+        assert_eq!(rvloader.version.to_string(), "2.1");
+        assert!(rvloader.vga && !rvloader.patch_out_wifi);
+        for partial in [
+            &release[..2],
+            &release[2..],
+            &["--vga"],
+            &["--patch-out-wifi"],
+        ] {
+            assert!(install_priiloader(partial).is_err(), "{partial:?}");
+        }
+        assert!(install_priiloader(&[&release[..], &["--autoboot=file"]].concat()).is_err());
+    }
+
     #[test]
     fn priiloader_cli_uses_defaults_and_accepts_named_flags() {
-        let parse = |args: &[&str]| {
-            let input = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-            let fixed = ["wii-nand", "install-priiloader", input, "output"];
-            let cli = Cli::try_parse_from(fixed.into_iter().chain(args.iter().copied())).unwrap();
-            let Command::InstallPriiloader { config, .. } = cli.command else {
-                unreachable!()
-            };
-            config
-        };
+        let parse = |args: &[&str]| install_priiloader(args).unwrap().0;
         assert_eq!(parse(&[]), Priiloader::default());
         assert_eq!(
             parse(&[

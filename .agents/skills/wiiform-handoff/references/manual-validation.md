@@ -45,7 +45,7 @@ build/bin/wiiform --seed "$scratch/console.seed.yaml" \
 
 Use a recipe with local or inline packages for a network-free test.
 `WIIFORM_NUS_OFFLINE=1` controls Nintendo titles only. Reborn's version lookup,
-the RVLoader bootloader and URL sources still use HTTPS. Pin package bytes with their SHA-256, including
+the RVLoader files and URL sources still use HTTPS. Pin package bytes with their SHA-256, including
 an explicit checksum for a Reborn version if the asset must stay fixed.
 For a frozen HBC input use the same hash-pinned WAD via `hbc.custom`.
 

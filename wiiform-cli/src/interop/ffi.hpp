@@ -17,6 +17,7 @@ namespace wiiform::ffi {
   struct SeedParts;
   struct TitleVersion;
   struct NusCache;
+  struct RvloaderIos;
 
   using Bytes = rust::Slice<const std::uint8_t>;
   using Nand = rust::Slice<std::uint8_t>;
@@ -29,8 +30,9 @@ namespace wiiform::ffi {
   auto write_backupmii_header(Nand keys) -> bool;
   auto initialize_image(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity;
   auto initialize_image_with_source_boot(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity;
-  void install_nus_title(Nand nand, TitleVersion title);
-  void install_cached_nus_title(Nand nand, const NusCache& cache, TitleVersion title);
+  void install_nus_title(Nand nand, const NusCache& cache, TitleVersion title);
+  auto install_rvloader_ios(Nand nand, const NusCache& cache, const RvloaderIos& ios) -> InstalledWad;
+  void set_rvloader_vga(Nand nand, bool enabled);
   auto install_wad(Nand nand, Bytes wad) -> InstalledWad;
   auto install_unsigned_channel(Nand nand, Bytes wad) -> InstalledWad;
   auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad;

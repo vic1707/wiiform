@@ -546,23 +546,43 @@
       ]
     },
     "Rvloader": {
-      "description": "Boot RVLoader from USB when the console starts. Priiloader starts it, so\nthe recipe needs a `priiloader` section that leaves `autoboot` and\n`return_to` unset. The RVLoader release itself goes on the USB drive.",
+      "description": "What RVLoader's installer does, done offline: Priiloader starts RVLoader's\nbootloader, which loads RVLoader from USB, and the IOS slots 236, 240 and\n241 get copies of IOS36 (patched), IOS58 and IOS80 without the stock Wi-Fi\nmodules. The recipe needs a `priiloader` section without `autoboot` and\n`return_to`. The RVLoader release itself goes on the USB drive.",
       "type": "object",
       "properties": {
+        "patch_out_wifi": {
+          "description": "The installer's \"Patch out WiFi\": IOS36, IOS58 and IOS80 lose their\nWi-Fi modules too. Either way they are reinstalled as the installer does.",
+          "type": "boolean"
+        },
         "sha256": {
           "description": "SHA-256 of that release's `installer/data/bootloader.dol`.",
           "$ref": "#/$defs/Sha256"
         },
         "version": {
           "description": "RVLoader release, such as \"2.1\".",
-          "$ref": "#/$defs/Version"
+          "$ref": "#/$defs/RvloaderVersion"
+        },
+        "vga": {
+          "description": "The installer's \"Enable VGA\". Needs `setup.display.progressive`, and\n`pal60` for 4.3E. Component video then stops working.",
+          "type": "boolean"
+        },
+        "wd_sha256": {
+          "description": "SHA-256 of that release's `installer/data/wd.bin`, the Wi-Fi driver\nreplacing the stock Wi-Fi modules.",
+          "$ref": "#/$defs/Sha256"
         }
       },
       "additionalProperties": false,
       "required": [
         "version",
-        "sha256"
+        "sha256",
+        "wd_sha256",
+        "patch_out_wifi",
+        "vga"
       ]
+    },
+    "RvloaderVersion": {
+      "description": "RVLoader release number: major.minor, without the leading v.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
     },
     "SensorBar": {
       "description": "Sensor bar position relative to the display.",
@@ -738,11 +758,6 @@
         "sha256"
       ],
       "unevaluatedProperties": false
-    },
-    "Version": {
-      "description": "RVLoader release number: major.minor, without the leading v.",
-      "type": "string",
-      "pattern": "^[0-9]+\\.[0-9]+$"
     },
     "Wad": {
       "description": "A WAD from one source, with the SHA-256 of its exact bytes.",

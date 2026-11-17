@@ -299,25 +299,42 @@ fn priiloader_takes_settings_and_a_list_of_hacks() -> Result<()> {
 #[test]
 fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
     const DOL: [u8; 3] = [1, 2, 3];
-    let rvloader = |version: &str, sha256: &str| {
-        format!("rvloader: {{version: '{version}', sha256: {sha256}}}")
+    const WD: [u8; 2] = [4, 5];
+    let rvloader = |version: &str, sha256: &str, options: &str| {
+        format!(
+            "rvloader: {{version: '{version}', sha256: {sha256}, wd_sha256: {}, {options}}}",
+            sha(&WD)
+        )
     };
     let read = |yaml: String| {
         with_fetch(
             |url, _| {
-                let expected = "https://raw.githubusercontent.com/Aurelio92/RVLoader/v2.1/installer/data/bootloader.dol";
-                assert_eq!(url, expected);
-                Ok(DOL.to_vec())
+                let base =
+                    "https://raw.githubusercontent.com/Aurelio92/RVLoader/v2.1/installer/data/";
+                Ok(match url.strip_prefix(base) {
+                    Some("bootloader.dol") => DOL.to_vec(),
+                    Some("wd.bin") => WD.to_vec(),
+                    _ => panic!("unexpected download of {url}"),
+                })
             },
             || read(&format!("menu: 4.3E\n{yaml}")),
         )
     };
-    let good = rvloader("2.1", &sha(&DOL));
+    let options = "patch_out_wifi: true, vga: false";
+    let good = rvloader("2.1", &sha(&DOL), options);
 
     let recipe = read(format!("{good}\npriiloader: {{stop_disc: true}}"))?;
+    let loaded = recipe.rvloader.as_ref().context("expected RVLoader")?;
     assert_eq!(
-        **recipe.rvloader.as_ref().context("expected RVLoader")?,
-        DOL
+        (&*loaded.bootloader, &*loaded.wifi_module),
+        (&DOL[..], &WD[..])
+    );
+    let ios = loaded.ios();
+    assert_eq!(ios.map(|ios| ios.slot), [236, 240, 241, 36, 58, 80]);
+    assert!(ios.iter().all(|ios| ios.without_wifi));
+    assert_eq!(
+        ios.map(|ios| ios.es_patches),
+        [true, false, false, false, false, false]
     );
     let config = recipe
         .priiloader
@@ -326,6 +343,16 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
     assert_eq!(config.autoboot, Some(Autoboot::File));
     assert_eq!(config.return_to, Some(ReturnTo::Autoboot));
     assert!(config.stop_disc);
+
+    let keep_wifi = read(format!(
+        "{}\npriiloader: {{}}",
+        rvloader("2.1", &sha(&DOL), "patch_out_wifi: false, vga: false")
+    ))?;
+    let ios = keep_wifi.rvloader.context("expected RVLoader")?.ios();
+    assert_eq!(
+        ios.map(|ios| ios.without_wifi),
+        [true, true, true, false, false, false]
+    );
 
     assert!(message(read(good.clone())).contains("requires a priiloader section"));
     for setting in [
@@ -336,11 +363,39 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
         let result = read(format!("{good}\npriiloader: {{{setting}}}"));
         assert!(message(result).contains("remove them"), "{setting}");
     }
-    assert!(message(read(rvloader("2.1", &sha(&WAD)))).contains("does not match its SHA-256"));
-    for version in ["2", "2.1.0", "v2.1", "2.x", "../2.1"] {
-        assert!(read(rvloader(version, &sha(&DOL))).is_err(), "{version}");
+    let vga = rvloader("2.1", &sha(&DOL), "patch_out_wifi: true, vga: true");
+    for (setup, error) in [
+        ("", "requires setup.display.progressive"),
+        (
+            "setup: {display: {pal60: true}}",
+            "requires setup.display.progressive",
+        ),
+        (
+            "setup: {display: {progressive: true}}",
+            "requires setup.display.pal60",
+        ),
+    ] {
+        let result = read(format!("{vga}\npriiloader: {{}}\n{setup}"));
+        assert!(message(result).contains(error), "{setup}");
     }
-    assert!(read("rvloader: {version: '2.1'}".to_owned()).is_err());
+    read(format!(
+        "{vga}\npriiloader: {{}}\nsetup: {{display: {{progressive: true, pal60: true}}}}"
+    ))?;
+
+    let wrong = rvloader("2.1", &sha(&WAD), options);
+    assert!(message(read(wrong)).contains("bootloader.dol does not match its SHA-256"));
+    for version in ["2", "2.1.0", "v2.1", "2.x", "../2.1"] {
+        assert!(
+            read(rvloader(version, &sha(&DOL), options)).is_err(),
+            "{version}"
+        );
+    }
+    for missing in ["patch_out_wifi: true", "vga: false"] {
+        assert!(
+            read(rvloader("2.1", &sha(&DOL), missing)).is_err(),
+            "{missing}"
+        );
+    }
     Ok(())
 }
 

@@ -164,6 +164,15 @@ auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wa
   return title_install::install_cios(nand, wad, options);
 }
 
+auto install_rvloader_ios(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
+                          const RvloaderIos& ios) -> InstalledWad {
+  const detail::ApiCall call;
+  require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
+  require(!cache || !cache->directory.empty(), "A NUS cache needs a directory");
+  const auto directory = cache ? qstring(cache->directory, "Cache path must be UTF-8") : QString();
+  return title_install::install_rvloader_ios(nand, directory, cache && cache->offline, ios);
+}
+
 void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
   const detail::ApiCall call;
   title_remove::remove_channel(nand, title_id);
@@ -183,6 +192,11 @@ void install_priiloader_boot_file(std::span<std::uint8_t> nand, std::span<const 
                                   bool hardware_access) {
   const detail::ApiCall call;
   priiloader::install_boot_file(nand, dol, hardware_access);
+}
+
+void set_rvloader_vga(std::span<std::uint8_t> nand, bool enabled) {
+  const detail::ApiCall call;
+  priiloader::set_rvloader_vga(nand, enabled);
 }
 
 void configure_priiloader(std::span<std::uint8_t> nand, const PriiloaderSettings& settings) {

@@ -40,6 +40,10 @@ namespace wiiform {
   // A Wii d2x cIOS matching the given slot, base and revision.
   auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                     const CiosOptions& options) -> InstalledWad;
+  // Installs one IOS the way RVLoader's installer does: the stock title's shared
+  // modules only, version 65535, fakesigned. An identical title is left alone.
+  auto install_rvloader_ios(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
+                            const RvloaderIos& ios) -> InstalledWad;
   // Only the allowlisted Forecast, News, Shop and Photo Channel titles can be removed.
   void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id);
 
@@ -54,6 +58,9 @@ namespace wiiform {
   // file is left alone.
   void install_priiloader_boot_file(std::span<std::uint8_t> nand, std::span<const std::uint8_t> dol,
                                     bool hardware_access);
+  // Creates or removes the empty file that makes RVLoader's bootloader enable VGA output.
+  // Needs an installed Priiloader.
+  void set_rvloader_vga(std::span<std::uint8_t> nand, bool enabled);
   // Both need an installed Priiloader. Every setting is written, not just changed ones.
   void configure_priiloader(std::span<std::uint8_t> nand, const PriiloaderSettings& settings);
   void set_priiloader_hacks(std::span<std::uint8_t> nand, std::span<const std::uint8_t> hacks_hash_ini,

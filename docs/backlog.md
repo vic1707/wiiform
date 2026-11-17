@@ -11,31 +11,26 @@
 - Wii d2x WADs have explicit slot, base, and revision checks. Stock stub
   replacement is opt-in and limited to verified Nintendo stubs in slots 249
   and 250.
-- The `rvloader` recipe entry stores RVLoader's bootloader as Priiloader's
-  boot file and makes Priiloader start it.
+- The `rvloader` recipe entry does what RVLoader v2.1's installer does: the
+  boot file and Priiloader settings, the six derived IOS and the VGA flag. An
+  independent re-implementation of the installer matched every derived TMD
+  and ticket byte for byte.
 - A Rust test keeps the editor schema current. Releases are the container
   images built by CI; the publish path has not run yet.
 
 ## Open work
 
-- [ ] **Confirm the RVLoader boot hook on a console.** Restore an image built
-  with `rvloader` to a recoverable Wii with the release unpacked on USB. Open
-  points: Priiloader 0.10.0 instead of the older build RVLoader bundles, and
-  the six-byte `main.nfo` (hardware access on, no arguments).
-- [ ] **RVLoader installer parity.** The rest of the upstream v2.1 installer,
-  for portables without a Wi-Fi module:
-  - IOS236: IOS36 v3608 with the hash-check, ES_Identify, ISFS-permission and
-    version-check patches. IOS240 and IOS241: copies of IOS58 v6176 and IOS80
-    v6944. All three get the NoWiFi change; IOS36/58/80 themselves get it
-    optionally. The three base IOS come from NUS, which Wiiform already uses.
-  - NoWiFi removes the stock WD and WL modules and adds
-    `installer/data/wd.bin` as a new shared content.
-  - Titles are fakesigned with version 0xFFFF; IOS58 also gets four 0xFF bytes
-    at TMD offset 8. WiiQt's `Wad` has `FakeSign`, `SetVersion` and content
-    replacement.
-  - VGA: an empty `vga.bin` beside the boot file and `IPL.PGS` (plus
-    `IPL.E60` on PAL) in SYSCONF.
-  [RVLoader installer](https://github.com/Aurelio92/RVLoader/tree/v2.1/installer/source)
+- [ ] **Confirm RVLoader on a console.** Restore an image built with
+  `rvloader` to a recoverable Wii (BootMii as boot2: the System Menu's own
+  IOS80 is replaced) with the release unpacked on USB, once with each
+  `patch_out_wifi` value. Open points:
+  - Priiloader 0.10.0 instead of the older build RVLoader bundles, and the
+    six-byte `main.nfo` (hardware access on, no arguments).
+  - The fakesign padding: WiiQt brute-forces a different TMD field than the
+    installer (`reserved2` instead of `fill3`) and writes both padding fields
+    little-endian, so those bytes differ from a console install while the
+    signatures are equally valid. Compare against a NAND captured after the
+    upstream installer if the console disagrees.
 - [ ] **Verify a real d2x WAD.** Generate a Wii d2x-v11-beta3 package with
   ModMii. Verify the package hash, slot, base, revision, stock stub replacement,
   and launch with the intended loader. [ModMii instructions](https://modmii.github.io/usage.html)
