@@ -220,6 +220,15 @@ Use `--seed -` to pipe plaintext YAML directly into the builder.
 wii-seed BACKUP | wiiform --seed - --recipe recipe.yaml --output prepared-console
 ```
 
+`--recipe -` reads the recipe from stdin instead, for a recipe another tool
+produces, such as one assembled with `yq`. WAD paths in it are then relative to
+the working directory. Only one of the two can be `-`.
+
+```sh
+cat wads.yaml recipe.yaml | yq 'explode(.) | del(."x-WAD")' \
+  | wiiform --seed console.seed.yaml --recipe - --output prepared-console
+```
+
 Earlier seeds from the unreleased format need to be regenerated from their
 backups. See the [seed format](docs/migration.md#what-a-seed-contributes).
 

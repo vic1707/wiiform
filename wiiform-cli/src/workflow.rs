@@ -22,13 +22,14 @@ use crate::{
 
 pub use crate::native::{BootPolicy, NusCache};
 
+/// A file named on the command line, or `-` for stdin.
 #[derive(Clone, Debug)]
-pub enum SeedInput {
+pub enum Input {
     Stdin,
     File(ResolvedPath),
 }
 
-impl TryFrom<PathBuf> for SeedInput {
+impl TryFrom<PathBuf> for Input {
     type Error = anyhow::Error;
 
     fn try_from(path: PathBuf) -> Result<Self> {
@@ -42,8 +43,8 @@ impl TryFrom<PathBuf> for SeedInput {
 
 #[derive(Clone, Debug)]
 pub struct BuildOptions {
-    pub seed: SeedInput,
-    pub recipe: ResolvedPath,
+    pub seed: Input,
+    pub recipe: Input,
     pub output: PathBuf,
     pub cache: NusCache,
     pub boot_policy: BootPolicy,
@@ -98,8 +99,8 @@ impl NusCache {
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |recipe| {
         let mut seed = match &options.seed {
-            SeedInput::Stdin => StockSeed::from_reader(io::stdin().lock()),
-            SeedInput::File(path) => StockSeed::from_reader(open_regular_file(path.as_ref())?.0),
+            Input::Stdin => StockSeed::from_reader(io::stdin().lock()),
+            Input::File(path) => StockSeed::from_reader(open_regular_file(path.as_ref())?.0),
         }?;
         options.cache.prepare()?;
         create_stock(&mut seed, recipe.menu, options.boot_policy, &options.cache)
@@ -142,7 +143,18 @@ fn build_with(
     }
 
     // Reading the recipe loads and checks every WAD it names, before the long stock build.
-    let mut recipe = Recipe::try_from(&options.recipe)?;
+    ensure!(
+        !matches!(
+            (&options.seed, &options.recipe),
+            (Input::Stdin, Input::Stdin)
+        ),
+        "only one of the seed and the recipe can come from stdin"
+    );
+    let mut recipe = match &options.recipe {
+        Input::File(path) => Recipe::try_from(path)?,
+        // WAD paths in a recipe read from stdin are relative to the working directory.
+        Input::Stdin => Recipe::read(io::stdin().lock(), &std::env::current_dir()?)?,
+    };
     if let Some(menu) = options.menu {
         recipe.menu = menu;
         recipe.validate()?;
@@ -440,7 +452,7 @@ mod tests {
         let image_before = hash(&image)?;
         let wad_before = hash(&wad)?;
         let options = BuildOptions {
-            seed: SeedInput::File(seed.clone().try_into()?),
+            seed: Input::File(seed.clone().try_into()?),
             recipe: recipe.try_into()?,
             output: output.clone(),
             cache: NusCache::Memory,

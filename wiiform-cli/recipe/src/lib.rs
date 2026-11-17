@@ -86,7 +86,8 @@ impl TryFrom<&ResolvedPath> for Recipe {
 }
 
 impl Recipe {
-    fn read(input: impl Read, directory: &Path) -> Result<Self> {
+    /// Reads a recipe whose WAD paths are relative to `directory`.
+    pub fn read(input: impl Read, directory: &Path) -> Result<Self> {
         let recipe: Self = crate::wad::relative_to(directory.to_owned(), || {
             serde_saphyr::from_reader_with_options(input, crate::yaml::options())
         })
