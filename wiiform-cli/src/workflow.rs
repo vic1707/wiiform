@@ -8,43 +8,26 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
+pub use clap_stdin::FileOrStdin;
 use rustix::fs::{CWD, RenameFlags, renameat_with};
 use tempfile::Builder;
 
 use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
-    recipe::{
-        Menu, Priiloader, Recipe, Region, ResolvedPath, Rvloader, TitleId, open_regular_file,
-    },
+    recipe::{Menu, Priiloader, Recipe, Region, Rvloader, TitleId},
     seed::StockSeed,
 };
 
 pub use crate::native::{BootPolicy, NusCache};
 
-/// A file named on the command line, or `-` for stdin.
-#[derive(Clone, Debug)]
-pub enum Input {
-    Stdin,
-    File(ResolvedPath),
-}
-
-impl TryFrom<PathBuf> for Input {
-    type Error = anyhow::Error;
-
-    fn try_from(path: PathBuf) -> Result<Self> {
-        if path.as_os_str() == "-" {
-            Ok(Self::Stdin)
-        } else {
-            Ok(Self::File(path.try_into()?))
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct BuildOptions {
-    pub seed: Input,
-    pub recipe: Input,
+    /// A path, which may be a pipe such as `<(age -d …)`, or `-` for stdin.
+    pub seed: FileOrStdin,
+    /// The same; WAD paths are relative to the recipe file, or to the working
+    /// directory when it comes from stdin.
+    pub recipe: FileOrStdin,
     pub output: PathBuf,
     pub cache: NusCache,
     pub boot_policy: BootPolicy,
@@ -96,12 +79,13 @@ impl NusCache {
     }
 }
 
+fn open(input: &FileOrStdin) -> Result<impl io::Read> {
+    (input.clone().into_reader()).with_context(|| format!("cannot read {}", input.filename()))
+}
+
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |recipe| {
-        let mut seed = match &options.seed {
-            Input::Stdin => StockSeed::from_reader(io::stdin().lock()),
-            Input::File(path) => StockSeed::from_reader(open_regular_file(path.as_ref())?.0),
-        }?;
+        let mut seed = StockSeed::from_reader(open(&options.seed)?)?;
         options.cache.prepare()?;
         create_stock(&mut seed, recipe.menu, options.boot_policy, &options.cache)
     })
@@ -144,16 +128,26 @@ fn build_with(
 
     // Reading the recipe loads and checks every WAD it names, before the long stock build.
     ensure!(
-        !matches!(
-            (&options.seed, &options.recipe),
-            (Input::Stdin, Input::Stdin)
-        ),
+        !(options.seed.is_stdin() && options.recipe.is_stdin()),
         "only one of the seed and the recipe can come from stdin"
     );
-    let mut recipe = match &options.recipe {
-        Input::File(path) => Recipe::try_from(path)?,
-        // WAD paths in a recipe read from stdin are relative to the working directory.
-        Input::Stdin => Recipe::read(io::stdin().lock(), &std::env::current_dir()?)?,
+    // The seed is read after the recipe's downloads: catch a mistyped path first.
+    if options.seed.is_file() {
+        let seed = Path::new(options.seed.filename());
+        ensure!(seed.exists(), "cannot find seed {}", seed.display());
+    }
+    let mut recipe = {
+        let directory = match options.recipe.is_stdin() {
+            true => Path::new(""),
+            false => Path::new(options.recipe.filename())
+                .parent()
+                .unwrap_or(Path::new("")),
+        };
+        let directory = match directory.as_os_str().is_empty() {
+            true => std::env::current_dir()?,
+            false => directory.canonicalize()?,
+        };
+        Recipe::read(open(&options.recipe)?, &directory)?
     };
     if let Some(menu) = options.menu {
         recipe.menu = menu;
@@ -452,8 +446,8 @@ mod tests {
         let image_before = hash(&image)?;
         let wad_before = hash(&wad)?;
         let options = BuildOptions {
-            seed: Input::File(seed.clone().try_into()?),
-            recipe: recipe.try_into()?,
+            seed: seed.to_str().context("UTF-8 path")?.parse()?,
+            recipe: recipe.to_str().context("UTF-8 path")?.parse()?,
             output: output.clone(),
             cache: NusCache::Memory,
             boot_policy: BootPolicy::Stock,

@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 use anyhow::{Context, Result};
-use clap::{
-    Parser,
-    builder::{PathBufValueParser, TypedValueParser},
-};
+use clap::Parser;
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
     recipe::Menu,
-    workflow::{self, BootPolicy, BuildOptions, Input, NusCache},
+    workflow::{self, BootPolicy, BuildOptions, FileOrStdin, NusCache},
 };
 
 #[derive(Debug, Parser)]
@@ -17,14 +14,16 @@ use wiiform::{
     about = "Build and verify a Wii NAND restore bundle from a seed and recipe"
 )]
 struct Cli {
-    /// Plaintext console seed YAML, or - to read from stdin.
-    #[arg(long, value_parser = PathBufValueParser::new().try_map(Input::try_from))]
-    seed: Input,
+    /// Plaintext console seed YAML: a path, which may be a pipe such as
+    /// <(age -d seed.age), or - to read from stdin.
+    #[arg(long)]
+    seed: FileOrStdin,
 
-    /// Declarative Wiiform recipe YAML, or - to read from stdin. Its WAD paths
-    /// are relative to the recipe file, or to the working directory for stdin.
-    #[arg(long, value_parser = PathBufValueParser::new().try_map(Input::try_from))]
-    recipe: Input,
+    /// Declarative Wiiform recipe YAML, likewise. Its WAD paths are relative to
+    /// the recipe file, or to the working directory for stdin. Only one of the
+    /// seed and the recipe can be -.
+    #[arg(long)]
+    recipe: FileOrStdin,
 
     /// New output directory for nand.bin and its matching keys.bin.
     #[arg(long, value_name = "DIR")]

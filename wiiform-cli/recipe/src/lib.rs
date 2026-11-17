@@ -73,18 +73,6 @@ pub struct Recipe {
     pub rvloader: Option<Rvloader>,
 }
 
-/// Reads a recipe file. Its WADs are read, downloaded and checked on the way,
-/// with local paths relative to the recipe's directory.
-impl TryFrom<&ResolvedPath> for Recipe {
-    type Error = anyhow::Error;
-
-    fn try_from(path: &ResolvedPath) -> Result<Self> {
-        let path = path.as_ref();
-        let directory = path.parent().context("recipe path has no parent")?;
-        Self::read(open_regular_file(path)?.0, directory)
-    }
-}
-
 impl Recipe {
     /// Reads a recipe whose WAD paths are relative to `directory`.
     pub fn read(input: impl Read, directory: &Path) -> Result<Self> {

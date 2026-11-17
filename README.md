@@ -222,11 +222,12 @@ wii-seed BACKUP | wiiform --seed - --recipe recipe.yaml --output prepared-consol
 
 `--recipe -` reads the recipe from stdin instead, for a recipe another tool
 produces, such as one assembled with `yq`. WAD paths in it are then relative to
-the working directory. Only one of the two can be `-`.
+the working directory. Only one of the two can be `-`, but either can also be a
+pipe: with process substitution an encrypted seed never touches the disk.
 
 ```sh
 cat wads.yaml recipe.yaml | yq 'explode(.) | del(."x-WAD")' \
-  | wiiform --seed console.seed.yaml --recipe - --output prepared-console
+  | wiiform --seed <(age -d console.seed.yaml.age) --recipe - --output prepared-console
 ```
 
 Earlier seeds from the unreleased format need to be regenerated from their

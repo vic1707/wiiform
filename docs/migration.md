@@ -137,7 +137,7 @@ padding. Stock creation writes a BackupMii text header using the OTP console
 ID and emits a warning if the header changed. The binary key data and its
 padding remain byte-identical to the seed. The build publishes the verified
 NAND footer as `keys.bin`.
-Use `wiiform --seed -` to read plaintext YAML from stdin, or `--recipe -` for the recipe.
+Use `wiiform --seed -` to read plaintext YAML from stdin, or `--recipe -` for the recipe. Either may also be a pipe, such as `<(age -d console.seed.yaml.age)`.
 
 ## Releases
 

@@ -198,12 +198,10 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
     fs::create_dir(&dir)?;
     fs::write(dir.join("payload.wad"), WAD)?;
     std::os::unix::fs::symlink("payload.wad", dir.join("linked.wad"))?;
-    let recipe_path = dir.join("recipe.yaml");
     let digest = sha(&WAD);
     let title = |path: &str| format!("menu: 4.3E\ntitles: [{{path: {path}, sha256: {digest}}}]");
 
-    fs::write(&recipe_path, title("linked.wad"))?;
-    let recipe = Recipe::try_from(&ResolvedPath::try_from(recipe_path)?)?;
+    let recipe = Recipe::read(title("linked.wad").as_bytes(), &dir)?;
     assert_eq!(&*recipe.titles[0].wad, WAD);
     for bad in [".", "missing.wad"] {
         assert!(Recipe::read(title(bad).as_bytes(), &dir).is_err(), "{bad}");
