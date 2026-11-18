@@ -2,15 +2,16 @@
 
 ## Current state
 
-- Recipe WADs accept local files, inline bytes, and HTTPS URLs with a required
-  SHA-256. An exact installed match emits a warning. A conflicting title fails
-  the build. Nintendo-signed IOS WADs use the same title entry, including IOS9
-  v1034 for the OoT speedrun setup.
+- Titles are grouped by kind: channel WADs (local files, inline bytes, HTTPS
+  URLs or GitHub assets, with a SHA-256), IOS from NUS by slot and version
+  (such as IOS9 v1034 for the OoT speedrun setup), and cIOS. An exact
+  installed match emits a warning; a conflicting title fails the build.
 - The `hbc` recipe entry installs verified HBC Reborn OHBC releases or a
   hash-pinned custom HBC WAD before Priiloader configuration.
-- Wii d2x WADs have explicit slot, base, and revision checks. Stock stub
-  replacement is opt-in and limited to verified Nintendo stubs in slots 249
-  and 250.
+- d2x cIOS are built from the d2x release on their NUS base IOS (matching an
+  independent build byte for byte) or installed from prebuilt WADs, with
+  slot, base and revision checks. Stock stub replacement is opt-in and limited
+  to verified Nintendo stubs in slots 249 and 250. IOS come from NUS.
 - The `rvloader` recipe entry does what RVLoader v2.1's installer does: the
   boot file and Priiloader settings, the six derived IOS and the VGA flag. An
   independent re-implementation of the installer matched every derived TMD
@@ -31,9 +32,9 @@
     little-endian, so those bytes differ from a console install while the
     signatures are equally valid. Compare against a NAND captured after the
     upstream installer if the console disagrees.
-- [ ] **Verify a real d2x WAD.** Generate a Wii d2x-v11-beta3 package with
-  ModMii. Verify the package hash, slot, base, revision, stock stub replacement,
-  and launch with the intended loader. [ModMii instructions](https://modmii.github.io/usage.html)
+- [ ] **Verify a built d2x cIOS on a console.** Restore an image with
+  `titles.cios` built from d2x v11 beta3 (slot 249, base 56) and launch a game
+  with a loader that uses it.
 - [ ] **Test prepared images on the remaining consoles.** Record first-run
   setup, the Wii Menu recovery message, channel launch, and Priiloader behavior
   for the images tested.

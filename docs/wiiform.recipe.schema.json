@@ -279,16 +279,18 @@
       "description": "A path on the SD card, relative to its root. A leading / is accepted and\nmeans the root; empty, `.` and `..` components are not.",
       "type": "string"
     },
-    "Cios": {
-      "description": "A prebuilt Wii d2x cIOS WAD and the slot it is expected to fill.",
+    "Channel": {
+      "description": "A channel WAD to install when its title is absent, or to verify when it is\npresent: a channel, a Virtual Console or WiiWare title, or an app channel.",
       "type": "object",
       "properties": {
+        "allow_unsigned": {
+          "description": "Permit an unsigned community channel after content validation.\nBy default the WAD must carry Nintendo signatures.",
+          "type": "boolean",
+          "default": false
+        },
         "sha256": {
           "description": "SHA-256 of the exact WAD bytes.",
           "$ref": "#/$defs/Sha256"
-        },
-        "target": {
-          "$ref": "#/$defs/Target"
         }
       },
       "oneOf": [
@@ -343,7 +345,93 @@
         }
       ],
       "required": [
-        "sha256",
+        "sha256"
+      ],
+      "unevaluatedProperties": false
+    },
+    "Cios": {
+      "description": "A d2x cIOS and the slot it fills.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of a prebuilt WAD. A d2x release gives its own inside `d2x`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Local prebuilt cIOS WAD, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of a prebuilt cIOS WAD.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "A prebuilt cIOS WAD, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        },
+        {
+          "description": "A prebuilt cIOS WAD attached to a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
+          ]
+        },
+        {
+          "description": "A d2x release archive (installer, modules and ciosmaps.xml): the cIOS is\nbuilt from it on the base IOS its map names, downloaded from NUS.",
+          "type": "object",
+          "properties": {
+            "d2x": {
+              "$ref": "#/$defs/Pinned"
+            }
+          },
+          "required": [
+            "d2x"
+          ]
+        }
+      ],
+      "required": [
         "target"
       ],
       "unevaluatedProperties": false
@@ -687,6 +775,34 @@
         }
       ]
     },
+    "Ios": {
+      "description": "A Nintendo IOS downloaded from NUS. An identical installed IOS is only\nverified; another version in the slot stops the build.",
+      "type": "object",
+      "properties": {
+        "slot": {
+          "$ref": "#/$defs/IosSlot"
+        },
+        "version": {
+          "description": "Title version, such as 1034 for IOS9.",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "version"
+      ]
+    },
+    "IosSlot": {
+      "description": "IOS slot, 3 through 253.",
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 253,
+      "minimum": 3
+    },
     "Language": {
       "description": "Wii first-run language.",
       "type": "string",
@@ -802,13 +918,6 @@
       "description": "The NAND image: stock menu, then everything installed on top of it.",
       "type": "object",
       "properties": {
-        "cios": {
-          "description": "Prebuilt, hash-pinned Wii d2x cIOS WADs.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Cios"
-          }
-        },
         "hbc": {
           "description": "Optional Homebrew Channel from a tagged Reborn release or a custom WAD.",
           "anyOf": [
@@ -868,11 +977,8 @@
           "default": null
         },
         "titles": {
-          "description": "WADs to install from a local file, inline bytes, or an HTTPS URL.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Title"
-          }
+          "description": "Titles to install: channels, IOS and cIOS.",
+          "$ref": "#/$defs/Titles"
         }
       },
       "additionalProperties": false,
@@ -885,6 +991,75 @@
       "type": "string",
       "maxLength": 10,
       "minLength": 1
+    },
+    "Pinned": {
+      "description": "A file from one source with its SHA-256, which a GitHub release asset may\nomit when its release states one.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Local path, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "HTTPS URL of the raw file.",
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "description": "The file itself, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "inline"
+          ]
+        },
+        {
+          "description": "An asset of a tagged GitHub release.",
+          "type": "object",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/GithubAsset"
+            }
+          },
+          "required": [
+            "github"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
     },
     "Priiloader": {
       "description": "Complete Priiloader configuration. Applying it writes every setting and\nhack state, replacing what the NAND holds; omitted values use the pinned\n0.10.0 defaults.",
@@ -1126,11 +1301,11 @@
       "minimum": 0
     },
     "Target": {
-      "description": "Expected identity and replacement policy for a prebuilt Wii d2x WAD.",
+      "description": "The slot a cIOS fills, its base IOS, revision and replacement policy.",
       "type": "object",
       "properties": {
         "base": {
-          "description": "Base IOS declared by the d2x payload.",
+          "description": "Base IOS: declared by a prebuilt WAD, or the one a build starts from.",
           "$ref": "#/$defs/Base"
         },
         "replace_stock_stub": {
@@ -1157,75 +1332,33 @@
         "revision"
       ]
     },
-    "Title": {
-      "description": "A WAD to install when its title is absent, or to verify when it is present.",
+    "Titles": {
+      "description": "Titles to install on top of the stock menu.",
       "type": "object",
       "properties": {
-        "allow_unsigned": {
-          "description": "Permit an unsigned community channel after content validation.\nBy default the WAD must carry Nintendo signatures.",
-          "type": "boolean",
-          "default": false
+        "channels": {
+          "description": "Channels, Virtual Console and WiiWare titles and app channels, as WADs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Channel"
+          }
         },
-        "sha256": {
-          "description": "SHA-256 of the exact WAD bytes.",
-          "$ref": "#/$defs/Sha256"
+        "cios": {
+          "description": "d2x cIOS, built from a d2x release on a NUS base IOS or given as a prebuilt WAD.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Cios"
+          }
+        },
+        "ios": {
+          "description": "Nintendo IOS, downloaded from NUS by slot and version.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ios"
+          }
         }
       },
-      "oneOf": [
-        {
-          "description": "Local path, relative to the recipe.",
-          "type": "object",
-          "properties": {
-            "path": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "path"
-          ]
-        },
-        {
-          "description": "HTTPS URL of the raw file.",
-          "type": "object",
-          "properties": {
-            "url": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "url"
-          ]
-        },
-        {
-          "description": "The file itself, base64-encoded.",
-          "type": "object",
-          "properties": {
-            "inline": {
-              "type": "string",
-              "contentEncoding": "base64"
-            }
-          },
-          "required": [
-            "inline"
-          ]
-        },
-        {
-          "description": "An asset of a tagged GitHub release.",
-          "type": "object",
-          "properties": {
-            "github": {
-              "$ref": "#/$defs/GithubAsset"
-            }
-          },
-          "required": [
-            "github"
-          ]
-        }
-      ],
-      "required": [
-        "sha256"
-      ],
-      "unevaluatedProperties": false
+      "additionalProperties": false
     },
     "Wad": {
       "description": "A WAD from one source, with the SHA-256 of its exact bytes.",

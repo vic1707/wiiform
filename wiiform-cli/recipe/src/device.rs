@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! Files for a storage device: the `sd` and `usb` keys.
 mod app;
-mod archive;
 mod bundle;
 mod card_path;
 mod extract;
 
-use std::{
-    collections::{BTreeMap, btree_map::Entry},
-    ops::RangeInclusive,
-};
+use std::collections::{BTreeMap, btree_map::Entry};
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
@@ -18,9 +14,6 @@ use serde::Deserialize;
 pub use self::card_path::CardPath;
 use self::{app::App, bundle::Bundle};
 use crate::{source::Source, wad::Sha256};
-
-/// Largest single file, downloaded or unpacked: the size of a NAND.
-const FILE_BOUNDS: RangeInclusive<usize> = 1..=0x2100_0000;
 
 /// The files of an SD card or a USB drive.
 #[derive(Deserialize, JsonSchema)]
@@ -80,14 +73,7 @@ impl DeviceFiles {
 
 /// Reads a pinned file: `sha256` is required unless a GitHub release states one.
 fn read(source: Source, sha256: Option<Sha256>) -> Result<Vec<u8>> {
-    let fetched = source.read(FILE_BOUNDS)?;
-    let expected = (sha256.or(fetched.published_sha256))
-        .context("sha256 is required: only GitHub release assets may come with one")?;
-    ensure!(
-        Sha256::of(&fetched.bytes) == expected,
-        "file does not match its SHA-256"
-    );
-    Ok(fetched.bytes)
+    source.read_pinned(sha256)
 }
 
 /// Merges the entries' files, refusing collisions: FAT ignores case, and a

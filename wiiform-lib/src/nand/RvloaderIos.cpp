@@ -5,6 +5,7 @@
 // and the replacement bytes.
 #include <RvloaderIos.hpp>
 #include <Support.hpp>
+#include <TitleBuild.hpp>
 
 #include <tiktmd.h>
 
@@ -15,9 +16,7 @@
 #include <cstring>
 
 namespace {
-  constexpr int tmd_header_size = 0x1e4;
-  constexpr int content_record_size = 0x24;
-  constexpr quint16 shared_content = 0x8001;
+  constexpr quint16 shared_content = title_build::shared_content;
 
   struct Module {
     QByteArray bytes;
@@ -72,16 +71,6 @@ namespace {
             "IOS kernel has no version check to patch");
   }
 
-  auto content_record(quint32 cid, quint16 index, const Module& module) -> QByteArray {
-    QByteArray record(content_record_size, '\0');
-    auto* out = reinterpret_cast<uchar*>(record.data());
-    qToBigEndian<quint32>(cid, out);
-    qToBigEndian<quint16>(index, out + 4);
-    qToBigEndian<quint16>(shared_content, out + 6);
-    qToBigEndian<quint64>(quint64(module.bytes.size()), out + 8);
-    record.replace(16, 20, module.sha1);
-    return record;
-  }
 }
 
 namespace rvloader {
@@ -130,31 +119,17 @@ namespace rvloader {
       cids.append(*std::max_element(cids.begin(), cids.end()) + 1);
     }
 
-    auto metadata = stock.data[0].left(tmd_header_size);
-    qToBigEndian<quint16>(quint16(modules.size()), reinterpret_cast<uchar*>(metadata.data() + 0x1de));
-    qToBigEndian<quint16>(quint16(boot), reinterpret_cast<uchar*>(metadata.data() + 0x1e0));
-    for (int i = 0; i < modules.size(); ++i) metadata += content_record(cids[i], quint16(i), modules[i]);
+    QList<title_build::Content> contents;
+    for (int i = 0; i < modules.size(); ++i) contents.append({cids[i], shared_content, modules[i].bytes});
 
     const auto title_id = (quint64(1) << 32) | ios.slot;
     // The highest version keeps system updates from replacing the title.
     constexpr quint16 version = 0xffff;
-    Tmd derived(metadata);
-    require(derived.SetTid(title_id) && derived.SetVersion(version) && derived.FakeSign(),
-            "Cannot fakesign the RVLoader IOS metadata");
-    metadata = derived.Data();
+    auto metadata = title_build::retitle_tmd(title_build::tmd(stock.data[0], contents, quint16(boot)), title_id, version);
     // "Makes IOS 58 as recognizable as valid to be loaded from homebrews": the
     // installer marks the IOS58 slot's zeroed signature this way.
     if (ios.slot == 58) metadata.replace(8, 4, QByteArray(4, char(0xff)));
-
-    Ticket ticket(stock.data[1], false);
-    require(ticket.SetTid(title_id) && ticket.FakeSign(), "Cannot fakesign the RVLoader IOS ticket");
-
-    NusJob job;
-    job.tid = title_id;
-    job.version = version;
-    job.decrypt = true;
-    job.data << metadata << ticket.Data();
-    for (const auto& module : modules) job.data << module.bytes;
-    return validate_title(std::move(job), "Derived RVLoader IOS is inconsistent");
+    return title_build::job(title_id, version, metadata, title_build::retitle_ticket(stock.data[1], title_id),
+                            contents, "Derived RVLoader IOS is inconsistent");
   }
 }

@@ -12,6 +12,7 @@ namespace wiiform::ffi {
   struct PriiloaderSettings;
   struct StockIdentity;
   struct CiosOptions;
+  struct CiosBuild;
   struct InstalledWad;
   struct StockSeed;
   struct SeedParts;
@@ -30,13 +31,15 @@ namespace wiiform::ffi {
   auto write_backupmii_header(Nand keys) -> bool;
   auto initialize_image(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity;
   auto initialize_image_with_source_boot(Nand nand, const StockSeed& seed, Menu menu) -> StockIdentity;
-  void install_nus_title(Nand nand, const NusCache& cache, TitleVersion title);
+  auto install_nus_title(Nand nand, const NusCache& cache, TitleVersion title) -> InstalledWad;
   auto install_rvloader_ios(Nand nand, const NusCache& cache, const RvloaderIos& ios) -> InstalledWad;
   void set_rvloader_vga(Nand nand, bool enabled);
   auto install_wad(Nand nand, Bytes wad) -> InstalledWad;
+  auto install_channel(Nand nand, Bytes wad) -> InstalledWad;
   auto install_unsigned_channel(Nand nand, Bytes wad) -> InstalledWad;
   auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad;
   auto install_cios(Nand nand, Bytes wad, const CiosOptions& options) -> InstalledWad;
+  auto install_built_cios(Nand nand, const NusCache& cache, const CiosBuild& build) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);
   void apply_system_settings(Nand nand, const SystemSettings& settings);
   void install_priiloader(Nand nand, Bytes app);

@@ -69,6 +69,31 @@ namespace wiiform {
     bool replace_stock_stub;
   };
 
+  // One change a d2x map makes to a content of the base IOS.
+  struct ContentPatch {
+    std::uint32_t cid;
+    std::uint32_t offset;
+    std::span<const std::uint8_t> original;
+    std::span<const std::uint8_t> replacement;
+  };
+
+  // A d2x module added to the base IOS: last (position -1), or at a position
+  // whose content then moves last.
+  struct AddedModule {
+    std::uint32_t cid;
+    std::int32_t position;
+    std::span<const std::uint8_t> bytes;
+  };
+
+  // A d2x cIOS to build from base IOS<options.base> v<base_version>, fetched like
+  // install_nus_title.
+  struct CiosBuild {
+    std::uint16_t base_version;
+    CiosOptions options;
+    std::span<const ContentPatch> patches;
+    std::span<const AddedModule> modules;
+  };
+
   // One IOS as RVLoader's installer (v2.1) derives it from a stock one.
   struct RvloaderIos {
     // IOS36 v3608, IOS58 v6176 or IOS80 v6944, fetched like install_nus_title does.

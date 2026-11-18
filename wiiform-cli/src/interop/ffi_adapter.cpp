@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iterator>
 #include <optional>
+#include <vector>
 
 namespace wiiform::ffi {
 namespace {
@@ -82,8 +83,8 @@ auto initialize_image_with_source_boot(Nand nand, const StockSeed& seed, Menu me
   return {identity.boot_area, identity.footer};
 }
 
-void install_nus_title(Nand nand, const NusCache& cache, TitleVersion title) {
-  wiiform::install_nus_title(span(nand), native(cache), {title.id, title.version});
+auto install_nus_title(Nand nand, const NusCache& cache, TitleVersion title) -> InstalledWad {
+  return shared(wiiform::install_nus_title(span(nand), native(cache), {title.id, title.version}));
 }
 
 auto install_rvloader_ios(Nand nand, const NusCache& cache, const RvloaderIos& ios) -> InstalledWad {
@@ -100,6 +101,10 @@ auto install_wad(Nand nand, Bytes wad) -> InstalledWad {
   return shared(wiiform::install_wad(span(nand), span(wad)));
 }
 
+auto install_channel(Nand nand, Bytes wad) -> InstalledWad {
+  return shared(wiiform::install_channel(span(nand), span(wad)));
+}
+
 auto install_unsigned_channel(Nand nand, Bytes wad) -> InstalledWad {
   return shared(wiiform::install_unsigned_channel(span(nand), span(wad)));
 }
@@ -111,6 +116,22 @@ auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad {
 auto install_cios(Nand nand, Bytes wad, const CiosOptions& options) -> InstalledWad {
   return shared(wiiform::install_cios(span(nand), span(wad),
       {options.slot, options.base, options.revision, options.replace_stock_stub}));
+}
+
+auto install_built_cios(Nand nand, const NusCache& cache, const CiosBuild& build) -> InstalledWad {
+  // The library's build refers to these spans, so they live until the call returns.
+  std::vector<wiiform::ContentPatch> patches;
+  for (const auto& patch : build.patches)
+    patches.push_back({patch.cid, patch.offset, {patch.original.data(), patch.original.size()},
+                       {patch.replacement.data(), patch.replacement.size()}});
+  std::vector<wiiform::AddedModule> modules;
+  for (const auto& module : build.modules)
+    modules.push_back({module.cid, module.position, {module.bytes.data(), module.bytes.size()}});
+  const auto& options = build.options;
+  return shared(wiiform::install_built_cios(
+      span(nand), native(cache),
+      {build.base_version, {options.slot, options.base, options.revision, options.replace_stock_stub}, patches,
+       modules}));
 }
 
 void remove_title(Nand nand, std::uint64_t title_id) {

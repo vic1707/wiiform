@@ -11,10 +11,11 @@ use crate::ffi::bridge as ffi;
 use crate::recipe::{
     Menu, Priiloader, Region, Setup, TitleId, Wad,
     nand::{
-        cios, priiloader,
+        priiloader,
         priiloader::Hack,
         rvloader,
         setup::{self, SensorBar, display::Aspect},
+        titles::cios,
     },
     read_bounded,
 };
@@ -228,16 +229,12 @@ impl Nand {
         cache: &NusCache,
         title_id: TitleId,
         version: u16,
-    ) -> Result<()> {
+    ) -> Result<InstalledWad> {
         let title = ffi::TitleVersion {
             id: title_id.as_u64(),
             version,
         };
-        Ok(ffi::install_nus_title(
-            &mut self.0[..],
-            &cache.ffi()?,
-            title,
-        )?)
+        ffi::install_nus_title(&mut self.0[..], &cache.ffi()?, title)?.try_into()
     }
 
     /// Installs one IOS of RVLoader's installer, derived from a stock IOS downloaded like
@@ -280,13 +277,41 @@ impl Nand {
     }
 
     pub fn install_cios(&mut self, wad: &Wad, target: &cios::Target) -> Result<InstalledWad> {
-        let options = ffi::CiosOptions {
-            slot: target.slot.into(),
-            base: target.base.into(),
-            revision: target.revision,
-            replace_stock_stub: target.replace_stock_stub,
+        ffi::install_cios(&mut self.0[..], wad, &cios_options(target))?.try_into()
+    }
+
+    /// Builds a d2x cIOS from its NUS base IOS and installs it like [`Self::install_cios`].
+    pub fn install_built_cios(
+        &mut self,
+        cache: &NusCache,
+        build: &cios::Build,
+        target: &cios::Target,
+    ) -> Result<InstalledWad> {
+        let build = ffi::CiosBuild {
+            base_version: build.base_version,
+            options: cios_options(target),
+            patches: (build.patches.iter())
+                .map(|patch| ffi::ContentPatch {
+                    cid: patch.cid,
+                    offset: patch.offset,
+                    original: patch.original.clone(),
+                    replacement: patch.replacement.clone(),
+                })
+                .collect(),
+            modules: (build.modules.iter())
+                .map(|module| ffi::AddedModule {
+                    cid: module.cid,
+                    position: module.position.map_or(-1, i32::from),
+                    bytes: module.bytes.clone(),
+                })
+                .collect(),
         };
-        ffi::install_cios(&mut self.0[..], wad, &options)?.try_into()
+        ffi::install_built_cios(&mut self.0[..], &cache.ffi()?, &build)?.try_into()
+    }
+
+    /// Installs a Nintendo-signed channel; IOS WADs are refused.
+    pub fn install_channel(&mut self, wad: &Wad) -> Result<InstalledWad> {
+        ffi::install_channel(&mut self.0[..], wad)?.try_into()
     }
 
     pub fn remove_title(&mut self, title_id: TitleId) -> Result<()> {
@@ -356,4 +381,13 @@ impl Nand {
 /// Returns whether it changed.
 pub(crate) fn write_backupmii_header(keys: &mut [u8; KEYS_BYTES]) -> Result<bool> {
     Ok(ffi::write_backupmii_header(keys)?)
+}
+
+fn cios_options(target: &cios::Target) -> ffi::CiosOptions {
+    ffi::CiosOptions {
+        slot: target.slot.into(),
+        base: target.base.into(),
+        revision: target.revision,
+        replace_stock_stub: target.replace_stock_stub,
+    }
 }

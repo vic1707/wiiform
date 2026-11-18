@@ -9,6 +9,7 @@ use crate::{
         menu::Menu,
         priiloader::{Autoboot, Hack, ReturnTo},
         setup::display::Aspect,
+        titles::cios::{Kind as CiosKind, d2x::Module},
     },
     wad::tests::with_fetch,
 };
@@ -119,32 +120,38 @@ fn hbc_takes_exactly_one_variant() -> Result<()> {
 
 #[test]
 fn a_wad_is_one_source_whose_bytes_match_its_hash() -> Result<()> {
-    let title = |fields: &str| read(&format!("menu: 4.3E\ntitles:\n  - {fields}\n"));
+    let title = |fields: &str| {
+        read(&format!(
+            "menu: 4.3E\ntitles:\n  channels:\n    - {fields}\n"
+        ))
+    };
     let encoded = STANDARD.encode(WAD);
     let digest = sha(&WAD);
     let (first, second) = encoded.split_at(40);
-    let block = format!("sha256: {digest}\n    inline: |\n      {first}\n      {second}");
-    assert_eq!(&*title(&block)?.titles[0].wad, WAD);
+    let block = format!("sha256: {digest}\n      inline: |\n        {first}\n        {second}");
+    assert_eq!(&*title(&block)?.titles.channels[0].wad, WAD);
 
     let wrong = sha(b"something else");
     let small = STANDARD.encode([7; 0x3f]);
-    assert!(message(title(&format!("inline: {encoded}\n    sha256: {wrong}"))).contains("SHA-256"));
+    assert!(
+        message(title(&format!("inline: {encoded}\n      sha256: {wrong}"))).contains("SHA-256")
+    );
     assert!(
         message(title(&format!(
-            "inline: {small}\n    sha256: {}",
+            "inline: {small}\n      sha256: {}",
             sha(&[7; 0x3f])
         )))
         .contains("size")
     );
     for bad in [
-        format!("inline: {encoded}\n    path: a.wad\n    sha256: {digest}"),
-        format!("inline: {encoded}\n    url: https://example.com/a.wad\n    sha256: {digest}"),
+        format!("inline: {encoded}\n      path: a.wad\n      sha256: {digest}"),
+        format!("inline: {encoded}\n      url: https://example.com/a.wad\n      sha256: {digest}"),
         format!("sha256: {digest}"),
         format!("inline: {encoded}"),
-        format!("inline: '***'\n    sha256: {digest}"),
-        format!("inline: !!binary {encoded}\n    sha256: {digest}"),
-        format!("path: null\n    sha256: {digest}"),
-        format!("inline: {encoded}\n    sha256: {digest}\n    unexpected: true"),
+        format!("inline: '***'\n      sha256: {digest}"),
+        format!("inline: !!binary {encoded}\n      sha256: {digest}"),
+        format!("path: null\n      sha256: {digest}"),
+        format!("inline: {encoded}\n      sha256: {digest}\n    unexpected: true"),
     ] {
         assert!(title(&bad).is_err(), "{bad}");
     }
@@ -155,7 +162,7 @@ fn a_wad_is_one_source_whose_bytes_match_its_hash() -> Result<()> {
 fn a_url_source_is_fetched_within_the_wad_size_limit() -> Result<()> {
     const URL: &str = "https://example.com/package.wad";
     let yaml = format!(
-        "menu: 4.3E\ntitles: [{{url: {URL}, sha256: {}}}]",
+        "menu: 4.3E\ntitles: {{channels: [{{url: {URL}, sha256: {}}}]}}",
         sha(&WAD)
     );
     let recipe = with_fetch(
@@ -166,7 +173,7 @@ fn a_url_source_is_fetched_within_the_wad_size_limit() -> Result<()> {
         },
         || read(&yaml),
     )?;
-    assert_eq!(&*recipe.titles[0].wad, WAD);
+    assert_eq!(&*recipe.titles.channels[0].wad, WAD);
     assert!(with_fetch(|_, _| Ok(vec![]), || read(&yaml)).is_err());
     assert!(with_fetch(|_, _| anyhow::bail!("offline"), || read(&yaml)).is_err());
     Ok(())
@@ -176,17 +183,23 @@ fn a_url_source_is_fetched_within_the_wad_size_limit() -> Result<()> {
 fn titles_and_cios_accept_only_their_own_fields() -> Result<()> {
     let target = "target: {slot: 249, base: 56, revision: 65535}";
     let wad = inline();
-    let titles = |fields: &str| read(&format!("menu: 4.3E\ntitles: [{{{fields}}}]"));
-    let cios = |fields: &str| read(&format!("menu: 4.3E\ncios: [{{{fields}}}]"));
+    let titles = |fields: &str| read(&format!("menu: 4.3E\ntitles: {{channels: [{{{fields}}}]}}"));
+    let cios = |fields: &str| read(&format!("menu: 4.3E\ntitles: {{cios: [{{{fields}}}]}}"));
 
-    assert!(!titles(&wad)?.titles[0].allow_unsigned);
-    assert!(titles(&format!("{wad}, allow_unsigned: true"))?.titles[0].allow_unsigned);
+    assert!(!titles(&wad)?.titles.channels[0].allow_unsigned);
+    assert!(
+        titles(&format!("{wad}, allow_unsigned: true"))?
+            .titles
+            .channels[0]
+            .allow_unsigned
+    );
     let recipe = cios(&format!("{wad}, {target}"))?;
+    let cios_entry = &recipe.titles.cios[0];
     assert_eq!(
-        Some(recipe.cios[0].target.title_id()),
+        Some(cios_entry.target.title_id()),
         TitleId::new(0x0000_0001_0000_00f9)
     );
-    assert_eq!(&*recipe.cios[0].wad, WAD);
+    assert!(matches!(&cios_entry.kind, CiosKind::Prebuilt(wad) if **wad == WAD));
 
     for fields in [
         format!("{wad}, unexpected: true"),
@@ -213,10 +226,12 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
     fs::write(dir.join("payload.wad"), WAD)?;
     std::os::unix::fs::symlink("payload.wad", dir.join("linked.wad"))?;
     let digest = sha(&WAD);
-    let title = |path: &str| format!("menu: 4.3E\ntitles: [{{path: {path}, sha256: {digest}}}]");
+    let title = |path: &str| {
+        format!("menu: 4.3E\ntitles: {{channels: [{{path: {path}, sha256: {digest}}}]}}")
+    };
 
     let recipe = Recipe::read(nested(&title("linked.wad")).as_bytes(), &dir)?.nand;
-    assert_eq!(&*recipe.titles[0].wad, WAD);
+    assert_eq!(&*recipe.titles.channels[0].wad, WAD);
     for bad in [".", "missing.wad"] {
         assert!(
             Recipe::read(nested(&title(bad)).as_bytes(), &dir).is_err(),
@@ -440,7 +455,7 @@ fn the_documented_example_is_a_valid_recipe() -> Result<()> {
     assert_eq!(recipe.sd.as_ref().context("expected sd")?.files().len(), 1);
     let recipe = recipe.nand;
     assert_eq!(recipe.remove.len(), 2);
-    assert_eq!(&*recipe.titles[0].wad, WAD);
+    assert_eq!(&*recipe.titles.channels[0].wad, WAD);
     assert_eq!(recipe.priiloader.unwrap().hacks, [Hack::Fix480p]);
     Ok(())
 }
@@ -453,7 +468,12 @@ fn cios_slots_and_bases_are_checked_when_the_recipe_is_read() {
             inline()
         )
     };
-    let recipe = |entries: &[String]| read(&format!("menu: 4.3E\ncios: [{}]", entries.join(", ")));
+    let recipe = |entries: &[String]| {
+        read(&format!(
+            "menu: 4.3E\ntitles: {{cios: [{}]}}",
+            entries.join(", ")
+        ))
+    };
     assert!(recipe(&[cios(249, 56), cios(250, 57)]).is_ok());
     assert!(recipe(&[cios(247, 56)]).is_err());
     assert!(recipe(&[cios(249, 55)]).is_err());
@@ -781,4 +801,149 @@ fn exclusive_hacks_are_refused() -> Result<()> {
 #[test]
 fn a_flat_recipe_is_refused() {
     assert!(message(read_recipe("menu: 4.3E")).contains("unknown field `menu`"));
+}
+
+#[test]
+fn ios_come_from_nus_by_slot_and_version() -> Result<()> {
+    let titles = read("menu: 4.3E\ntitles: {ios: [{slot: 9, version: 1034}]}")?.titles;
+    assert_eq!(titles.ios[0].title_id().as_u64(), 0x0000_0001_0000_0009);
+    assert_eq!(titles.ios[0].version, 1034);
+    for ios in [
+        "{slot: 2, version: 1}",
+        "{slot: 254, version: 1}",
+        "{slot: 9}",
+        "{slot: 9, version: 1, sha256: x}",
+    ] {
+        assert!(
+            read(&format!("menu: 4.3E\ntitles: {{ios: [{ios}]}}")).is_err(),
+            "{ios}"
+        );
+    }
+    let cios = format!(
+        "{{{}, target: {{slot: 249, base: 56, revision: 1}}}}",
+        inline()
+    );
+    let both = read(&format!(
+        "menu: 4.3E\ntitles: {{ios: [{{slot: 249, version: 1}}], cios: [{cios}]}}"
+    ));
+    assert!(message(both).contains("IOS slot 249 twice"));
+    assert!(
+        read("menu: 4.3E\ntitles: [{path: a.wad}]").is_err(),
+        "the old list is refused"
+    );
+    assert!(
+        read("menu: 4.3E\ncios: []").is_err(),
+        "cios moved under titles"
+    );
+    Ok(())
+}
+
+/// A d2x release holding `map` and the modules named in `modules`.
+fn d2x_release(map: &str, modules: &[&str]) -> Vec<u8> {
+    let files: Vec<(String, Vec<u8>)> =
+        std::iter::once(("apps/d2x/ciosmaps.xml".to_owned(), map.as_bytes().to_vec()))
+            .chain(modules.iter().map(|name| {
+                (
+                    format!("apps/d2x/d2x-test/{name}.app"),
+                    name.as_bytes().to_vec(),
+                )
+            }))
+            .collect();
+    let refs: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+        .collect();
+    zip_of(&refs, &[])
+}
+
+const MAP: &str = r#"<ciosmaps ciosgroupscount="1"><ciosgroup name="d2x-test" version="1" basescount="2">
+  <base ios="56" version="5661"><content id="0x1f"><patch offset="0x4" size="2" originalbytes="0x01,0x02" newbytes="0xaa,0xbb"/></content>
+    <content id="0x10"/><content id="0x25" module="EHCI" tmdmoduleid="3"/><content id="0x26" module="ES" tmdmoduleid="-1"/></base>
+  <base ios="57" version="5918"/></ciosgroup></ciosmaps>"#;
+
+#[test]
+fn d2x_maps_become_builds_for_the_chosen_base() -> Result<()> {
+    use crate::nand::titles::cios::d2x;
+    let build = d2x::build(&d2x_release(MAP, &["EHCI", "ES"]), 56)?;
+    assert_eq!(build.base_version, 5661);
+    assert_eq!(build.patches.len(), 1);
+    assert_eq!((build.patches[0].cid, build.patches[0].offset), (0x1f, 4));
+    assert_eq!(
+        (&*build.patches[0].original, &*build.patches[0].replacement),
+        (&[1, 2][..], &[0xaa, 0xbb][..])
+    );
+    assert_eq!(
+        build.modules,
+        [
+            Module {
+                cid: 0x25,
+                position: Some(3),
+                bytes: b"EHCI".to_vec()
+            },
+            Module {
+                cid: 0x26,
+                position: None,
+                bytes: b"ES".to_vec()
+            },
+        ]
+    );
+    assert_eq!(
+        d2x::build(&d2x_release(MAP, &["EHCI", "ES"]), 57)?.modules,
+        []
+    );
+    for (release, base, error) in [
+        (d2x_release(MAP, &["EHCI", "ES"]), 38, "supports 56, 57"),
+        (
+            d2x_release(MAP, &["EHCI"]),
+            56,
+            "lacks apps/d2x/d2x-test/ES.app",
+        ),
+        (
+            d2x_release(
+                &MAP.replace("</ciosgroup>", "</ciosgroup><ciosgroup name=\"b\"/>"),
+                &[],
+            ),
+            56,
+            "2 cIOS groups",
+        ),
+        (
+            d2x_release(&MAP.replace("size=\"2\"", "size=\"3\""), &["EHCI", "ES"]),
+            56,
+            "does not match its size",
+        ),
+        (zip_of(&[("readme.txt", b"x")], &[]), 56, "one ciosmaps.xml"),
+    ] {
+        assert!(
+            message(d2x::build(&release, base)).contains(error),
+            "{error}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn cios_entries_are_prebuilt_or_built_from_d2x() -> Result<()> {
+    let release = d2x_release(MAP, &["EHCI", "ES"]);
+    let d2x = format!("d2x: {{{}}}", inline_file(&release));
+    let target = "target: {slot: 249, base: 56, revision: 65535}";
+    let cios = |fields: &str| read(&format!("menu: 4.3E\ntitles: {{cios: [{{{fields}}}]}}"));
+    let built = cios(&format!("{d2x}, {target}"))?;
+    assert!(
+        matches!(&built.titles.cios[0].kind, CiosKind::Built(build) if build.base_version == 5661)
+    );
+    for (fields, error) in [
+        (
+            format!("{d2x}, sha256: {}, {target}", sha(&release)),
+            "inside `d2x`",
+        ),
+        (
+            format!("inline: {}, {target}", STANDARD.encode(WAD)),
+            "needs sha256",
+        ),
+        (format!("{d2x}, {}, {target}", inline()), ""),
+        (format!("{d2x}, {target}, extra: 1"), "unknown field"),
+    ] {
+        assert!(message(cios(&fields)).contains(error), "{fields}");
+    }
+    Ok(())
 }

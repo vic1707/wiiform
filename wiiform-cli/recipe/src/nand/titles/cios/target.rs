@@ -8,7 +8,7 @@ use serde::Deserialize;
 pub use self::{base::Base, slot::Slot};
 use crate::TitleId;
 
-/// Expected identity and replacement policy for a prebuilt Wii d2x WAD.
+/// The slot a cIOS fills, its base IOS, revision and replacement policy.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "cli", derive(clap::Args))]
 #[serde(deny_unknown_fields)]
@@ -16,7 +16,7 @@ pub struct Target {
     /// Destination IOS slot (248–251).
     #[cfg_attr(feature = "cli", arg(long))]
     pub slot: Slot,
-    /// Base IOS declared by the d2x payload.
+    /// Base IOS: declared by a prebuilt WAD, or the one a build starts from.
     #[cfg_attr(feature = "cli", arg(long))]
     pub base: Base,
     /// TMD title revision, such as 65535.

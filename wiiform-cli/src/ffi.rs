@@ -227,6 +227,27 @@ pub mod bridge {
         replace_stock_stub: bool,
     }
 
+    struct ContentPatch {
+        cid: u32,
+        offset: u32,
+        original: Vec<u8>,
+        replacement: Vec<u8>,
+    }
+
+    /// A position of -1 appends the module.
+    struct AddedModule {
+        cid: u32,
+        position: i32,
+        bytes: Vec<u8>,
+    }
+
+    struct CiosBuild {
+        base_version: u16,
+        options: CiosOptions,
+        patches: Vec<ContentPatch>,
+        modules: Vec<AddedModule>,
+    }
+
     struct InstalledWad {
         title_id: u64,
         region: u16,
@@ -292,7 +313,7 @@ pub mod bridge {
             nand: &mut [u8],
             cache: &NusCache<'_>,
             title: TitleVersion,
-        ) -> Result<()>;
+        ) -> Result<InstalledWad>;
         fn install_rvloader_ios(
             nand: &mut [u8],
             cache: &NusCache<'_>,
@@ -300,10 +321,16 @@ pub mod bridge {
         ) -> Result<InstalledWad>;
         fn set_rvloader_vga(nand: &mut [u8], enabled: bool) -> Result<()>;
         fn install_wad(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
+        fn install_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
         fn install_unsigned_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
         fn install_homebrew_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
         fn install_cios(nand: &mut [u8], wad: &[u8], options: &CiosOptions)
         -> Result<InstalledWad>;
+        fn install_built_cios(
+            nand: &mut [u8],
+            cache: &NusCache<'_>,
+            build: &CiosBuild,
+        ) -> Result<InstalledWad>;
         fn remove_title(nand: &mut [u8], title_id: u64) -> Result<()>;
         fn apply_system_settings(nand: &mut [u8], settings: &SystemSettings<'_>) -> Result<()>;
         fn install_priiloader(nand: &mut [u8], app_bytes: &[u8]) -> Result<()>;

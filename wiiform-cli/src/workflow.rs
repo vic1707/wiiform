@@ -15,7 +15,7 @@ use tempfile::Builder;
 use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
-    recipe::{Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId},
+    recipe::{Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId, nand::titles::cios},
     seed::StockSeed,
 };
 
@@ -173,34 +173,35 @@ fn build_with(
             .context("cannot generate system settings")?;
     }
 
-    for (index, title) in recipe.nand.titles.iter().enumerate() {
-        let installed = if title.allow_unsigned {
-            nand.install_unsigned_channel(&title.wad)
+    let titles = &recipe.nand.titles;
+    for (index, channel) in titles.channels.iter().enumerate() {
+        let installed = if channel.allow_unsigned {
+            nand.install_unsigned_channel(&channel.wad)
         } else {
-            nand.install_wad(&title.wad)
+            nand.install_channel(&channel.wad)
         }
-        .with_context(|| format!("cannot install titles[{index}] WAD"))?;
+        .with_context(|| format!("cannot install titles.channels[{index}]"))?;
         ensure!(
             !removals.contains(&installed.title_id),
             "recipe both removes and installs title {}",
             installed.title_id
         );
-        ensure!(
-            !recipe
-                .nand
-                .cios
-                .iter()
-                .any(|cios| cios.target.title_id() == installed.title_id),
-            "recipe lists a title WAD and a cIOS for the same slot ({})",
-            installed.title_id
-        );
         report_installed(&installed, recipe.nand.menu);
     }
-
-    for cios in &recipe.nand.cios {
+    for ios in &titles.ios {
         let installed = nand
-            .install_cios(&cios.wad, &cios.target)
-            .with_context(|| format!("cannot configure cIOS slot {}", cios.target.slot))?;
+            .install_nus_title(&options.cache, ios.title_id(), ios.version)
+            .with_context(|| format!("cannot install IOS{} v{}", ios.slot, ios.version))?;
+        warn_if_already_present(&installed);
+    }
+    for cios in &titles.cios {
+        let installed = match &cios.kind {
+            cios::Kind::Prebuilt(wad) => nand.install_cios(wad, &cios.target),
+            cios::Kind::Built(build) => {
+                nand.install_built_cios(&options.cache, build, &cios.target)
+            }
+        }
+        .with_context(|| format!("cannot install cIOS slot {}", cios.target.slot))?;
         warn_if_already_present(&installed);
     }
 
@@ -520,7 +521,7 @@ mod tests {
         fs::write(
             &recipe,
             format!(
-                "nand:\n  menu: 4.3E\n  titles:\n    - path: fixture.wad\n      sha256: \"{}\"\n      allow_unsigned: true\n",
+                "nand:\n  menu: 4.3E\n  titles:\n    channels:\n      - path: fixture.wad\n        sha256: \"{}\"\n        allow_unsigned: true\n",
                 expected.trim()
             ),
         )?;

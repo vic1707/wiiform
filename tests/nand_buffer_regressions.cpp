@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+#include <CiosBuild.hpp>
 #include <Factory.hpp>
 #include <Layout.hpp>
 #include <PriiloaderHacks.hpp>
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <tuple>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -344,6 +346,75 @@ namespace {
     }, "Unsupported Priiloader hack");
   }
 
+  // A synthetic IOS56 job: a 64-byte local content 0, a boot kernel and two shared modules.
+  auto base_ios_job() -> ValidatedTitleJob {
+    const QList<std::tuple<quint32, quint16, QByteArray>> contents{
+        {0x1f, 1, QByteArray(0x40, '\0')}, {0x10, 0x8001, QByteArray("kernel")},
+        {0x11, 0x8001, QByteArray("stock ehci")}, {0x12, 0x8001, QByteArray("other")}};
+    QByteArray tmd(0x1e4 + contents.size() * 0x24, '\0');
+    put32(tmd, 0, ES_SIG_RSA2048);
+    put64(tmd, 0x18c, 0x0000000100000038ull);
+    qToBigEndian<quint16>(5661, reinterpret_cast<uchar*>(tmd.data() + 0x1dc));
+    qToBigEndian<quint16>(quint16(contents.size()), reinterpret_cast<uchar*>(tmd.data() + 0x1de));
+    qToBigEndian<quint16>(1, reinterpret_cast<uchar*>(tmd.data() + 0x1e0));
+    NusJob job;
+    job.tid = 0x0000000100000038ull;
+    job.version = 5661;
+    job.decrypt = true;
+    QList<QByteArray> data;
+    for (int index = 0; index < contents.size(); ++index) {
+      const auto& [cid, type, bytes] = contents[index];
+      auto* record = reinterpret_cast<uchar*>(tmd.data() + 0x1e4 + index * 0x24);
+      qToBigEndian<quint32>(cid, record);
+      qToBigEndian<quint16>(quint16(index), record + 4);
+      qToBigEndian<quint16>(type, record + 6);
+      qToBigEndian<quint64>(quint64(bytes.size()), record + 8);
+      tmd.replace(0x1e4 + index * 0x24 + 16, 20, GetSha1(bytes));
+      data << bytes;
+    }
+    QByteArray ticket(0x2a4, '\0');
+    put32(ticket, 0, ES_SIG_RSA2048);
+    put64(ticket, 0x1dc, job.tid);
+    job.data << tmd << ticket << data;
+    return validate_title(std::move(job), "Synthetic base IOS is inconsistent");
+  }
+
+  void test_cios_build() {
+    // d2x's IOSINFO header: magic, header version, cIOS version, base, "d2x".
+    const std::array<std::uint8_t, 20> iosinfo{0x1e, 0xe7, 0xc1, 0x05, 0, 0, 0, 1, 0, 0, 0, 11,
+                                               0, 0, 0, 56, 'd', '2', 'x', 0};
+    const std::array<std::uint8_t, 20> zeros{};
+    const std::array<std::uint8_t, 4> ehci{'E', 'H', 'C', 'I'};
+    const std::array<std::uint8_t, 2> es{'E', 'S'};
+    const std::array patches{wiiform::ContentPatch{0x1f, 0, zeros, iosinfo}};
+    const std::array modules{wiiform::AddedModule{0x25, 2, ehci}, wiiform::AddedModule{0x26, -1, es}};
+    const wiiform::CiosBuild build{5661, {249, 56, 65535, false}, patches, modules};
+
+    const auto built = cios_build::derive(base_ios_job(), build);
+    const auto& job = built.get();
+    Tmd tmd(job.data[0]);
+    check(job.tid == 0x00000001000000f9ull && tmd.Version() == 65535, "Built cIOS has the wrong slot or revision");
+    const std::array<std::pair<const char*, quint16>, 6> expected{
+        {{"0000001f", 1}, {"00000010", 0x8001}, {"00000025", 1}, {"00000012", 0x8001}, {"00000011", 0x8001},
+         {"00000026", 1}}};
+    check(tmd.Count() == expected.size(), "Built cIOS has the wrong content count");
+    for (quint16 index = 0; index < expected.size(); ++index)
+      check(tmd.Cid(index) == expected[index].first && tmd.Type(index) == expected[index].second &&
+                tmd.Index(index) == index,
+            "Built cIOS contents are out of order");
+    check(tmd.BootIndex() == 1, "Built cIOS lost its boot content");
+    check(job.data[2].left(20) == QByteArray(reinterpret_cast<const char*>(iosinfo.data()), 20) &&
+              job.data[4] == "EHCI" && job.data[6] == "stock ehci",
+          "Built cIOS contents differ from the map");
+
+    const std::array<std::uint8_t, 20> wrong{1};
+    const std::array mismatched{wiiform::ContentPatch{0x1f, 0, wrong, iosinfo}};
+    rejects([&] { cios_build::derive(base_ios_job(), {5661, {249, 56, 65535, false}, mismatched, modules}); },
+            "does not hold the bytes");
+    rejects([&] { cios_build::derive(base_ios_job(), {5662, {249, 56, 65535, false}, patches, modules}); },
+            "does not match the d2x map");
+  }
+
   void test_wad_installation(const QString& temporary_path) {
     const auto nand_path = QDir(temporary_path).filePath("empty-nand.bin");
     create_empty_nand(nand_path);
@@ -520,6 +591,7 @@ int main(int argc, char** argv) {
       test_ios_wad_policy(image);
       test_priiloader_boot_file(image);
       test_priiloader_hacks();
+      test_cios_build();
     }
     test_wide_directory_layout(temporary.path());
     test_wad_installation(temporary.path());

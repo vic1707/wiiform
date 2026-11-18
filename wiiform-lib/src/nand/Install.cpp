@@ -3,6 +3,7 @@
 #include <Support.hpp>
 
 #include <Factory.hpp>
+#include <CiosBuild.hpp>
 #include <RvloaderIos.hpp>
 #include <Titles.hpp>
 #include <WadPackage.hpp>
@@ -344,6 +345,14 @@ namespace {
   }
 
   // `replaceable` names the Nintendo title version the slot may hold and lose.
+  // The Nintendo stub a cIOS may replace, if its options allow it.
+  auto replaceable_stub(const wiiform::CiosOptions& options) -> std::optional<quint16> {
+    const bool stub_slot = options.slot == 249 || options.slot == 250;
+    require(!options.replace_stock_stub || stub_slot,
+            "Stock stub replacement is supported only in slots 249 and 250");
+    return options.replace_stock_stub ? std::optional<quint16>(65280) : std::nullopt;
+  }
+
   auto install_validated_wad(std::span<std::uint8_t> image, const ValidatedTitleJob& job,
                              std::optional<quint16> replaceable) -> wiiform::InstalledWad {
     const auto& parsed = job.get();
@@ -395,11 +404,30 @@ namespace {
 } // namespace
 
 namespace title_install {
-  void install_nus_title(std::span<std::uint8_t> image, const QString& cache, quint64 title_id,
-                         quint16 version, bool offline) {
-    const auto job = factory::read_title(cache, title_id, version, offline);
+  auto install_nus_title(std::span<std::uint8_t> image, const QString& cache, quint64 title_id,
+                         quint16 version, bool offline) -> wiiform::InstalledWad {
+    // NUS serves the TMD and ticket with their certificate chains; the NAND keeps
+    // them without, so compare and install the trimmed parts.
+    auto downloaded = factory::read_title(cache, title_id, version, offline).get();
+    downloaded.data[0] = Tmd(downloaded.data[0]).Data();
+    downloaded.data[1] = Ticket(downloaded.data[1], false).Data();
+    const auto job = validate_title(std::move(downloaded), "Invalid title contents: " + title_name(title_id));
+
+    const auto region = qFromBigEndian<quint16>(job.get().data[0].constData() + 0x19c);
+    const auto tid = title_name(title_id);
+    const auto content_dir = "/title/" + tid.left(8) + "/" + tid.mid(8) + "/content";
+    const auto ticket_path = "/ticket/" + tid.left(8) + "/" + tid.mid(8) + ".tik";
     working_image::Image working(image);
-    plan_and_install(working.nand, working.layout.orphan_entries, job);
+    auto& nand = working.nand;
+    const auto content = find_path(nand, content_dir);
+    if (path_exists(nand, ticket_path) || (content && !nand.Children(content->index).isEmpty())) {
+      require(installed_wad_matches(nand, content_dir, ticket_path, job),
+              "Another version of title " + tid + " is installed");
+      return {title_id, region, version, true};
+    }
+    // The stock build installs every title this way; it verifies the whole image afterwards.
+    plan_and_install(nand, working.layout.orphan_entries, job);
+    return {title_id, region, version, false};
   }
 
   auto install_wad(std::span<std::uint8_t> image, const ValidatedTitleJob& job) -> wiiform::InstalledWad {
@@ -413,11 +441,13 @@ namespace title_install {
     const auto expected_id = (quint64(1) << 32) | options.slot;
     require(parsed.tid == expected_id && parsed.version == options.revision,
             "cIOS WAD does not match its declared slot and revision");
-    const bool stub_slot = options.slot == 249 || options.slot == 250;
-    require(!options.replace_stock_stub || stub_slot,
-            "Stock stub replacement is supported only in slots 249 and 250");
-    return install_validated_wad(image, job,
-                                 options.replace_stock_stub ? std::optional<quint16>(65280) : std::nullopt);
+    return install_validated_wad(image, job, replaceable_stub(options));
+  }
+
+  auto install_built_cios(std::span<std::uint8_t> image, const QString& cache, bool offline,
+                          const wiiform::CiosBuild& build) -> wiiform::InstalledWad {
+    const auto base = factory::read_title(cache, (quint64(1) << 32) | build.options.base, build.base_version, offline);
+    return install_validated_wad(image, cios_build::derive(base, build), replaceable_stub(build.options));
   }
 
   auto install_rvloader_ios(std::span<std::uint8_t> image, const QString& cache, bool offline,

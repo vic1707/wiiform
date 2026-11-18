@@ -62,7 +62,7 @@ The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
 channel removal, initial setup, display settings, and Priiloader settings and named hacks. Set setup country
 codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
 
-URL sources work for both `titles` and `cios`. Downloads use system TLS
+URL sources work for channel and cIOS WADs alike. Downloads use system TLS
 trust, follow up to five HTTPS redirects, and have a 60-second total
 timeout and the same size limit as a local WAD. Use a local `path` or
 `inline` for a network-free build. `WIIFORM_NUS_OFFLINE` controls only
@@ -71,15 +71,21 @@ Nintendo title downloads.
 WiiQt's own diagnostic messages are hidden; set `WIIFORM_QT_MESSAGES=1` to see
 them when investigating a failure.
 
-Use the `titles` list for downloadable channels and Nintendo-signed system
-channels or Wii IOS WADs for slots 3–253. `allow_unsigned: true` applies to
-downloadable channels. Each entry verifies an exact installed match or installs
-the WAD when the title is absent. An exact match emits a warning. A conflicting
-title or incomplete installation stops the build. Stock 4.3 includes IOS9 v1034
-in slot 9. List that WAD under `titles` with the default Nintendo signature
-policy to verify the dependency in an Ocarina of Time recipe.
-`wii-nand install-wad` writes a byte-identical copy to the requested output when
-it verifies a match.
+`titles` groups what gets installed by kind:
+
+- **`channels`:** WADs of channels, Virtual Console and WiiWare titles and app
+  channels. They must be Nintendo-signed, unless `allow_unsigned: true` permits
+  an unsigned downloadable channel. IOS WADs are refused here.
+- **`ios`:** Nintendo IOS, downloaded from NUS by `slot` and `version`, like
+  the stock titles. Stock 4.3 already has every IOS it ships, so `{slot: 9,
+  version: 1034}` (the Ocarina of Time dependency) only verifies IOS9.
+- **`cios`:** d2x cIOS, built or prebuilt; see [cIOS](#cios).
+
+Every title is installed when absent. An exact installed match is verified and
+reported with a warning; a different installed title or an incomplete one
+stops the build. `wii-nand install-wad` writes a byte-identical copy to the
+requested output when it verifies a match, and still takes any WAD, IOS
+included.
 
 ```sh
 wiiform --seed console.seed.yaml --recipe recipe.yaml \
@@ -264,28 +270,47 @@ Format cards and drives MBR with one FAT32 partition: libfat, which Wii
 homebrew uses to read them, does not read GPT partition tables or exFAT.
 RVLoader cannot run from the card; it needs its release on a USB drive.
 
-### cIOS packages
+### cIOS
 
-Use `cios` entries for prebuilt, hash-pinned Wii d2x WADs. Each entry gives
-the expected slot, base IOS, and TMD revision. Wiiform checks the Wii TMD,
-ticket, decrypted content hashes, and the d2x IOSINFO record. The SHA-256
-pins the package you obtained from your chosen source.
+```yaml
+titles:
+  cios:
+    - d2x:
+        github: {repo: wiidev/d2x-cios, tag: d2x-v11-beta3, asset: d2x-v11-beta3.zip}
+        sha256: "c2c7c9c5dad247c48f561a2b08f74359227e09271104dec814dbab4ad97e68d3"
+      target: {slot: 249, base: 56, revision: 65535, replace_stock_stub: true}
+    - path: wads/d2x-250-base57.wad # or a prebuilt cIOS WAD
+      sha256: "…"
+      target: {slot: 250, base: 57, revision: 65535}
+```
+
+A `cios` entry gives the target slot, base IOS and revision, and either a
+prebuilt cIOS WAD (source keys and `sha256`, as for channels) or `d2x`, a d2x
+release archive with its own source and `sha256`.
+
+- **Built from `d2x`:** wiiform reads the release's `ciosmaps.xml` and
+  modules, downloads the base IOS version the map names from NUS (with the
+  NUS cache), applies the map's patches and modules, sets the slot and
+  revision, and fakesigns the result. That's what d2x's installer does on the
+  console and what WiiPy's `ciosbuild` does on a computer; a d2x v11 beta3
+  build matched an independent build byte for byte.
+- **Prebuilt:** wiiform checks the WAD's TMD, ticket, decrypted content hashes
+  and slot and revision.
+- **Either way:** the d2x IOSINFO record must name the requested base.
 
 Slots 248–251 and bases 38, 56, 57, and 58 are supported. An empty slot can be
 installed, and an exact installed match is verified and reported. Set
 `replace_stock_stub: true` to replace the verified Nintendo v65280 stub in
-slot 249 or 250. Other occupied slots only accept an exact match.
+slot 249 or 250. Other occupied slots only accept an exact match, and an `ios`
+and a `cios` cannot share a slot.
 
 ```sh
-wii-nand install-cios INPUT_NAND OUTPUT_NAND D2X_WAD --sha256 HEX \
+wii-nand install-cios INPUT_NAND OUTPUT_NAND FILE --sha256 HEX [--d2x] \
   --slot 249 --base 56 --revision 65535 --replace-stock-stub
 ```
 
-The command also accepts an HTTPS URL in place of the WAD path and uses the
-same slot and package checks as the recipe. See the
-[example recipe](docs/recipe.example.yaml) and the [upstream d2x installation
-guide](https://github.com/wiidev/d2x-cios/wiki/How-to-install-d2x-cIOSs-on-your-Wii)
-for package preparation.
+`FILE` is a WAD path or HTTPS URL, or with `--d2x` the d2x release to build
+from (the NUS cache settings apply).
 
 ### Seed input
 

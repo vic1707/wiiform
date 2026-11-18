@@ -6,7 +6,8 @@ use anyhow::{Context, Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::{Deserialize, de::IgnoredAny};
 
-use super::{CardPath, archive, extract::Extract, read};
+use super::{CardPath, extract::Extract, read};
+use crate::archive;
 use crate::{github, source::Source, wad::Sha256};
 
 /// What an app is made of: an archive (one source) or loose files.

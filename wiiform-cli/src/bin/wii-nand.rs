@@ -6,7 +6,7 @@ use wiiform::{
     native::Nand,
     recipe::{
         Priiloader, ResolvedPath, Rvloader, Sha256, TitleId, Wad,
-        nand::{cios, rvloader},
+        nand::{rvloader, titles::cios},
     },
     workflow::{
         NusCache, install_priiloader, publish_edit, validate_output, warn_if_already_present,
@@ -61,15 +61,19 @@ enum Command {
         #[arg(long)]
         allow_unsigned: bool,
     },
-    /// Install a prebuilt, hash-pinned Wii d2x cIOS WAD.
+    /// Install a d2x cIOS: a prebuilt, hash-pinned WAD, or with --d2x built from a
+    /// d2x release on its base IOS from NUS.
     InstallCios {
         #[command(flatten)]
         image: ImagePaths,
-        /// Local WAD path or HTTPS URL.
-        #[arg(value_name = "WAD")]
-        wad: PathBuf,
+        /// Local path or HTTPS URL of the WAD, or of the d2x release with --d2x.
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
         #[arg(long)]
         sha256: Sha256,
+        /// FILE is a d2x release archive (installer, modules, ciosmaps.xml) to build from.
+        #[arg(long)]
+        d2x: bool,
         #[command(flatten)]
         target: cios::Target,
     },
@@ -107,7 +111,8 @@ fn run(cli: Cli) -> Result<()> {
             let cache = NusCache::from_environment()?;
             image.edit(|nand| {
                 cache.prepare()?;
-                nand.install_nus_title(&cache, title_id, version)
+                warn_if_already_present(&nand.install_nus_title(&cache, title_id, version)?);
+                Ok(())
             })
         }
         Command::InstallWad {
@@ -129,13 +134,29 @@ fn run(cli: Cli) -> Result<()> {
         }
         Command::InstallCios {
             image,
-            wad,
+            file,
             sha256,
+            d2x: false,
             target,
         } => {
-            let wad = Wad::try_from((wad, sha256))?;
+            let wad = Wad::try_from((file, sha256))?;
             image.edit(|nand| {
                 warn_if_already_present(&nand.install_cios(&wad, &target)?);
+                Ok(())
+            })
+        }
+        Command::InstallCios {
+            image,
+            file,
+            sha256,
+            d2x: true,
+            target,
+        } => {
+            let build = cios::Build::from_release(file, sha256, target.base.into())?;
+            let cache = NusCache::from_environment()?;
+            image.edit(|nand| {
+                cache.prepare()?;
+                warn_if_already_present(&nand.install_built_cios(&cache, &build, &target)?);
                 Ok(())
             })
         }

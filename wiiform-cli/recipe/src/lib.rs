@@ -9,6 +9,7 @@ use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+mod archive;
 pub mod device;
 mod files;
 mod github;
@@ -25,8 +26,14 @@ pub use self::{
     device::Device,
     files::{ResolvedPath, open_regular_file, read_bounded},
     nand::{
-        Nand, cios::Cios, hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel,
-        rvloader::Rvloader, setup::Setup, titles::Title,
+        Nand,
+        hbc::Hbc,
+        menu::Menu,
+        priiloader::Priiloader,
+        remove::RemovableChannel,
+        rvloader::Rvloader,
+        setup::Setup,
+        titles::{Channel, Cios, Ios},
     },
     region::Region,
     title_id::TitleId,

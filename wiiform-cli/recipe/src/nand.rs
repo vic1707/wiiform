@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! The `nand` key: the image Wiiform builds. Each of its keys has a module of
 //! the same name.
-pub mod cios;
 pub mod hbc;
 pub mod menu;
 pub mod priiloader;
@@ -17,8 +16,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use self::{
-    cios::Cios, hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel,
-    rvloader::Rvloader, setup::Setup, titles::Title,
+    hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel, rvloader::Rvloader,
+    setup::Setup, titles::Titles,
 };
 
 /// The NAND image: stock menu, then everything installed on top of it.
@@ -34,12 +33,9 @@ pub struct Nand {
     /// Omit this section or use null to run the Wii setup wizard.
     #[serde(default)]
     pub setup: Option<Setup>,
-    /// WADs to install from a local file, inline bytes, or an HTTPS URL.
+    /// Titles to install: channels, IOS and cIOS.
     #[serde(default)]
-    pub titles: Vec<Title>,
-    /// Prebuilt, hash-pinned Wii d2x cIOS WADs.
-    #[serde(default)]
-    pub cios: Vec<Cios>,
+    pub titles: Titles,
     /// Optional Homebrew Channel from a tagged Reborn release or a custom WAD.
     #[serde(default)]
     pub hbc: Option<Hbc>,
@@ -89,10 +85,16 @@ impl Nand {
                 );
             }
         }
+        // One title per IOS slot: an IOS and a cIOS, or two of either, cannot share one.
         let mut slots = HashSet::new();
-        for cios in &self.cios {
-            let slot = cios.target.slot;
-            ensure!(slots.insert(slot), "nand lists cIOS slot {slot} twice");
+        let ios = self.titles.ios.iter().map(|ios| ios.title_id());
+        let cios = self.titles.cios.iter().map(|cios| cios.target.title_id());
+        for title_id in ios.chain(cios) {
+            ensure!(
+                slots.insert(title_id),
+                "titles list IOS slot {} twice",
+                title_id.as_u64() as u8
+            );
         }
         Ok(())
     }

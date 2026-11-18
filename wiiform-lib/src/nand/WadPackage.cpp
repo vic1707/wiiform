@@ -149,6 +149,13 @@ namespace wad_package {
     });
   }
 
+  auto read_channel(std::span<const std::uint8_t> input) -> ValidatedTitleJob {
+    return read_package(input, {.nintendo_signed = true, .legacy_key_index = false}, [](quint64 title_id, quint16) {
+      const auto type = title_id >> 32;
+      require(type == 0x00010001 || type == 0x00010002, "WAD is not a channel: install IOS from NUS instead");
+    });
+  }
+
   auto read_unsigned_channel(std::span<const std::uint8_t> input) -> ValidatedTitleJob {
     return read_package(input, {.nintendo_signed = false, .legacy_key_index = true}, [](quint64 title_id, quint16) {
       require(title_id >> 32 == 0x00010001, "Unsigned WADs are supported for downloadable channels only");
@@ -172,10 +179,14 @@ namespace wad_package {
               "WAD does not match requested cIOS slot");
       require(version == options.revision, "WAD does not match requested cIOS revision");
     });
+    check_cios(validated, options);
+    return validated;
+  }
+
+  void check_cios(const ValidatedTitleJob& validated, const wiiform::CiosOptions& options) {
     const auto& job = validated.get();
     require(Tmd(job.data[0]).Type(0) == 1, "d2x IOSINFO must be in the first local TMD content");
     require(valid_cios_header(job.data[2], options.base),
-            "WAD does not contain a valid d2x IOSINFO header for the requested base");
-    return validated;
+            "The cIOS does not carry a valid d2x IOSINFO header for the requested base");
   }
 }

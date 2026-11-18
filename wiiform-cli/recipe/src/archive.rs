@@ -4,11 +4,11 @@ use std::io::{Cursor, Read};
 
 use anyhow::{Context, Result, ensure};
 
-use super::FILE_BOUNDS;
+use crate::source::FILE_BOUNDS;
 
 /// The archive's files, by their path inside it. Directories are implied by
 /// the paths; macOS metadata (`__MACOSX/`, `._*`) is left out.
-pub(super) fn files(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+pub(crate) fn files(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).context("expected a zip archive")?;
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     for index in 0..archive.len() {

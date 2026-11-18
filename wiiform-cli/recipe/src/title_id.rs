@@ -6,7 +6,7 @@ use derive_more::Display;
 use hex::FromHex;
 
 /// Nonzero Wii title ID, written as 16 hex digits.
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq, Hash)]
 #[display("{_0:016x}")]
 pub struct TitleId(NonZeroU64);
 

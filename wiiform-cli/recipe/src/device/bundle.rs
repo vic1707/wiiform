@@ -6,7 +6,8 @@ use anyhow::{Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::{Deserialize, de::IgnoredAny};
 
-use super::{CardPath, archive, extract::Extract, read};
+use super::{CardPath, extract::Extract, read};
+use crate::archive;
 use crate::{source::Source, wad::Sha256};
 
 /// Where a bundle's file goes.

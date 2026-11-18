@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//! WADs to install: the `titles` key.
+//! Titles to install, by kind: the `titles` key.
+pub mod channel;
+pub mod cios;
+pub mod ios;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::Wad;
+pub use self::{channel::Channel, cios::Cios, ios::Ios};
 
-/// A WAD to install when its title is absent, or to verify when it is present.
-// The flattened WAD rejects unknown keys for the whole entry: see `WadFile`.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct Title {
-    #[serde(flatten)]
-    pub wad: Wad,
-    /// Permit an unsigned community channel after content validation.
-    /// By default the WAD must carry Nintendo signatures.
+/// Titles to install on top of the stock menu.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Titles {
+    /// Channels, Virtual Console and WiiWare titles and app channels, as WADs.
     #[serde(default)]
-    pub allow_unsigned: bool,
+    pub channels: Vec<Channel>,
+    /// Nintendo IOS, downloaded from NUS by slot and version.
+    #[serde(default)]
+    pub ios: Vec<Ios>,
+    /// d2x cIOS, built from a d2x release on a NUS base IOS or given as a prebuilt WAD.
+    #[serde(default)]
+    pub cios: Vec<Cios>,
 }

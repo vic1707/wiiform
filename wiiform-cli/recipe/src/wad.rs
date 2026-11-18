@@ -7,8 +7,6 @@ use derive_more::Deref;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::ResolvedPath;
-
 const WAD_BOUNDS: RangeInclusive<usize> = 0x40..=0x2100_0000;
 
 mod file;
@@ -44,6 +42,11 @@ impl Wad {
         Ok(Self(bytes))
     }
 
+    /// Reads a WAD from `source` and checks it against `expected`.
+    pub(crate) fn from_source(source: Source, expected: Sha256) -> Result<Self> {
+        Self::checked(source.read(WAD_BOUNDS)?.bytes, expected)
+    }
+
     pub(crate) fn download(url: &str, expected: Sha256) -> Result<Self> {
         Self::checked(fetch(url, *WAD_BOUNDS.end())?, expected)
     }
@@ -64,11 +67,7 @@ impl TryFrom<(PathBuf, Sha256)> for Wad {
     type Error = anyhow::Error;
 
     fn try_from((input, sha256): (PathBuf, Sha256)) -> Result<Self> {
-        let source = match input.to_str().filter(|value| value.contains("://")) {
-            Some(url) => Source::Url(url.to_owned()),
-            None => Source::Path(ResolvedPath::try_from(input)?.as_ref().to_owned()),
-        };
-        Self::try_from(WadFile { source, sha256 }).map_err(anyhow::Error::msg)
+        Self::from_source(Source::from_command_line(input)?, sha256)
     }
 }
 

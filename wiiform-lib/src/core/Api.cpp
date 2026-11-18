@@ -134,18 +134,32 @@ auto initialize_image_with_source_boot(std::span<std::uint8_t> nand, const Stock
   return initialize(nand, seed, menu, inspect::verify_source_boot);
 }
 
-void install_nus_title(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
-                       TitleVersion title) {
+auto install_nus_title(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
+                       TitleVersion title) -> InstalledWad {
   const detail::ApiCall call;
   require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
   require(!cache || !cache->directory.empty(), "A NUS cache needs a directory");
   const auto directory = cache ? qstring(cache->directory, "Cache path must be UTF-8") : QString();
-  title_install::install_nus_title(nand, directory, title.id, title.version, cache && cache->offline);
+  return title_install::install_nus_title(nand, directory, title.id, title.version, cache && cache->offline);
 }
 
 auto install_wad(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad {
   const detail::ApiCall call;
   return title_install::install_wad(nand, wad_package::read(wad));
+}
+
+auto install_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad {
+  const detail::ApiCall call;
+  return title_install::install_wad(nand, wad_package::read_channel(wad));
+}
+
+auto install_built_cios(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
+                        const CiosBuild& build) -> InstalledWad {
+  const detail::ApiCall call;
+  require(nand.size() == nand_size, "Expected a footer-bearing NAND buffer");
+  require(!cache || !cache->directory.empty(), "A NUS cache needs a directory");
+  const auto directory = cache ? qstring(cache->directory, "Cache path must be UTF-8") : QString();
+  return title_install::install_built_cios(nand, directory, cache && cache->offline, build);
 }
 
 auto install_unsigned_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad) -> InstalledWad {
