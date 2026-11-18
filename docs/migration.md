@@ -109,7 +109,9 @@ WAD that the recipe deliberately permits without a Nintendo signature, replace
 `signature_policy: allow-unsigned` with `allow_unsigned: true`. List channels
 to `remove` by name; title IDs are no longer accepted there.
 Regenerate earlier unreleased seeds with the current `wii-seed`; seeds now also
-carry BootMii as IOS when the backup has it, which `nand.bootmii` needs.
+have a top-level `bootmii` section (`boot2`, and `ios` with BootMii as IOS or
+`null`), which `nand.bootmii` needs. Seeds without it still build recipes
+without `nand.bootmii`; their `info.bootmii_boot2` note is read and ignored.
 Remove `--reference` from scripts. A `setup` mapping, including any
 `setup.display` options, generates SYSCONF and completes first-run setup.
 Omit `setup` or set it to null to keep the wizard enabled. Use a two-letter country code
@@ -137,8 +139,13 @@ The seed stores the exact 1,024-byte key footer and the XZ-compressed boot area
 as YAML binary fields. It also stores bad-block numbers and the eight readable
 `setting.txt` fields. SHA-256 covers the footer, the decompressed boot area, and
 the encoded original settings. Wiiform verifies these before retargeting the
-settings to the requested menu. Optional `info` shows the recognized BootMii
-status and readable footer header.
+settings to the requested menu.
+
+The `bootmii` section records what the backup shows of BootMii: `boot2`
+(`detected`, `stock` or `unknown`, recognized from the boot area) and `ios`,
+the IOS254 title HackMii installs for BootMii as IOS (its version, TMD, ticket
+and content under one SHA-256), or `null` when the backup has none. Optional
+`info` shows the readable footer header.
 
 The seed digest covers the original footer, including its text header and
 padding. Stock creation writes a BackupMii text header using the OTP console

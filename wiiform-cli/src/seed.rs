@@ -20,27 +20,46 @@ pub struct StockSeed {
     bad_blocks: Vec<u16>,
     settings: ConsoleSettings,
     settings_sha256: [u8; 32],
-    bootmii: Bootmii,
+    /// None for a seed written before wii-seed looked for BootMii.
+    bootmii: Option<Bootmii>,
 }
 
 /// What the seed knows about BootMii on its console.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Bootmii {
+    /// What the backup's boot area showed.
+    pub boot2: Boot2,
     /// BootMii as IOS, as the backup held it.
     pub ios: Option<BootmiiIos>,
-    /// Whether the seed noted BootMii as boot2 (a note, not a checked fact).
-    pub boot2: bool,
-    /// Whether the seed says if the backup had BootMii as IOS. Seeds written
-    /// before wii-seed looked for it say nothing.
-    pub ios_recorded: bool,
 }
 
-/// The IOS254 title HackMii installs for BootMii as IOS.
+/// BootMii as boot2, as the backup's boot area shows it. A heuristic, not a
+/// checked fact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Boot2 {
+    Detected,
+    Stock,
+    Unknown,
+}
+
+/// The IOS254 title HackMii installs for BootMii as IOS, its digest and
+/// version checked.
 #[derive(Clone, Debug)]
 pub struct BootmiiIos {
     pub tmd: Vec<u8>,
     pub ticket: Vec<u8>,
     pub content: Vec<u8>,
+}
+
+/// The TMD's title version.
+const TMD_VERSION: std::ops::Range<usize> = 0x1dc..0x1de;
+
+impl BootmiiIos {
+    fn version(&self) -> Option<u16> {
+        let bytes = self.tmd.get(TMD_VERSION)?;
+        Some(u16::from_be_bytes([bytes[0], bytes[1]]))
+    }
 }
 
 /// A seed read from a backup, ready to be written as YAML.
@@ -79,41 +98,19 @@ impl StockSeed {
             "Boot blocks do not match their SHA-256"
         );
 
-        let ios = match manifest.bootmii_ios {
-            Some(section) => {
-                ensure!(
-                    section.digest() == section.sha256,
-                    "BootMii as IOS does not match its SHA-256"
-                );
-                Some(BootmiiIos {
-                    tmd: section.tmd.0,
-                    ticket: section.ticket.0,
-                    content: section.content.0,
-                })
-            }
-            None => None,
-        };
-        let info = manifest.info.as_ref();
-        let boot2 = (info.and_then(|info| info.bootmii_boot2.as_deref()))
-            .is_some_and(|state| state == "detected");
-        let ios_recorded = ios.is_some() || info.is_some_and(|info| info.bootmii_ios.is_some());
-
         Ok(Self {
             keys,
             boot_blocks,
             bad_blocks: manifest.bad_blocks,
             settings: manifest.settings.fields,
             settings_sha256: manifest.settings.sha256.0,
-            bootmii: Bootmii {
-                ios,
-                boot2,
-                ios_recorded,
-            },
+            bootmii: manifest.bootmii.map(Bootmii::try_from).transpose()?,
         })
     }
 
-    pub fn bootmii(&self) -> &Bootmii {
-        &self.bootmii
+    /// None for a seed written before wii-seed looked for BootMii.
+    pub fn bootmii(&self) -> Option<&Bootmii> {
+        self.bootmii.as_ref()
     }
 
     /// Replaces the key footer's text header with the canonical BackupMii one,
@@ -140,11 +137,40 @@ struct SeedManifest {
     bad_blocks: Vec<u16>,
     boot_blocks: BootBlocks,
     settings: Settings,
-    /// BootMii as IOS (IOS254), when the backup had it.
+    /// Absent from seeds written before wii-seed looked for BootMii.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    bootmii_ios: Option<BootmiiIosSection>,
+    bootmii: Option<BootmiiSection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     info: Option<SeedInfo>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct BootmiiSection {
+    boot2: Boot2,
+    /// Always written, as `null` when the backup has no BootMii as IOS.
+    #[serde(deserialize_with = "Option::deserialize")]
+    ios: Option<BootmiiIosSection>,
+}
+
+impl TryFrom<BootmiiSection> for Bootmii {
+    type Error = anyhow::Error;
+
+    fn try_from(section: BootmiiSection) -> Result<Self> {
+        Ok(Self {
+            boot2: section.boot2,
+            ios: section.ios.map(BootmiiIos::try_from).transpose()?,
+        })
+    }
+}
+
+impl From<Bootmii> for BootmiiSection {
+    fn from(bootmii: Bootmii) -> Self {
+        Self {
+            boot2: bootmii.boot2,
+            ios: bootmii.ios.map(BootmiiIosSection::from),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -153,25 +179,49 @@ struct BootmiiIosSection {
     /// Over the TMD, the ticket and the content, in that order.
     #[serde(rename = "_sha256")]
     sha256: Sha256,
+    /// The TMD's, repeated for the reader.
+    version: u16,
     tmd: Binary,
     ticket: Binary,
     content: Binary,
 }
 
-impl BootmiiIosSection {
-    fn new(tmd: Vec<u8>, ticket: Vec<u8>, content: Vec<u8>) -> Self {
-        let mut section = Self {
-            sha256: Sha256([0; 32]),
-            tmd: Binary(tmd),
-            ticket: Binary(ticket),
-            content: Binary(content),
-        };
-        section.sha256 = section.digest();
-        section
-    }
+fn bootmii_ios_digest(tmd: &[u8], ticket: &[u8], content: &[u8]) -> Sha256 {
+    digest([tmd, ticket, content].concat())
+}
 
-    fn digest(&self) -> Sha256 {
-        digest([&self.tmd.0[..], &self.ticket.0, &self.content.0].concat())
+impl TryFrom<BootmiiIosSection> for BootmiiIos {
+    type Error = anyhow::Error;
+
+    fn try_from(section: BootmiiIosSection) -> Result<Self> {
+        let ios = Self {
+            tmd: section.tmd.0,
+            ticket: section.ticket.0,
+            content: section.content.0,
+        };
+        ensure!(
+            bootmii_ios_digest(&ios.tmd, &ios.ticket, &ios.content) == section.sha256,
+            "BootMii as IOS does not match its SHA-256"
+        );
+        ensure!(
+            ios.version() == Some(section.version),
+            "BootMii as IOS is not version {}",
+            section.version
+        );
+        Ok(ios)
+    }
+}
+
+impl From<BootmiiIos> for BootmiiIosSection {
+    fn from(ios: BootmiiIos) -> Self {
+        Self {
+            sha256: bootmii_ios_digest(&ios.tmd, &ios.ticket, &ios.content),
+            // A TMD too short to hold one is refused when read back.
+            version: ios.version().unwrap_or_default(),
+            tmd: Binary(ios.tmd),
+            ticket: Binary(ios.ticket),
+            content: Binary(ios.content),
+        }
     }
 }
 
@@ -223,11 +273,9 @@ struct ConsoleSettingsSerde {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SeedInfo {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    bootmii_boot2: Option<String>,
-    /// BootMii as IOS: its version, or "none".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    bootmii_ios: Option<String>,
+    /// Written by wii-seed before the `bootmii` section; read and ignored.
+    #[serde(rename = "bootmii_boot2", default, skip_serializing)]
+    _legacy_bootmii_boot2: Option<serde::de::IgnoredAny>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     footer_header: Option<String>,
 }
@@ -263,14 +311,10 @@ fn encode_xz(boot: &[u8]) -> Result<Vec<u8>> {
 
 /// Write native extraction data as the stable plaintext seed YAML format.
 fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
-    let bootmii = match parts.bootmii {
-        ffi::BootMiiState::Detected => "detected",
-        ffi::BootMiiState::Stock => "stock",
-        _ => "unknown",
-    };
-    let bootmii_ios_note = match parts.bootmii_ios_tmd.get(0x1dc..0x1de) {
-        Some(version) => format!("v{}", u16::from_be_bytes([version[0], version[1]])),
-        None => "none".to_owned(),
+    let boot2 = match parts.bootmii {
+        ffi::BootMiiState::Detected => Boot2::Detected,
+        ffi::BootMiiState::Stock => Boot2::Stock,
+        _ => Boot2::Unknown,
     };
     let manifest = SeedManifest {
         keys: KeyFooter {
@@ -286,17 +330,20 @@ fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
             sha256: Sha256(parts.settings_sha256),
             fields: parts.settings,
         },
-        bootmii_ios: (!parts.bootmii_ios_tmd.is_empty()).then(|| {
-            BootmiiIosSection::new(
-                parts.bootmii_ios_tmd,
-                parts.bootmii_ios_ticket,
-                parts.bootmii_ios_content,
-            )
-        }),
-        info: Some(SeedInfo {
-            bootmii_boot2: Some(bootmii.to_owned()),
-            bootmii_ios: Some(bootmii_ios_note),
-            footer_header: (!parts.footer_header.is_empty()).then_some(parts.footer_header),
+        bootmii: Some(
+            Bootmii {
+                boot2,
+                ios: (!parts.bootmii_ios_tmd.is_empty()).then_some(BootmiiIos {
+                    tmd: parts.bootmii_ios_tmd,
+                    ticket: parts.bootmii_ios_ticket,
+                    content: parts.bootmii_ios_content,
+                }),
+            }
+            .into(),
+        ),
+        info: (!parts.footer_header.is_empty()).then_some(SeedInfo {
+            _legacy_bootmii_boot2: None,
+            footer_header: Some(parts.footer_header),
         }),
     };
     serde_saphyr::to_io_writer(&mut writer, &manifest).context("cannot serialize Wii seed YAML")?;
@@ -308,10 +355,8 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    fn manifest(
-        bootmii_ios: Option<BootmiiIosSection>,
-        ios_note: Option<&str>,
-    ) -> Result<SeedManifest> {
+    fn manifest(bootmii: Option<Bootmii>) -> Result<SeedManifest> {
+        let bootmii = bootmii.map(BootmiiSection::from);
         Ok(SeedManifest {
             keys: KeyFooter {
                 sha256: digest(vec![0; KEYS_BYTES]),
@@ -335,59 +380,116 @@ mod tests {
                     game: "EU".into(),
                 },
             },
-            bootmii_ios,
-            info: Some(SeedInfo {
-                bootmii_boot2: Some("detected".into()),
-                bootmii_ios: ios_note.map(str::to_owned),
-                footer_header: None,
-            }),
+            bootmii,
+            info: None,
         })
     }
 
-    fn read(manifest: &SeedManifest) -> Result<StockSeed> {
-        let mut yaml = Vec::new();
-        serde_saphyr::to_io_writer(&mut yaml, manifest)?;
+    fn yaml(manifest: &SeedManifest) -> Result<String> {
+        Ok(serde_saphyr::to_string(manifest)?)
+    }
+
+    fn read(yaml: &str) -> Result<StockSeed> {
         StockSeed::from_reader(Cursor::new(yaml))
+    }
+
+    /// A TMD long enough to hold `version`.
+    fn bootmii_ios(version: u16) -> BootmiiIos {
+        let mut tmd = vec![0; 0x1e4];
+        tmd[TMD_VERSION].copy_from_slice(&version.to_be_bytes());
+        BootmiiIos {
+            tmd,
+            ticket: b"ticket".to_vec(),
+            content: b"content".to_vec(),
+        }
     }
 
     #[test]
     fn decodes_binary_and_reads_settings_through_native_type() -> Result<()> {
-        let seed = read(&manifest(None, None)?)?;
+        let seed = read(&yaml(&manifest(None)?)?)?;
         assert_eq!(seed.keys.len(), KEYS_BYTES);
         assert_eq!(seed.boot_blocks.len(), BOOT_BYTES);
         assert_eq!(seed.bad_blocks, [9]);
         assert_eq!(seed.settings.area, "EUR");
         assert_eq!(seed.settings_sha256, [0; 32]);
-        let bootmii = seed.bootmii();
-        assert!(
-            bootmii.ios.is_none() && bootmii.boot2 && !bootmii.ios_recorded,
-            "an older seed says nothing"
-        );
-        assert!(read(&manifest(None, Some("none"))?)?.bootmii().ios_recorded);
+        assert!(seed.bootmii().is_none(), "an older seed says nothing");
         Ok(())
     }
 
     #[test]
-    fn carries_bootmii_as_ios_with_its_digest() -> Result<()> {
-        let section =
-            || BootmiiIosSection::new(b"tmd".to_vec(), b"ticket".to_vec(), b"content".to_vec());
-        let seed = read(&manifest(Some(section()), Some("v65281"))?)?;
-        let ios = seed
-            .bootmii()
-            .ios
-            .as_ref()
-            .context("expected BootMii as IOS")?;
+    fn reads_older_seeds_with_their_boot2_note() -> Result<()> {
+        let older = yaml(&manifest(None)?)? + "info:\n  bootmii_boot2: detected\n";
+        assert!(read(&older)?.bootmii().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn states_a_missing_bootmii_as_ios() -> Result<()> {
+        let none = Bootmii {
+            boot2: Boot2::Stock,
+            ios: None,
+        };
+        let written = yaml(&manifest(Some(none))?)?;
+        assert!(
+            written.contains("bootmii:\n  boot2: stock\n  ios: null\n"),
+            "{written}"
+        );
+        let bootmii = read(&written)?;
+        let bootmii = bootmii.bootmii().context("expected a bootmii section")?;
+        assert!(bootmii.boot2 == Boot2::Stock && bootmii.ios.is_none());
+
+        let unstated = written.replace("  ios: null\n", "");
+        assert!(read(&unstated).is_err(), "ios must be stated");
+        Ok(())
+    }
+
+    #[test]
+    fn carries_bootmii_as_ios_with_its_digest_and_version() -> Result<()> {
+        let bootmii = |ios| Bootmii {
+            boot2: Boot2::Detected,
+            ios: Some(ios),
+        };
+        let written = yaml(&manifest(Some(bootmii(bootmii_ios(65281))))?)?;
+        assert!(written.contains("    version: 65281\n"), "{written}");
+        let seed = read(&written)?;
+        let read_back = seed.bootmii().context("expected a bootmii section")?;
+        let ios = read_back.ios.as_ref().context("expected BootMii as IOS")?;
+        assert_eq!(read_back.boot2, Boot2::Detected);
+        assert_eq!(ios.tmd, bootmii_ios(65281).tmd);
         assert_eq!(
-            (&ios.tmd[..], &ios.ticket[..], &ios.content[..]),
-            (&b"tmd"[..], &b"ticket"[..], &b"content"[..])
+            (&ios.ticket[..], &ios.content[..]),
+            (&b"ticket"[..], &b"content"[..])
         );
 
-        let mut tampered = section();
-        tampered.content = Binary(b"other".to_vec());
-        let Err(error) = read(&manifest(Some(tampered), Some("v65281"))?) else {
-            panic!("a changed BootMii content must be refused");
+        let refusal = |edit: fn(&mut BootmiiIosSection)| -> Result<String> {
+            let mut section = BootmiiIosSection::from(bootmii_ios(65281));
+            edit(&mut section);
+            let mut seed = manifest(None)?;
+            seed.bootmii = Some(BootmiiSection {
+                boot2: Boot2::Detected,
+                ios: Some(section),
+            });
+            Ok(format!(
+                "{:#}",
+                read(&yaml(&seed)?).err().context("expected a refusal")?
+            ))
         };
-        assert!(format!("{error:#}").contains("BootMii as IOS does not match its SHA-256"));
+        assert_eq!(
+            refusal(|section| section.content = Binary(b"other".to_vec()))?,
+            "BootMii as IOS does not match its SHA-256"
+        );
+        assert_eq!(
+            refusal(|section| section.version = 31338)?,
+            "BootMii as IOS is not version 31338"
+        );
+        let short = BootmiiIosSection::from(BootmiiIos {
+            tmd: b"tmd".to_vec(),
+            ..bootmii_ios(0)
+        });
+        assert!(
+            BootmiiIos::try_from(short).is_err(),
+            "a TMD without a version"
+        );
         Ok(())
     }
 

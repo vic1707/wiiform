@@ -180,8 +180,9 @@ sd:
 - **Versions:** any version is accepted. Like the Homebrew Channel, wiiform
   recognizes BootMii by the `BM` marker in its TMD; your consoles show v31338
   and v65281.
-- **Checks:** seeds record whether the backup had BootMii as IOS
-  (`info.bootmii_ios`: its version or `none`). With `bootmii`:
+- **Checks:** the seed's `bootmii` section records what the backup showed:
+  `boot2` (`detected`, `stock` or `unknown`) and `ios` (BootMii as IOS with its
+  version, or `null`). With `bootmii`:
   - BootMii as IOS in the seed: installed, with an `info:` line if the console
     also runs BootMii as boot2.
   - None, but BootMii as boot2: a warning, and the build goes on without it
