@@ -21,7 +21,20 @@ use crate::{
 
 pub use crate::native::{BootPolicy, NusCache};
 
-const NO_BOOTMII_IOS: &str = "the seed has no BootMii as IOS: regenerate it from a backup of a console where HackMii installed BootMii";
+/// The BootMii as IOS to install for `bootmii`, or None when the console only
+/// runs BootMii as boot2 (still reachable). A console with neither is an error.
+fn bootmii_ios(bootmii: &seed::Bootmii) -> Result<Option<&seed::BootmiiIos>> {
+    match (&bootmii.ios, bootmii.ios_recorded, bootmii.boot2) {
+        (Some(ios), _, _) => Ok(Some(ios)),
+        (None, false, _) => bail!(
+            "the seed predates BootMii as IOS support: regenerate it with the current wii-seed"
+        ),
+        (None, true, true) => Ok(None),
+        (None, true, false) => bail!(
+            "the seed's console has no BootMii, neither as IOS nor as boot2: run the HackMii Installer, back the console up again and regenerate the seed"
+        ),
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct BuildOptions {
@@ -88,17 +101,17 @@ fn open(input: &FileOrStdin) -> Result<impl io::Read> {
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |recipe| {
         let mut seed = StockSeed::from_reader(open(&options.seed)?)?;
-        ensure!(
-            recipe.nand.bootmii.is_none() || seed.bootmii().ios.is_some(),
-            "{NO_BOOTMII_IOS}"
-        );
+        if recipe.nand.bootmii.is_some() {
+            bootmii_ios(seed.bootmii())?;
+        }
         options.cache.prepare()?;
         let (nand, identity) = create_stock(
             &mut seed,
             recipe.nand.menu,
             options.boot_policy,
             &options.cache,
-        )?;
+        )
+        .context("cannot create stock NAND")?;
         Ok((nand, identity, seed.bootmii().clone()))
     })
 }
@@ -165,8 +178,7 @@ fn build_with(
         recipe.nand.menu = menu;
         recipe.validate()?;
     }
-    let (mut nand, identity, bootmii) =
-        create_stock(&recipe).context("cannot create stock NAND")?;
+    let (mut nand, identity, bootmii) = create_stock(&recipe)?;
 
     let removals: Vec<TitleId> = (recipe.nand.remove.iter())
         .flat_map(|channel| channel.title_ids(recipe.nand.menu))
@@ -214,14 +226,20 @@ fn build_with(
     }
 
     if recipe.nand.bootmii.is_some() {
-        let ios = (bootmii.ios.as_ref()).context(NO_BOOTMII_IOS)?;
-        if bootmii.boot2 {
-            eprintln!("info: this console also runs BootMii as boot2");
+        match bootmii_ios(&bootmii)? {
+            Some(ios) => {
+                if bootmii.boot2 {
+                    eprintln!("info: this console also runs BootMii as boot2");
+                }
+                let installed = nand
+                    .install_bootmii_ios(ios)
+                    .context("cannot install BootMii as IOS")?;
+                warn_if_already_present(&installed);
+            }
+            None => eprintln!(
+                "warning: the seed's console has no BootMii as IOS; BootMii as boot2 still starts at power-on"
+            ),
         }
-        let installed = nand
-            .install_bootmii_ios(ios)
-            .context("cannot install BootMii as IOS")?;
-        warn_if_already_present(&installed);
     }
 
     if let Some(hbc) = &recipe.nand.hbc {
@@ -460,6 +478,31 @@ mod tests {
         assert!(publish(&from, &to).is_err());
         assert!(from.is_dir() && to.is_dir());
         Ok(())
+    }
+
+    #[test]
+    fn bootmii_needs_the_ios_or_at_least_boot2() {
+        let ios = seed::BootmiiIos {
+            tmd: vec![1],
+            ticket: vec![2],
+            content: vec![3],
+        };
+        let state = |ios: Option<seed::BootmiiIos>, recorded: bool, boot2: bool| seed::Bootmii {
+            ios,
+            boot2,
+            ios_recorded: recorded,
+        };
+        assert!(matches!(
+            bootmii_ios(&state(Some(ios.clone()), true, false)),
+            Ok(Some(_))
+        ));
+        assert!(
+            matches!(bootmii_ios(&state(None, true, true)), Ok(None)),
+            "boot2 still reaches BootMii"
+        );
+        let error = |bootmii| format!("{:#}", bootmii_ios(&bootmii).unwrap_err());
+        assert!(error(state(None, true, false)).contains("neither as IOS nor as boot2"));
+        assert!(error(state(None, false, true)).contains("regenerate it"));
     }
 
     #[test]

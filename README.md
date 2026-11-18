@@ -180,8 +180,14 @@ sd:
 - **Versions:** any version is accepted. Like the Homebrew Channel, wiiform
   recognizes BootMii by the `BM` marker in its TMD; your consoles show v31338
   and v65281.
-- **Checks:** a recipe with `bootmii` fails if the seed holds no BootMii as IOS.
-  For a console that also runs BootMii as boot2 it prints an `info:` line.
+- **Checks:** seeds record whether the backup had BootMii as IOS
+  (`info.bootmii_ios`: its version or `none`). With `bootmii`:
+  - BootMii as IOS in the seed: installed, with an `info:` line if the console
+    also runs BootMii as boot2.
+  - None, but BootMii as boot2: a warning, and the build goes on without it
+    (boot2 still reaches BootMii; a system update can delete the IOS).
+  - Neither: the build stops, since BootMii would be unreachable.
+  - A seed from before this support: the build stops and asks to regenerate it.
 - **Without the key:** wiiform leaves BootMii alone. The image keeps Nintendo's
   IOS254 stub, so a recipe can return a console to stock.
 - **SD files:** these stay an explicit `sd` bundle.
