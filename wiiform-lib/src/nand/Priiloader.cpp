@@ -78,8 +78,7 @@ namespace {
     if (settings.autoboot == Autoboot::bootmii_ios) {
       const auto bootmii = read_authenticated_file(
           nand, find_path(nand, "/title/00000001/000000fe/content/title.tmd"), tmd_limit);
-      require(bootmii.size() >= 0x1e4 && qFromBigEndian<quint16>(bootmii.constData() + 0x1dc) == 31338,
-              "Priiloader BootMii autoboot needs BootMii installed as IOS");
+      require(wiiform::has_bootmii_marker(bootmii), "Priiloader BootMii autoboot needs BootMii installed as IOS");
     }
   }
 

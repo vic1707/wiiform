@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! The `nand` key: the image Wiiform builds. Each of its keys has a module of
 //! the same name.
+pub mod bootmii;
 pub mod hbc;
 pub mod menu;
 pub mod priiloader;
@@ -16,8 +17,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use self::{
-    hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel, rvloader::Rvloader,
-    setup::Setup, titles::Titles,
+    bootmii::Bootmii, hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel,
+    rvloader::Rvloader, setup::Setup, titles::Titles,
 };
 
 /// The NAND image: stock menu, then everything installed on top of it.
@@ -36,6 +37,9 @@ pub struct Nand {
     /// Titles to install: channels, IOS and cIOS.
     #[serde(default)]
     pub titles: Titles,
+    /// Optional BootMii as IOS, taken from the seed.
+    #[serde(default)]
+    pub bootmii: Option<Bootmii>,
     /// Optional Homebrew Channel from a tagged Reborn release or a custom WAD.
     #[serde(default)]
     pub hbc: Option<Hbc>,
@@ -53,6 +57,11 @@ impl Nand {
         let menu = self.menu;
         if let Some(priiloader) = &self.priiloader {
             priiloader.validate()?;
+            ensure!(
+                priiloader.autoboot != Some(priiloader::Autoboot::BootmiiIos)
+                    || self.bootmii.is_some(),
+                "priiloader.autoboot: bootmii_ios requires the bootmii key"
+            );
         }
         if let Some(setup) = &self.setup {
             ensure!(

@@ -153,6 +153,13 @@ auto install_channel(std::span<std::uint8_t> nand, std::span<const std::uint8_t>
   return title_install::install_wad(nand, wad_package::read_channel(wad));
 }
 
+auto install_bootmii_ios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> tmd,
+                         std::span<const std::uint8_t> ticket, std::span<const std::uint8_t> content)
+    -> InstalledWad {
+  const detail::ApiCall call;
+  return title_install::install_bootmii_ios(nand, view(tmd), view(ticket), view(content));
+}
+
 auto install_built_cios(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
                         const CiosBuild& build) -> InstalledWad {
   const detail::ApiCall call;

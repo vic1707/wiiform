@@ -162,6 +162,11 @@
       "maximum": 255,
       "minimum": 0
     },
+    "Bootmii": {
+      "description": "Install BootMii as IOS (IOS254) from the seed, which holds it when its backup\nwas taken after the HackMii Installer put BootMii on the console. BootMii\nitself runs from the SD card's /bootmii/ folder: add those files under `sd`.\nThe Homebrew Channel (\"Launch BootMii\") and Priiloader start it.",
+      "type": "object",
+      "additionalProperties": false
+    },
     "Bundle": {
       "description": "A file or archive placed from the device's root.",
       "type": "object",
@@ -918,6 +923,17 @@
       "description": "The NAND image: stock menu, then everything installed on top of it.",
       "type": "object",
       "properties": {
+        "bootmii": {
+          "description": "Optional BootMii as IOS, taken from the seed.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bootmii"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "hbc": {
           "description": "Optional Homebrew Channel from a tagged Reborn release or a custom WAD.",
           "anyOf": [

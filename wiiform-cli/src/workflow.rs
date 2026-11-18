@@ -16,10 +16,12 @@ use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
     recipe::{Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId, nand::titles::cios},
-    seed::StockSeed,
+    seed::{self, StockSeed},
 };
 
 pub use crate::native::{BootPolicy, NusCache};
+
+const NO_BOOTMII_IOS: &str = "the seed has no BootMii as IOS: regenerate it from a backup of a console where HackMii installed BootMii";
 
 #[derive(Clone, Debug)]
 pub struct BuildOptions {
@@ -86,13 +88,18 @@ fn open(input: &FileOrStdin) -> Result<impl io::Read> {
 pub fn build(options: &BuildOptions) -> Result<()> {
     build_with(options, |recipe| {
         let mut seed = StockSeed::from_reader(open(&options.seed)?)?;
+        ensure!(
+            recipe.nand.bootmii.is_none() || seed.bootmii().ios.is_some(),
+            "{NO_BOOTMII_IOS}"
+        );
         options.cache.prepare()?;
-        create_stock(
+        let (nand, identity) = create_stock(
             &mut seed,
             recipe.nand.menu,
             options.boot_policy,
             &options.cache,
-        )
+        )?;
+        Ok((nand, identity, seed.bootmii().clone()))
     })
 }
 
@@ -118,7 +125,7 @@ fn create_stock(
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity)>,
+    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity, seed::Bootmii)>,
 ) -> Result<()> {
     validate_output(&options.output)?;
     if let NusCache::Directory { path, .. } = &options.cache {
@@ -158,7 +165,8 @@ fn build_with(
         recipe.nand.menu = menu;
         recipe.validate()?;
     }
-    let (mut nand, identity) = create_stock(&recipe).context("cannot create stock NAND")?;
+    let (mut nand, identity, bootmii) =
+        create_stock(&recipe).context("cannot create stock NAND")?;
 
     let removals: Vec<TitleId> = (recipe.nand.remove.iter())
         .flat_map(|channel| channel.title_ids(recipe.nand.menu))
@@ -202,6 +210,17 @@ fn build_with(
             }
         }
         .with_context(|| format!("cannot install cIOS slot {}", cios.target.slot))?;
+        warn_if_already_present(&installed);
+    }
+
+    if recipe.nand.bootmii.is_some() {
+        let ios = (bootmii.ios.as_ref()).context(NO_BOOTMII_IOS)?;
+        if bootmii.boot2 {
+            eprintln!("info: this console also runs BootMii as boot2");
+        }
+        let installed = nand
+            .install_bootmii_ios(ios)
+            .context("cannot install BootMii as IOS")?;
         warn_if_already_present(&installed);
     }
 
@@ -536,7 +555,11 @@ mod tests {
             menu: None,
         };
         let failure = build_with(&options, |_| {
-            Ok((Nand::read(&image)?, StockIdentity::unverifiable()))
+            Ok((
+                Nand::read(&image)?,
+                StockIdentity::unverifiable(),
+                seed::Bootmii::default(),
+            ))
         })
         .expect_err("the WAD cannot fit the synthetic NAND");
         assert!(

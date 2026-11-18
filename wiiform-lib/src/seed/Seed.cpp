@@ -5,6 +5,9 @@
 #include <NandBuffer.hpp>
 #include <WorkingImage.hpp>
 #include <BootFlags.hpp>
+#include <Titles.hpp>
+#include <TitleValidation.hpp>
+#include <tiktmd.h>
 #include <nandbin.h>
 #include <tools.h>
 
@@ -77,6 +80,35 @@ namespace seed {
     return settings;
   }
 
+  auto bytes_of(const QByteArray& bytes) -> std::vector<std::uint8_t> {
+    return {reinterpret_cast<const std::uint8_t*>(bytes.constData()),
+            reinterpret_cast<const std::uint8_t*>(bytes.constData()) + bytes.size()};
+  }
+
+  // Keeps BootMii as IOS when the backup has it: IOS254 with BootMii's marker.
+  void read_bootmii_ios(NandBin& nand, wiiform::SeedParts& result) {
+    using working_image::find_path;
+    using working_image::read_authenticated_file;
+    const QString folder = "/title/00000001/000000fe/content/";
+    const auto tmd_entry = find_path(nand, folder + "title.tmd");
+    if (!tmd_entry) return;
+    const auto tmd = read_authenticated_file(nand, tmd_entry, 64 * 1024);
+    if (!wiiform::has_bootmii_marker(tmd)) return;
+    Tmd parsed(tmd);
+    require(parsed.Count() == 1 && parsed.Type(0) == 1, "BootMii as IOS has an unexpected content layout");
+    NusJob job;
+    job.tid = wiiform::bootmii_ios_title_id;
+    job.version = parsed.Version();
+    job.decrypt = true;
+    job.data << tmd << read_authenticated_file(nand, "/ticket/00000001/000000fe.tik", 64 * 1024)
+             << read_authenticated_file(nand, folder + parsed.Cid(0) + ".app", parsed.Size(0));
+    const auto validated = validate_title(std::move(job), "The backup's BootMii as IOS is inconsistent");
+    const auto& parts = validated.get().data;
+    result.bootmii_ios_tmd = bytes_of(parts[0]);
+    result.bootmii_ios_ticket = bytes_of(parts[1]);
+    result.bootmii_ios_content = bytes_of(parts[2]);
+  }
+
   auto extract(std::span<const std::uint8_t> backup, std::span<const std::uint8_t> sidecar)
       -> wiiform::SeedParts {
     require((backup.size() == 0x21000000 && sidecar.size() == keys_size) ||
@@ -135,6 +167,7 @@ namespace seed {
     result.bootmii = detected_bootmii ? wiiform::BootMiiState::detected
         : all_copies_stock && stock_primary ? wiiform::BootMiiState::stock
         : wiiform::BootMiiState::unknown;
+    read_bootmii_ios(nand, result);
     return result;
   }
 } // namespace seed

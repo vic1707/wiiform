@@ -108,7 +108,8 @@ relative to the recipe. Write inline data as plain base64 text, without the
 WAD that the recipe deliberately permits without a Nintendo signature, replace
 `signature_policy: allow-unsigned` with `allow_unsigned: true`. List channels
 to `remove` by name; title IDs are no longer accepted there.
-Regenerate earlier unreleased seeds with the current `wii-seed`.
+Regenerate earlier unreleased seeds with the current `wii-seed`; seeds now also
+carry BootMii as IOS when the backup has it, which `nand.bootmii` needs.
 Remove `--reference` from scripts. A `setup` mapping, including any
 `setup.display` options, generates SYSCONF and completes first-run setup.
 Omit `setup` or set it to null to keep the wizard enabled. Use a two-letter country code

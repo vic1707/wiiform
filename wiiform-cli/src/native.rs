@@ -309,6 +309,11 @@ impl Nand {
         ffi::install_built_cios(&mut self.0[..], &cache.ffi()?, &build)?.try_into()
     }
 
+    /// Installs BootMii as IOS from the parts a seed captured.
+    pub fn install_bootmii_ios(&mut self, ios: &crate::seed::BootmiiIos) -> Result<InstalledWad> {
+        ffi::install_bootmii_ios(&mut self.0[..], &ios.tmd, &ios.ticket, &ios.content)?.try_into()
+    }
+
     /// Installs a Nintendo-signed channel; IOS WADs are refused.
     pub fn install_channel(&mut self, wad: &Wad) -> Result<InstalledWad> {
         ffi::install_channel(&mut self.0[..], wad)?.try_into()

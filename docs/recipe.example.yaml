@@ -51,6 +51,10 @@ nand:
     #     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     #     target: {slot: 250, base: 57, revision: 65535}
 
+  # Optional BootMii as IOS (IOS254), taken from the seed. Its SD files
+  # (/bootmii/armboot.bin and ppcboot.elf) go under sd.
+  # bootmii: {}
+
   # Optional Homebrew Channel, installed before Priiloader.
   # hbc:
   #   reborn:

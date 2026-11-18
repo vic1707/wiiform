@@ -2,6 +2,7 @@
 #include <CiosBuild.hpp>
 #include <Factory.hpp>
 #include <Layout.hpp>
+#include <Titles.hpp>
 #include <PriiloaderHacks.hpp>
 #include <Titles.hpp>
 #include <WorkingImage.hpp>
@@ -415,6 +416,49 @@ namespace {
             "does not match the d2x map");
   }
 
+  // A BootMii-as-IOS title: IOS254, one local content, "BM" in the TMD.
+  auto bootmii_tmd(quint64 title_id, const QList<QByteArray>& contents, bool marker) -> QByteArray {
+    QByteArray tmd(0x1e4 + contents.size() * 0x24, '\0');
+    put32(tmd, 0, ES_SIG_RSA2048);
+    put64(tmd, 0x18c, title_id);
+    qToBigEndian<quint16>(65281, reinterpret_cast<uchar*>(tmd.data() + 0x1dc));
+    qToBigEndian<quint16>(quint16(contents.size()), reinterpret_cast<uchar*>(tmd.data() + 0x1de));
+    if (marker) tmd.replace(0x1b2, 2, "BM");
+    for (int index = 0; index < contents.size(); ++index) {
+      auto* record = reinterpret_cast<uchar*>(tmd.data() + 0x1e4 + index * 0x24);
+      qToBigEndian<quint32>(quint32(index), record);
+      qToBigEndian<quint16>(quint16(index), record + 4);
+      qToBigEndian<quint16>(1, record + 6);
+      qToBigEndian<quint64>(quint64(contents[index].size()), record + 8);
+      tmd.replace(0x1e4 + index * 0x24 + 16, 20, GetSha1(contents[index]));
+    }
+    return tmd;
+  }
+
+  void test_bootmii_ios_refusals(std::span<std::uint8_t> image) {
+    check(wiiform::has_bootmii_marker(bootmii_tmd(wiiform::bootmii_ios_title_id, {"x"}, true)) &&
+              !wiiform::has_bootmii_marker(bootmii_tmd(wiiform::bootmii_ios_title_id, {"x"}, false)) &&
+              !wiiform::has_bootmii_marker(QByteArray(0x1b3, 'B')),
+          "BootMii marker detection is wrong");
+    const auto before = buffer_digest(image);
+    QByteArray ticket(0x2a4, '\0');
+    put32(ticket, 0, ES_SIG_RSA2048);
+    put64(ticket, 0x1dc, wiiform::bootmii_ios_title_id);
+    const QByteArray content("bootmii loader");
+    const auto install = [&](const QByteArray& tmd, const QByteArray& bytes) {
+      wiiform::install_bootmii_ios(image, wad_bytes(tmd), wad_bytes(ticket), wad_bytes(bytes));
+    };
+    rejects([&] { install(bootmii_tmd(wiiform::bootmii_ios_title_id, {content}, false), content); },
+            "not BootMii as IOS");
+    rejects([&] { install(bootmii_tmd(wiiform::bootmii_ios_title_id, {content, content}, true), content); },
+            "IOS254 with one content");
+    rejects([&] { install(bootmii_tmd(0x00000001000000fdull, {content}, true), content); },
+            "IOS254 with one content");
+    rejects([&] { install(bootmii_tmd(wiiform::bootmii_ios_title_id, {content}, true), "tampered"); },
+            "inconsistent");
+    check(before == buffer_digest(image), "A refused BootMii IOS changed the NAND buffer");
+  }
+
   void test_wad_installation(const QString& temporary_path) {
     const auto nand_path = QDir(temporary_path).filePath("empty-nand.bin");
     create_empty_nand(nand_path);
@@ -592,6 +636,7 @@ int main(int argc, char** argv) {
       test_priiloader_boot_file(image);
       test_priiloader_hacks();
       test_cios_build();
+      test_bootmii_ios_refusals(image);
     }
     test_wide_directory_layout(temporary.path());
     test_wad_installation(temporary.path());

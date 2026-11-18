@@ -30,6 +30,16 @@ namespace wiiform {
   }
 }
 
+namespace wiiform {
+  inline constexpr std::uint64_t bootmii_ios_title_id = 0x00000001000000feull;
+
+  // BootMii as IOS marks its TMD with "BM" in a reserved field (TMD offset
+  // 0x1b2, TMD-view offset 50), which is how the Homebrew Channel recognizes it.
+  inline auto has_bootmii_marker(const QByteArray& tmd) -> bool {
+    return tmd.size() > 0x1b3 && tmd[0x1b2] == 'B' && tmd[0x1b3] == 'M';
+  }
+}
+
 bool initialize_system(NandBin& nand, const QByteArray& uid_data);
 bool install_title(NandBin& nand, UIDmap& uid, SharedContentMap& shared,
                    const ValidatedTitleJob& job);

@@ -444,6 +444,21 @@ namespace title_install {
     return install_validated_wad(image, job, replaceable_stub(options));
   }
 
+  auto install_bootmii_ios(std::span<std::uint8_t> image, const QByteArray& tmd, const QByteArray& ticket,
+                          const QByteArray& content) -> wiiform::InstalledWad {
+    require(wiiform::has_bootmii_marker(tmd), "The title is not BootMii as IOS");
+    Tmd parsed(tmd);
+    require(parsed.Tid() == wiiform::bootmii_ios_title_id && parsed.Count() == 1,
+            "BootMii as IOS must be IOS254 with one content");
+    NusJob job;
+    job.tid = wiiform::bootmii_ios_title_id;
+    job.version = parsed.Version();
+    job.decrypt = true;
+    job.data << tmd << ticket << content;
+    // Stock images hold Nintendo's IOS254 stub, which BootMii replaces.
+    return install_validated_wad(image, validate_title(std::move(job), "BootMii as IOS is inconsistent"), 65280);
+  }
+
   auto install_built_cios(std::span<std::uint8_t> image, const QString& cache, bool offline,
                           const wiiform::CiosBuild& build) -> wiiform::InstalledWad {
     const auto base = factory::read_title(cache, (quint64(1) << 32) | build.options.base, build.base_version, offline);

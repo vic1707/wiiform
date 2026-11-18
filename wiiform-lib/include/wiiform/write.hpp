@@ -43,6 +43,11 @@ namespace wiiform {
   // A Wii d2x cIOS matching the given slot, base and revision.
   auto install_cios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> wad,
                     const CiosOptions& options) -> InstalledWad;
+  // Installs BootMii as IOS (IOS254) from the parts a seed captured. It replaces
+  // Nintendo's IOS254 stub; an identical installed title is left alone.
+  auto install_bootmii_ios(std::span<std::uint8_t> nand, std::span<const std::uint8_t> tmd,
+                           std::span<const std::uint8_t> ticket, std::span<const std::uint8_t> content)
+      -> InstalledWad;
   // Builds a d2x cIOS from its base IOS and installs it like install_cios.
   auto install_built_cios(std::span<std::uint8_t> nand, const std::optional<NusCache>& cache,
                           const CiosBuild& build) -> InstalledWad;

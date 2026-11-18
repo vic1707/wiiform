@@ -148,6 +148,44 @@ title ID against the Homebrew Channel IDs recognized by Priiloader before
 writing it. The title installs before Priiloader settings are applied, so
 `autoboot: homebrew_channel` can use it.
 
+### BootMii
+
+BootMii runs from the SD card's `/bootmii/` folder (`armboot.bin` and
+`ppcboot.elf`) and starts in one of two ways:
+
+- **As boot2**, on consoles that allow it: at power-on. It lives in the boot
+  area, which `--boot-policy preserve-source` keeps as the backup has it.
+- **As IOS** (IOS254): when the Homebrew Channel ("Launch BootMii") or
+  Priiloader (`autoboot: bootmii_ios`, or its menu) starts it. This is the only
+  way into BootMii on consoles that can't run it as boot2.
+
+```yaml
+nand:
+  bootmii: {}
+sd:
+  bundles:
+    - url: https://example.com/bootmii-sd-files.zip # /bootmii/armboot.bin and ppcboot.elf
+      sha256: "…"
+      unzip: /
+```
+
+`bootmii: {}` installs BootMii as IOS from the seed:
+
+- **Where it comes from:** `wii-seed` captures it from the backup when the
+  HackMii Installer put it there (it does so on every console it sets up, boot2
+  ones included). There is no other source: it isn't on NUS, and the HackMii
+  Installer may not be redistributed.
+- **Seeds:** take the backup after running HackMii and regenerate the seed;
+  re-running HackMii updates the IOS.
+- **Versions:** any version is accepted. Like the Homebrew Channel, wiiform
+  recognizes BootMii by the `BM` marker in its TMD; your consoles show v31338
+  and v65281.
+- **Checks:** a recipe with `bootmii` fails if the seed holds no BootMii as IOS.
+  For a console that also runs BootMii as boot2 it prints an `info:` line.
+- **Without the key:** wiiform leaves BootMii alone. The image keeps Nintendo's
+  IOS254 stub, so a recipe can return a console to stock.
+- **SD files:** these stay an explicit `sd` bundle.
+
 ### RVLoader
 
 ```yaml

@@ -218,6 +218,9 @@ pub mod bridge {
         settings_sha256: [u8; 32],
         bootmii: BootMiiState,
         footer_header: String,
+        bootmii_ios_tmd: Vec<u8>,
+        bootmii_ios_ticket: Vec<u8>,
+        bootmii_ios_content: Vec<u8>,
     }
 
     struct CiosOptions {
@@ -326,6 +329,12 @@ pub mod bridge {
         fn install_homebrew_channel(nand: &mut [u8], wad: &[u8]) -> Result<InstalledWad>;
         fn install_cios(nand: &mut [u8], wad: &[u8], options: &CiosOptions)
         -> Result<InstalledWad>;
+        fn install_bootmii_ios(
+            nand: &mut [u8],
+            tmd: &[u8],
+            ticket: &[u8],
+            content: &[u8],
+        ) -> Result<InstalledWad>;
         fn install_built_cios(
             nand: &mut [u8],
             cache: &NusCache<'_>,

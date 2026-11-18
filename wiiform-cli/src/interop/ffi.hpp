@@ -39,6 +39,7 @@ namespace wiiform::ffi {
   auto install_unsigned_channel(Nand nand, Bytes wad) -> InstalledWad;
   auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad;
   auto install_cios(Nand nand, Bytes wad, const CiosOptions& options) -> InstalledWad;
+  auto install_bootmii_ios(Nand nand, Bytes tmd, Bytes ticket, Bytes content) -> InstalledWad;
   auto install_built_cios(Nand nand, const NusCache& cache, const CiosBuild& build) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);
   void apply_system_settings(Nand nand, const SystemSettings& settings);

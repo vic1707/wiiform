@@ -947,3 +947,14 @@ fn cios_entries_are_prebuilt_or_built_from_d2x() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn bootmii_is_an_empty_mapping_that_priiloader_autoboot_requires() -> Result<()> {
+    assert!(read("menu: 4.3E\nbootmii: {}")?.bootmii.is_some());
+    assert!(read("menu: 4.3E")?.bootmii.is_none());
+    assert!(read("menu: 4.3E\nbootmii: {extra: 1}").is_err());
+    let autoboot = "menu: 4.3E\npriiloader: {autoboot: bootmii_ios}";
+    assert!(message(read(autoboot)).contains("requires the bootmii key"));
+    read(&format!("{autoboot}\nbootmii: {{}}"))?;
+    Ok(())
+}

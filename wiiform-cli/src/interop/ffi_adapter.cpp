@@ -49,7 +49,8 @@ auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts {
   return {rust_vec(source.keys), rust_vec(source.boot_blocks), rust_vec(source.bad_blocks),
           ConsoleSettings{settings.area, settings.model, settings.dvd, settings.mpch,
                           settings.code, settings.serial, settings.video, settings.game},
-          source.settings_sha256, source.bootmii, source.footer_header};
+          source.settings_sha256, source.bootmii, source.footer_header, rust_vec(source.bootmii_ios_tmd),
+          rust_vec(source.bootmii_ios_ticket), rust_vec(source.bootmii_ios_content)};
 }
 
 auto stock_titles(Menu menu) -> rust::Vec<TitleVersion> {
@@ -116,6 +117,10 @@ auto install_homebrew_channel(Nand nand, Bytes wad) -> InstalledWad {
 auto install_cios(Nand nand, Bytes wad, const CiosOptions& options) -> InstalledWad {
   return shared(wiiform::install_cios(span(nand), span(wad),
       {options.slot, options.base, options.revision, options.replace_stock_stub}));
+}
+
+auto install_bootmii_ios(Nand nand, Bytes tmd, Bytes ticket, Bytes content) -> InstalledWad {
+  return shared(wiiform::install_bootmii_ios(span(nand), span(tmd), span(ticket), span(content)));
 }
 
 auto install_built_cios(Nand nand, const NusCache& cache, const CiosBuild& build) -> InstalledWad {

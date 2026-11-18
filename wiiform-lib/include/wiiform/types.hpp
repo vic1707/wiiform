@@ -35,6 +35,10 @@ namespace wiiform {
     Sha256 settings_sha256;
     BootMiiState bootmii;
     std::string footer_header;
+    // BootMii as IOS (IOS254) as the backup holds it; empty when it has none.
+    std::vector<std::uint8_t> bootmii_ios_tmd;
+    std::vector<std::uint8_t> bootmii_ios_ticket;
+    std::vector<std::uint8_t> bootmii_ios_content;
   };
   struct StockSeed {
     std::span<const std::uint8_t> keys;

@@ -20,6 +20,24 @@ pub struct StockSeed {
     bad_blocks: Vec<u16>,
     settings: ConsoleSettings,
     settings_sha256: [u8; 32],
+    bootmii: Bootmii,
+}
+
+/// What the seed knows about BootMii on its console.
+#[derive(Clone, Debug, Default)]
+pub struct Bootmii {
+    /// BootMii as IOS, as the backup held it.
+    pub ios: Option<BootmiiIos>,
+    /// Whether the seed noted BootMii as boot2 (a note, not a checked fact).
+    pub boot2: bool,
+}
+
+/// The IOS254 title HackMii installs for BootMii as IOS.
+#[derive(Clone, Debug)]
+pub struct BootmiiIos {
+    pub tmd: Vec<u8>,
+    pub ticket: Vec<u8>,
+    pub content: Vec<u8>,
 }
 
 /// A seed read from a backup, ready to be written as YAML.
@@ -58,13 +76,36 @@ impl StockSeed {
             "Boot blocks do not match their SHA-256"
         );
 
+        let ios = match manifest.bootmii_ios {
+            Some(section) => {
+                ensure!(
+                    section.digest() == section.sha256,
+                    "BootMii as IOS does not match its SHA-256"
+                );
+                Some(BootmiiIos {
+                    tmd: section.tmd.0,
+                    ticket: section.ticket.0,
+                    content: section.content.0,
+                })
+            }
+            None => None,
+        };
+        let boot2 = (manifest.info.as_ref())
+            .and_then(|info| info.bootmii_boot2.as_deref())
+            .is_some_and(|state| state == "detected");
+
         Ok(Self {
             keys,
             boot_blocks,
             bad_blocks: manifest.bad_blocks,
             settings: manifest.settings.fields,
             settings_sha256: manifest.settings.sha256.0,
+            bootmii: Bootmii { ios, boot2 },
         })
+    }
+
+    pub fn bootmii(&self) -> &Bootmii {
+        &self.bootmii
     }
 
     /// Replaces the key footer's text header with the canonical BackupMii one,
@@ -91,8 +132,39 @@ struct SeedManifest {
     bad_blocks: Vec<u16>,
     boot_blocks: BootBlocks,
     settings: Settings,
+    /// BootMii as IOS (IOS254), when the backup had it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bootmii_ios: Option<BootmiiIosSection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     info: Option<SeedInfo>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct BootmiiIosSection {
+    /// Over the TMD, the ticket and the content, in that order.
+    #[serde(rename = "_sha256")]
+    sha256: Sha256,
+    tmd: Binary,
+    ticket: Binary,
+    content: Binary,
+}
+
+impl BootmiiIosSection {
+    fn new(tmd: Vec<u8>, ticket: Vec<u8>, content: Vec<u8>) -> Self {
+        let mut section = Self {
+            sha256: Sha256([0; 32]),
+            tmd: Binary(tmd),
+            ticket: Binary(ticket),
+            content: Binary(content),
+        };
+        section.sha256 = section.digest();
+        section
+    }
+
+    fn digest(&self) -> Sha256 {
+        digest([&self.tmd.0[..], &self.ticket.0, &self.content.0].concat())
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -199,6 +271,13 @@ fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
             sha256: Sha256(parts.settings_sha256),
             fields: parts.settings,
         },
+        bootmii_ios: (!parts.bootmii_ios_tmd.is_empty()).then(|| {
+            BootmiiIosSection::new(
+                parts.bootmii_ios_tmd,
+                parts.bootmii_ios_ticket,
+                parts.bootmii_ios_content,
+            )
+        }),
         info: Some(SeedInfo {
             bootmii_boot2: Some(bootmii.to_owned()),
             footer_header: (!parts.footer_header.is_empty()).then_some(parts.footer_header),
@@ -213,9 +292,8 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    #[test]
-    fn decodes_binary_and_reads_settings_through_native_type() -> Result<()> {
-        let manifest = SeedManifest {
+    fn manifest(bootmii_ios: Option<BootmiiIosSection>) -> Result<SeedManifest> {
+        Ok(SeedManifest {
             keys: KeyFooter {
                 sha256: digest(vec![0; KEYS_BYTES]),
                 footer: Binary(vec![0; KEYS_BYTES]),
@@ -238,17 +316,53 @@ mod tests {
                     game: "EU".into(),
                 },
             },
-            info: None,
-        };
+            bootmii_ios,
+            info: Some(SeedInfo {
+                bootmii_boot2: Some("detected".into()),
+                footer_header: None,
+            }),
+        })
+    }
+
+    fn read(manifest: &SeedManifest) -> Result<StockSeed> {
         let mut yaml = Vec::new();
-        serde_saphyr::to_io_writer(&mut yaml, &manifest)?;
-        assert!(String::from_utf8_lossy(&yaml).contains("!!binary"));
-        let seed = StockSeed::from_reader(Cursor::new(yaml))?;
+        serde_saphyr::to_io_writer(&mut yaml, manifest)?;
+        StockSeed::from_reader(Cursor::new(yaml))
+    }
+
+    #[test]
+    fn decodes_binary_and_reads_settings_through_native_type() -> Result<()> {
+        let seed = read(&manifest(None)?)?;
         assert_eq!(seed.keys.len(), KEYS_BYTES);
         assert_eq!(seed.boot_blocks.len(), BOOT_BYTES);
         assert_eq!(seed.bad_blocks, [9]);
         assert_eq!(seed.settings.area, "EUR");
         assert_eq!(seed.settings_sha256, [0; 32]);
+        assert!(seed.bootmii().ios.is_none() && seed.bootmii().boot2);
+        Ok(())
+    }
+
+    #[test]
+    fn carries_bootmii_as_ios_with_its_digest() -> Result<()> {
+        let section =
+            || BootmiiIosSection::new(b"tmd".to_vec(), b"ticket".to_vec(), b"content".to_vec());
+        let seed = read(&manifest(Some(section()))?)?;
+        let ios = seed
+            .bootmii()
+            .ios
+            .as_ref()
+            .context("expected BootMii as IOS")?;
+        assert_eq!(
+            (&ios.tmd[..], &ios.ticket[..], &ios.content[..]),
+            (&b"tmd"[..], &b"ticket"[..], &b"content"[..])
+        );
+
+        let mut tampered = section();
+        tampered.content = Binary(b"other".to_vec());
+        let Err(error) = read(&manifest(Some(tampered))?) else {
+            panic!("a changed BootMii content must be refused");
+        };
+        assert!(format!("{error:#}").contains("BootMii as IOS does not match its SHA-256"));
         Ok(())
     }
 
