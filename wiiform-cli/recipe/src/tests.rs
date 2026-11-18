@@ -663,6 +663,13 @@ fn bundles_unzip_extract_or_copy_from_the_root() -> Result<()> {
         ]
     );
     assert_eq!(bundle("unzip: /extra")?.len(), 4);
+    // A versioned top folder can be a wildcard: everything before ** is dropped.
+    assert_eq!(
+        paths(&bundle(
+            "extract: {'*/apps/RVLoader/**': /apps/RVLoader/, '*/*.bit': /}"
+        )?),
+        ["/LCDDriver.bit", "/apps/RVLoader/boot.dol"]
+    );
     assert_eq!(
         paths(&bundle("extract: {'**/*.xml': /x/}")?),
         ["/x/RVLoader_v2.1/rvloader/themes/main/theme.xml"]

@@ -11,10 +11,10 @@ use super::CardPath;
 
 /// Which archive files go where. Each key is a glob over paths inside the
 /// archive (`*`, `**`, `?`, `[…]`, `{a,b}`); each value a directory. A matching
-/// file keeps its path below the glob's fixed leading folders: with
-/// `"pkg/data/**": /data/`, `pkg/data/x/y` lands at `/data/x/y`. Files no glob
-/// matches are left out; a glob matching nothing, or a file matching two, is
-/// an error.
+/// file loses the folders the glob names before its `**` (or all of them
+/// without one) and keeps the rest: with `"*/data/**": /data/`,
+/// `pkg-1.0/data/x/y` lands at `/data/x/y`. Files no glob matches are left out;
+/// a glob matching nothing, or a file matching two, is an error.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(try_from = "BTreeMap<String, CardPath>")]
 #[schemars(with = "BTreeMap<String, CardPath>")]
@@ -24,8 +24,8 @@ pub(super) struct Extract(Vec<Pair>);
 struct Pair {
     glob: String,
     matcher: GlobMatcher,
-    /// The leading folders without wildcards, stripped from matching paths.
-    prefix: String,
+    /// How many leading folders of a matching path are dropped.
+    strip: usize,
     directory: CardPath,
 }
 
@@ -40,20 +40,14 @@ impl TryFrom<BTreeMap<String, CardPath>> for Extract {
                 .build()
                 .map(|built: Glob| built.compile_matcher())?;
             let parts: Vec<&str> = glob.split('/').collect();
-            let fixed = parts
-                .iter()
-                .take_while(|part| !part.contains(['*', '?', '[', '{']))
-                .count();
-            // A glob without wildcards names one file: keep only its name.
-            let fixed = fixed.min(parts.len() - 1);
-            let prefix = parts[..fixed]
-                .iter()
-                .map(|part| format!("{part}/"))
-                .collect();
+            // The folders before `**`; without one, every folder before the file name.
+            let strip = (parts.iter())
+                .position(|part| *part == "**")
+                .unwrap_or(parts.len() - 1);
             Ok(Pair {
                 glob,
                 matcher,
-                prefix,
+                strip,
                 directory,
             })
         });
@@ -85,7 +79,8 @@ impl Extract {
             };
             used[index] = true;
             let pair = &self.0[index];
-            let relative = name.strip_prefix(&pair.prefix).unwrap_or(&name);
+            // `*` stops at `/`, so a path matching the glob has at least `strip` folders.
+            let relative = name.splitn(pair.strip + 1, '/').last().unwrap_or(&name);
             placed.push((base.join_path(&pair.directory)?.join(relative)?, bytes));
         }
         if let Some(index) = used.iter().position(|used| !used) {

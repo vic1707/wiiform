@@ -242,9 +242,10 @@ uploaded since June 2025); a given `sha256` always wins.
   whole archive there, `extract` unpacks the files its globs choose, and
   `to: PATH` copies a single file.
 - **`extract`:** each key is a glob over the archive's paths (`*`, `**`, `?`,
-  `[…]`, `{a,b}`), each value a directory. A matching file keeps its path
-  below the glob's fixed leading folders: with `"pkg/data/**": /data/`,
-  `pkg/data/x/y` lands at `/data/x/y`. Files no glob matches are left out, as
+  `[…]`, `{a,b}`), each value a directory. A matching file loses the folders
+  the glob names before its `**` (all of them when it has none) and keeps the
+  rest: with `"*/data/**": /data/`, `pkg-1.0/data/x/y` lands at `/data/x/y`,
+  so a versioned top folder needs no version in the glob. Files no glob matches are left out, as
   RVLoader's bundled BBLoader and old Nintendont are above. A glob matching no
   file, or a file matching two globs, stops the build.
 - **Archives:** archives are zips. macOS `__MACOSX/` and `._*` entries are
