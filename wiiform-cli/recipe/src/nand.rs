@@ -29,6 +29,7 @@ pub struct Nand {
     pub menu: Menu,
     /// Stock channels to remove.
     #[serde(default)]
+    #[schemars(transform = crate::schema::list_values::<RemovableChannel>)]
     pub remove: BTreeSet<RemovableChannel>,
     /// Supply a mapping to complete first-run setup with these settings and defaults.
     /// Omit this section or use null to run the Wii setup wizard.

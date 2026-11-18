@@ -461,6 +461,30 @@ fn the_documented_example_is_a_valid_recipe() -> Result<()> {
 }
 
 #[test]
+fn the_documented_example_lists_every_hack_and_removable_channel() -> Result<()> {
+    let example = include_str!("../../../docs/recipe.example.yaml");
+    let schema: serde_json::Value = serde_json::from_str(&crate::json_schema()?)?;
+    for (list, enumeration) in [("hacks", "Hack"), ("remove", "RemovableChannel")] {
+        let values = (schema["$defs"][enumeration]["oneOf"].as_array())
+            .context("expected described values")?;
+        for value in values {
+            let name = value["const"].as_str().context("expected a value name")?;
+            // An entry, commented out or not, may carry a trailing comment.
+            let entry = format!("- {name}");
+            let listed = |line: &str| {
+                let line = line.trim_start_matches([' ', '#']);
+                line.split(" #").next() == Some(entry.as_str())
+            };
+            assert!(
+                example.lines().any(listed),
+                "docs/recipe.example.yaml does not list {name} under {list}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn cios_slots_and_bases_are_checked_when_the_recipe_is_read() {
     let cios = |slot: u8, base: u8| {
         format!(

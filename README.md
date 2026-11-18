@@ -115,9 +115,13 @@ The commands carry the pinned Priiloader app and hack definitions.
 Use `priiloader: {}` to install with pinned defaults.
 Settings sit directly under `priiloader`, and `hacks` lists the hacks to
 enable. Each application replaces the settings and disables unlisted hacks.
-Every Wii hack Priiloader 0.10.0 defines for 4.3 is available; the schema and
-`wii-nand install-priiloader --help` describe each, following Priiloader's
+Every Wii hack Priiloader 0.10.0 defines for 4.3 is available, following
+Priiloader's
 [hack list](https://github.com/DacoTaco/priiloader/blob/master/docs/HACKSLIST.md).
+[`docs/recipe.example.yaml`](docs/recipe.example.yaml) lists them all, and so
+does the schema: an editor shows every hack with what it does when hovering
+`hacks` (and every channel when hovering `remove`).
+`wii-nand install-priiloader --help` describes them too.
 Hacks that cancel each other (the two music hacks, the two USB Gecko ones, the
 four "run disc games under IOS" ones) cannot be combined.
 

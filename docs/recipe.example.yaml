@@ -89,7 +89,8 @@ nand:
     white_background: false
     dump_gecko_text: false
     show_rc_updates: false
-    # Hacks to enable; every hack not listed is disabled.
+    # Hacks to enable; every hack not listed is disabled. With the schema, an
+    # editor shows what each does when hovering `hacks`.
     hacks:
       - fix_480p
       # - block_online_updates
@@ -103,6 +104,21 @@ nand:
       # - no_background_music
       # - wiimmfi
       # - region_free_everything # Japanese menus use the pinned JP definition.
+      # - no_sfx_and_background_music # Excludes no_background_music.
+      # - re_enable_bannerbomb
+      # - usb_gecko_report
+      # - usb_gecko_report_geckoos # Excludes usb_gecko_report.
+      # - force_data_management
+      # - force_recovery_mode
+      # - remove_diagnostic_disc_check
+      # - no_delete_homebrew
+      # - force_disc_ios248 # The four force_disc_ios hacks exclude each other.
+      # - force_disc_ios249
+      # - force_disc_ios250
+      # - force_disc_ios251
+      # - unblock_service_discs
+      # - remove_ios16_disc_error
+      # - mark_network_tested
 
 # Files for the SD card, published in sd/ next to nand.bin and keys.bin. Every
 # file takes one source (path, url, inline, or github: {repo, tag, asset}) and a

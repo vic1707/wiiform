@@ -15,6 +15,7 @@ mod files;
 mod github;
 pub mod nand;
 mod region;
+mod schema;
 mod source;
 #[cfg(test)]
 mod tests;

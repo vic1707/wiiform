@@ -962,7 +962,7 @@
           "default": null
         },
         "remove": {
-          "description": "Stock channels to remove.",
+          "description": "Stock channels to remove.\n\nValues:\n- forecast-channel: The menu region's Forecast Channel and its common stub.\n- news-channel: The menu region's News Channel and its common stub.\n- wii-shop-channel: Wii Shop Channel (HABA).\n- photo-channel: Photo Channel versions HAAA and HAYA.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/RemovableChannel"
@@ -1099,7 +1099,7 @@
           "default": false
         },
         "hacks": {
-          "description": "Hacks to enable. Every other hack is disabled.",
+          "description": "Hacks to enable. Every other hack is disabled. The two music hacks, the\ntwo USB Gecko hacks, and the four force_disc_ios hacks exclude each other.\n\nValues:\n- fix_480p: Fixes an image display issue of the System Menu in 480p (analog video only).\n- block_online_updates: Makes System Menu updates fail (error 32007), to stay on this System Menu.\n- block_disc_updates: Skips the \"Wii System Update\" some game discs force before playing.\n- block_disc_autoboot: Stops discs whose ID starts with 0 or 1 (diagnostic discs) from booting automatically.\n- auto_press_a: Presses A automatically to get past the health and safety screen.\n- remove_deflicker: Disables the System Menu's blur filter; recommended with 480p.\n- move_disc_channel: Lets the Disc Channel be moved like any channel (hold A+B).\n- remove_nocopy_save_protection: Lets Data Management copy save files that are normally protected from copying to the SD card.\n- replace_health_screen: Skips the health warning screen and goes straight to the channels.\n- no_background_music: Disables the System Menu's background music.\n- wiimmfi: Patches disc games launched from the Disc Channel to use Wiimmfi (not WiiWare).\n- region_free_everything: Unblocks region-locked Wii and GameCube discs and channels (WiiWare, VC).\n- no_sfx_and_background_music: Disables the System Menu's sound effects and background music.\n- re_enable_bannerbomb: Re-enables the Bannerbomb exploit on 4.3.\n- usb_gecko_report: Sends the Wii Menu's logs to a USB Gecko in memory card slot B.\n- usb_gecko_report_geckoos: Sends the Wii Menu's logs to a USB Gecko in slot B when Gecko OS launched the menu.\n- force_data_management: Boots straight into Data Management.\n- force_recovery_mode: Starts the console in recovery mode, to launch recovery discs.\n- remove_diagnostic_disc_check: In recovery mode, lets any disc boot instead of waiting for the Wii Backup Disc.\n- no_delete_homebrew: Prevents the System Menu from deleting the Homebrew Channel, DVDX and others (HAXX, JODI, DVDX, DISC, DISK, RZDx).\n- force_disc_ios248: Runs disc games under IOS248, for a cIOS installed there.\n- force_disc_ios249: Runs disc games under IOS249 (see force_disc_ios248).\n- force_disc_ios250: Runs disc games under IOS250 (see force_disc_ios248).\n- force_disc_ios251: Runs disc games under IOS251 (see force_disc_ios248).\n- unblock_service_discs: Unblocks service discs: the Wii Startup Disc and the Wii Backup Discs.\n- remove_ios16_disc_error: Stops the System Menu from blocking discs that use IOS16 (the Wii Backup Disc).\n- mark_network_tested: Marks the network connection as tested, so \"Use this connection\" works without running the test.",
           "type": "array",
           "default": [],
           "items": {

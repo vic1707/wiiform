@@ -68,9 +68,10 @@ pub struct Priiloader {
     /// Show Priiloader update notices.
     #[cfg_attr(feature = "cli", arg(long))]
     pub show_rc_updates: bool,
-    /// Hacks to enable. Every other hack is disabled.
+    /// Hacks to enable. Every other hack is disabled. The two music hacks, the
+    /// two USB Gecko hacks, and the four force_disc_ios hacks exclude each other.
     #[cfg_attr(feature = "cli", arg(long = "hack", value_enum, value_name = "HACK"))]
-    #[schemars(extend("uniqueItems" = true))]
+    #[schemars(extend("uniqueItems" = true), transform = crate::schema::list_values::<Hack>)]
     pub hacks: Vec<Hack>,
 }
 
