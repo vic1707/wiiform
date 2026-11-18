@@ -442,6 +442,117 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
     Ok(())
 }
 
+/// The keys `yaml`, as the `nand` part of a recipe, leaves to Wiiform.
+fn defaulted(yaml: &str) -> Result<Vec<String>> {
+    let recipe = read_recipe(&nested(yaml))?;
+    Ok((recipe.defaulted.iter())
+        .map(|defaulted| format!("{}={}", defaulted.key, defaulted.value))
+        .collect())
+}
+
+#[test]
+fn the_build_is_told_each_value_the_recipe_leaves_out() -> Result<()> {
+    let all = [
+        "nand.priiloader.autoboot=system_menu",
+        "nand.priiloader.dump_gecko_text=false",
+        "nand.priiloader.ignore_shutdown_mode=false",
+        "nand.priiloader.lid_slot_on_error=false",
+        "nand.priiloader.preferred_mount_point=auto",
+        "nand.priiloader.return_to=system_menu",
+        "nand.priiloader.show_rc_updates=false",
+        "nand.priiloader.shutdown_to=none",
+        "nand.priiloader.stop_disc=false",
+        "nand.priiloader.white_background=false",
+        "nand.setup.display.aspect=4:3",
+        "nand.setup.display.pal60=false",
+        "nand.setup.display.progressive=false",
+        "nand.setup.nickname=Wii",
+        "nand.setup.sensor_bar=above",
+    ];
+    let bare = "menu: 4.3E\nsetup: {language: en, country: GB}\npriiloader: {}";
+    assert_eq!(defaulted(bare)?, all);
+
+    // Sections left out, empty lists and safety switches are not defaults.
+    assert!(defaulted("menu: 4.3E")?.is_empty());
+    let channel = format!("menu: 4.3E\ntitles: {{channels: [{{{}}}]}}", inline());
+    assert!(defaulted(&channel)?.is_empty());
+
+    let partial = "menu: 4.3E\nsetup: {language: en, country: GB, nickname: Speed, display: {aspect: '16:9'}}";
+    assert_eq!(
+        defaulted(partial)?,
+        [
+            "nand.setup.display.pal60=false",
+            "nand.setup.display.progressive=false",
+            "nand.setup.sensor_bar=above",
+        ]
+    );
+    let given = "menu: 4.3E
+setup: {language: en, country: GB, nickname: Wii, sensor_bar: above,
+  display: {aspect: '4:3', progressive: false, pal60: false}}
+priiloader: {autoboot: system_menu, return_to: system_menu, shutdown_to: none,
+  preferred_mount_point: auto, stop_disc: false, lid_slot_on_error: false,
+  ignore_shutdown_mode: false, white_background: false, dump_gecko_text: false,
+  show_rc_updates: false}";
+    assert!(defaulted(given)?.is_empty(), "stated, even as the default");
+
+    // Every key of these mappings that may be left out is reported.
+    let schema: serde_json::Value = serde_json::from_str(&crate::json_schema()?)?;
+    for (name, path) in [
+        ("Setup", "nand.setup"),
+        ("Display", "nand.setup.display"),
+        ("Priiloader", "nand.priiloader"),
+    ] {
+        let definition = &schema["$defs"][name];
+        let properties = definition["properties"]
+            .as_object()
+            .context("expected keys")?;
+        let required = definition["required"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for key in properties.keys() {
+            let reported = all.iter().any(|entry| {
+                entry.starts_with(&format!("{path}.{key}="))
+                    || entry.starts_with(&format!("{path}.{key}."))
+            });
+            let optional = !required.contains(&key.as_str().into());
+            assert!(
+                reported || !optional || key == "hacks",
+                "{path}.{key} may be left out but is not reported"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn rvloader_sets_priiloader_autoboot_and_return_to_rather_than_defaults() -> Result<()> {
+    const DOL: [u8; 3] = [1, 2, 3];
+    const WD: [u8; 2] = [4, 5];
+    let yaml = format!(
+        "menu: 4.3E\npriiloader: {{}}\nrvloader: {{version: '2.1', sha256: {}, wd_sha256: {}, patch_out_wifi: false, vga: false}}",
+        sha(&DOL),
+        sha(&WD)
+    );
+    let defaulted = with_fetch(
+        |url, _| {
+            Ok(if url.ends_with("/wd.bin") {
+                WD.to_vec()
+            } else {
+                DOL.to_vec()
+            })
+        },
+        || defaulted(&yaml),
+    )?;
+    assert!(!defaulted.is_empty());
+    assert!(
+        (defaulted.iter())
+            .all(|entry| !entry.contains(".autoboot=") && !entry.contains(".return_to=")),
+        "{defaulted:?}"
+    );
+    Ok(())
+}
+
 #[test]
 fn the_documented_example_is_a_valid_recipe() -> Result<()> {
     // The example names a WAD that does not exist; give it one.

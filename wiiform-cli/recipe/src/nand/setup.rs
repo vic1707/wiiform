@@ -23,13 +23,24 @@ pub enum Language {
     Nl,
 }
 
+/// Serde defaults for the keys a recipe leaves out, noted for the build log.
+mod defaults {
+    use super::{Nickname, SensorBar};
+    use crate::defaults::recorded;
+
+    recorded! {
+        nickname: Nickname = "nand.setup.nickname";
+        sensor_bar: SensorBar = "nand.setup.sensor_bar";
+    }
+}
+
 /// First-run setup values written to SYSCONF. The console's locale is
 /// required; the other values default to what a factory-fresh Wii holds.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Setup {
     /// Console nickname. Defaults to the Wii's factory name.
-    #[serde(default)]
+    #[serde(default = "defaults::nickname")]
     pub nickname: Nickname,
     /// Setup language: en, de, fr, es, it or nl on 4.3E; en, fr or es on 4.3U;
     /// ja on 4.3J.
@@ -38,10 +49,10 @@ pub struct Setup {
     /// as GB, FR, US, or JP. Quote "NO" in YAML.
     pub country: CountryCode,
     /// Physical sensor bar position. Defaults to above the display.
-    #[serde(default)]
+    #[serde(default = "defaults::sensor_bar")]
     pub sensor_bar: SensorBar,
     /// Display settings. Omit this mapping to use the display defaults.
-    #[serde(default)]
+    #[serde(default = "display::defaults::display")]
     pub display: Display,
 }
 

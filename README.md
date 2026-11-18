@@ -108,7 +108,10 @@ root and those of `usb/` to the drive's. A `setup` mapping completes
 first-run setup. It requires the console's `language` and `country`; the
 nickname, sensor bar and display options under `setup.display` default to a
 factory-fresh Wii's values. Omit `setup` or set it to `null` to run the Wii
-setup wizard.
+setup wizard. The build prints an `info:` line for each setup or Priiloader
+value the recipe leaves out, such as
+`info: nand.setup.nickname defaults to Wii`; sections left out, empty lists
+and safety switches left off are not reported.
 Pair Wii Remotes
 again after restoring a prepared image.
 

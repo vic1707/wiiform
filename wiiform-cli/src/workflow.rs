@@ -179,6 +179,9 @@ fn build_with(
         recipe.nand.menu = menu;
         recipe.validate()?;
     }
+    for defaulted in &recipe.defaulted {
+        eprintln!("info: {} defaults to {}", defaulted.key, defaulted.value);
+    }
     let (mut nand, identity, bootmii) = create_stock(&recipe)?;
 
     let removals: Vec<TitleId> = (recipe.nand.remove.iter())

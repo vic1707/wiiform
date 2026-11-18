@@ -10,6 +10,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 mod archive;
+mod defaults;
 pub mod device;
 mod files;
 mod github;
@@ -24,6 +25,7 @@ mod wad;
 pub mod yaml;
 
 pub use self::{
+    defaults::Defaulted,
     device::Device,
     files::{ResolvedPath, open_regular_file, read_bounded},
     nand::{
@@ -50,16 +52,31 @@ pub struct Recipe {
     pub sd: Option<Device>,
     /// Files for a USB drive, published in usb/.
     pub usb: Option<Device>,
+    /// The keys the recipe left out that Wiiform filled in, sorted by key.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub defaulted: Vec<Defaulted>,
 }
 
 impl Recipe {
     /// Reads a recipe whose local paths are relative to `directory`.
     pub fn read(input: impl Read, directory: &Path) -> Result<Self> {
-        let recipe: Self = crate::source::relative_to(directory.to_owned(), || {
-            serde_saphyr::from_reader_with_options(input, crate::yaml::options())
-        })
-        .context("invalid recipe")?;
+        let (recipe, defaulted) = crate::defaults::collect(|| {
+            crate::source::relative_to(directory.to_owned(), || {
+                serde_saphyr::from_reader_with_options(input, crate::yaml::options())
+            })
+        });
+        let mut recipe: Self = recipe.context("invalid recipe")?;
         recipe.validate()?;
+        // rvloader sets Priiloader's autoboot and return_to, which it requires left out.
+        recipe.defaulted = (defaulted.into_iter())
+            .filter(|defaulted| {
+                recipe.nand.rvloader.is_none()
+                    || !["nand.priiloader.autoboot", "nand.priiloader.return_to"]
+                        .contains(&defaulted.key)
+            })
+            .collect();
+        recipe.defaulted.sort_by_key(|defaulted| defaulted.key);
         Ok(recipe)
     }
 
