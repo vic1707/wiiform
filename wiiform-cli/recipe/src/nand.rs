@@ -66,14 +66,13 @@ impl Nand {
         }
         if let Some(setup) = &self.setup {
             ensure!(
-                menu.allows_language(setup.language_for(menu)),
+                menu.allows_language(setup.language),
                 "setup language is not supported by menu {menu}"
             );
-            let country = setup.country_for(menu);
             ensure!(
-                menu.allows_country(country),
+                menu.allows_country(setup.country),
                 "setup country {} is not supported by menu {menu}",
-                country.as_alpha2()
+                setup.country.as_alpha2()
             );
         }
         if let Some(rvloader) = &self.rvloader {

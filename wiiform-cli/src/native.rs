@@ -323,12 +323,12 @@ impl Nand {
         Ok(ffi::remove_title(&mut self.0[..], title_id.as_u64())?)
     }
 
-    pub fn apply_system_settings(&mut self, menu: Menu, setup: &Setup) -> Result<()> {
+    pub fn apply_system_settings(&mut self, setup: &Setup) -> Result<()> {
         let display = setup.display;
         let settings = ffi::SystemSettings {
             nickname: setup.nickname.as_ref(),
-            language: setup.language_for(menu).into(),
-            country: setup.country_for(menu).as_u8(),
+            language: setup.language.into(),
+            country: setup.country.as_u8(),
             sensor_bar_above: setup.sensor_bar == SensorBar::Above,
             widescreen: display.aspect == Aspect::SixteenNine,
             progressive: display.progressive,

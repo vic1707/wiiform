@@ -1240,19 +1240,12 @@
       ]
     },
     "Setup": {
-      "description": "First-run setup values written to SYSCONF.",
+      "description": "First-run setup values written to SYSCONF. The console's locale is\nrequired; the other values default to what a factory-fresh Wii holds.",
       "type": "object",
       "properties": {
         "country": {
-          "description": "Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote \"NO\" in YAML.\nDefaults to GB, US, or JP for the menu's region.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CountryCode"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Wii-supported ISO alpha-2 code of a country in the menu's region, such\nas GB, FR, US, or JP. Quote \"NO\" in YAML.",
+          "$ref": "#/$defs/CountryCode"
         },
         "display": {
           "description": "Display settings. Omit this mapping to use the display defaults.",
@@ -1264,15 +1257,8 @@
           }
         },
         "language": {
-          "description": "Setup language, constrained by the effective menu region.\nDefaults to en for 4.3E and 4.3U, and ja for 4.3J.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Language"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Setup language: en, de, fr, es, it or nl on 4.3E; en, fr or es on 4.3U;\nja on 4.3J.",
+          "$ref": "#/$defs/Language"
         },
         "nickname": {
           "description": "Console nickname. Defaults to the Wii's factory name.",
@@ -1285,7 +1271,11 @@
           "default": "above"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "country"
+      ]
     },
     "Sha256": {
       "description": "SHA-256 of the exact binary payload, encoded as 64 hex digits.",

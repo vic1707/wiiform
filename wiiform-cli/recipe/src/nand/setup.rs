@@ -9,7 +9,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use self::{country::CountryCode, display::Display, nickname::Nickname};
-use crate::Menu;
 
 /// Wii first-run language.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -24,41 +23,26 @@ pub enum Language {
     Nl,
 }
 
-/// First-run setup values written to SYSCONF.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(default, deny_unknown_fields)]
+/// First-run setup values written to SYSCONF. The console's locale is
+/// required; the other values default to what a factory-fresh Wii holds.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Setup {
     /// Console nickname. Defaults to the Wii's factory name.
+    #[serde(default)]
     pub nickname: Nickname,
-    /// Setup language, constrained by the effective menu region.
-    /// Defaults to en for 4.3E and 4.3U, and ja for 4.3J.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<Language>,
-    /// Wii-supported ISO alpha-2 code, such as GB, US, or JP. Quote "NO" in YAML.
-    /// Defaults to GB, US, or JP for the menu's region.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub country: Option<CountryCode>,
+    /// Setup language: en, de, fr, es, it or nl on 4.3E; en, fr or es on 4.3U;
+    /// ja on 4.3J.
+    pub language: Language,
+    /// Wii-supported ISO alpha-2 code of a country in the menu's region, such
+    /// as GB, FR, US, or JP. Quote "NO" in YAML.
+    pub country: CountryCode,
     /// Physical sensor bar position. Defaults to above the display.
+    #[serde(default)]
     pub sensor_bar: SensorBar,
     /// Display settings. Omit this mapping to use the display defaults.
+    #[serde(default)]
     pub display: Display,
-}
-
-impl Setup {
-    pub fn language_for(&self, menu: Menu) -> Language {
-        self.language.unwrap_or(match menu {
-            Menu::E43 | Menu::U43 => Language::En,
-            Menu::J43 => Language::Ja,
-        })
-    }
-
-    pub fn country_for(&self, menu: Menu) -> CountryCode {
-        self.country.unwrap_or(match menu {
-            Menu::E43 => CountryCode::UnitedKingdom,
-            Menu::U43 => CountryCode::UnitedStates,
-            Menu::J43 => CountryCode::Japan,
-        })
-    }
 }
 
 /// Sensor bar position relative to the display.

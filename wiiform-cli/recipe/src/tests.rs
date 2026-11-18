@@ -8,7 +8,7 @@ use crate::{
     nand::{
         menu::Menu,
         priiloader::{Autoboot, Hack, ReturnTo},
-        setup::display::Aspect,
+        setup::{Display, Language, SensorBar, display::Aspect},
         titles::cios::{Kind as CiosKind, d2x::Module},
     },
     wad::tests::with_fetch,
@@ -269,9 +269,9 @@ fn removals_and_setup_follow_the_menu_after_an_override() -> Result<()> {
     recipe.menu = Menu::U43;
     assert!(recipe.validate().is_err());
     for yaml in [
-        "menu: 4.3E\nsetup: {country: '110'}",
-        "menu: 4.3E\nsetup: {language: ja}",
-        "menu: 4.3J\nsetup: {country: GB}",
+        "menu: 4.3E\nsetup: {language: en, country: '110'}",
+        "menu: 4.3E\nsetup: {language: ja, country: GB}",
+        "menu: 4.3J\nsetup: {language: ja, country: GB}",
         "menu: 4.3E\nremove: [disc-channel]",
         "menu: 4.3E\nremove: ['0001000248414650']",
     ] {
@@ -285,10 +285,23 @@ fn display_is_part_of_first_run_setup() -> Result<()> {
     for yaml in ["menu: 4.3E", "menu: 4.3E\nsetup: null"] {
         assert!(read(yaml)?.setup.is_none());
     }
-    assert_eq!(read("menu: 4.3E\nsetup: {}")?.setup, Some(Setup::default()));
+    // The locale has no default: wiiform would have to guess it from the menu.
+    for yaml in ["{}", "{language: fr}", "{country: FR}"] {
+        let result = read(&format!("menu: 4.3E\nsetup: {yaml}"));
+        assert!(message(result).contains("missing field"), "{yaml}");
+    }
+    let setup = read("menu: 4.3E\nsetup: {language: fr, country: FR}")?.setup;
+    let setup = setup.context("expected setup settings")?;
+    assert_eq!(
+        (setup.language, setup.country.as_alpha2()),
+        (Language::Fr, "FR")
+    );
+    assert_eq!(setup.nickname.as_ref(), "Wii");
+    assert_eq!(setup.sensor_bar, SensorBar::Above);
+    assert_eq!(setup.display, Display::default());
 
     let recipe = read(
-        "menu: 4.3E\nsetup: {nickname: 'Éééééééééé', display: {aspect: '16:9', progressive: true}}",
+        "menu: 4.3E\nsetup: {language: en, country: GB, nickname: 'Éééééééééé', display: {aspect: '16:9', progressive: true}}",
     )?;
     let setup = recipe.setup.context("expected setup settings")?;
     assert_eq!(setup.nickname.as_ref(), "Éééééééééé");
@@ -397,11 +410,11 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
     for (setup, error) in [
         ("", "requires setup.display.progressive"),
         (
-            "setup: {display: {pal60: true}}",
+            "setup: {language: en, country: GB, display: {pal60: true}}",
             "requires setup.display.progressive",
         ),
         (
-            "setup: {display: {progressive: true}}",
+            "setup: {language: en, country: GB, display: {progressive: true}}",
             "requires setup.display.pal60",
         ),
     ] {
@@ -409,7 +422,7 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
         assert!(message(result).contains(error), "{setup}");
     }
     read(format!(
-        "{vga}\npriiloader: {{}}\nsetup: {{display: {{progressive: true, pal60: true}}}}"
+        "{vga}\npriiloader: {{}}\nsetup: {{language: en, country: GB, display: {{progressive: true, pal60: true}}}}"
     ))?;
 
     let wrong = rvloader("2.1", &sha(&WAD), options);

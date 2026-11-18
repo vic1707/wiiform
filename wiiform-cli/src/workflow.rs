@@ -190,7 +190,7 @@ fn build_with(
     }
 
     if let Some(setup) = &recipe.nand.setup {
-        nand.apply_system_settings(recipe.nand.menu, setup)
+        nand.apply_system_settings(setup)
             .context("cannot generate system settings")?;
     }
 

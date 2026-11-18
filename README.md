@@ -105,9 +105,10 @@ The output must be a new directory. A successful build publishes it whole:
 restores from) together with the recipe's `sd` files, and `usb/` holds the
 recipe's `usb` files when it has any. Copy the contents of `sd/` to the card's
 root and those of `usb/` to the drive's. A `setup` mapping completes
-first-run setup using your values and defaults for omitted fields. Put display
-options such as the aspect ratio under `setup.display`. Use `setup: {}` to
-apply all defaults. Omit `setup` or set it to `null` to run the Wii setup wizard.
+first-run setup. It requires the console's `language` and `country`; the
+nickname, sensor bar and display options under `setup.display` default to a
+factory-fresh Wii's values. Omit `setup` or set it to `null` to run the Wii
+setup wizard.
 Pair Wii Remotes
 again after restoring a prepared image.
 
@@ -200,7 +201,7 @@ sd:
 ### RVLoader
 
 ```yaml
-setup: {display: {progressive: true, pal60: true}} # Needed only for vga.
+setup: {language: en, country: GB, display: {progressive: true, pal60: true}} # display is needed only for vga.
 priiloader: {}
 rvloader:
   version: "2.1"

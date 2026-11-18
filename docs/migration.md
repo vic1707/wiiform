@@ -114,8 +114,10 @@ have a top-level `bootmii` section (`boot2`, and `ios` with BootMii as IOS or
 without `nand.bootmii`; their `info.bootmii_boot2` note is read and ignored.
 Remove `--reference` from scripts. A `setup` mapping, including any
 `setup.display` options, generates SYSCONF and completes first-run setup.
-Omit `setup` or set it to null to keep the wizard enabled. Use a two-letter country code
-such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
+Omit `setup` or set it to null to keep the wizard enabled. A `setup` mapping
+now requires `language` and `country`; wiiform no longer guesses them from the
+menu, so add them to `setup: {}` and to any mapping without them. Use a
+two-letter country code such as GB, US, or JP to set a country. Quote "NO" for Norway because some YAML
 parsers interpret it as a boolean. Replace quoted Wii codes such as "110"
 with the corresponding ISO code. Pair Wii Remotes after restore.
 
