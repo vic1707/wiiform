@@ -36,14 +36,14 @@
   ],
   "$defs": {
     "App": {
-      "description": "A Homebrew Channel app. From an archive, its folder holding boot.dol or\nboot.elf becomes apps/<name>/, unless `extract` says what goes where.",
+      "description": "A Homebrew Channel app. From an archive, its folder holding boot.dol or\nboot.elf becomes apps/<name>/, unless `folder` names another.",
       "type": "object",
       "properties": {
-        "extract": {
-          "description": "Which archive files go where, relative to the app folder (/ is the folder\nitself). Without it, the archive must hold exactly one app folder.",
+        "folder": {
+          "description": "The archive folder that becomes the app's folder, for an archive holding\nseveral apps or more than one. Without it, the archive must hold exactly\none folder with boot.dol or boot.elf, and nothing outside it.",
           "anyOf": [
             {
-              "$ref": "#/$defs/Extract"
+              "$ref": "#/$defs/Folder"
             },
             {
               "type": "null"
@@ -563,6 +563,10 @@
       "additionalProperties": {
         "$ref": "#/$defs/CardPath"
       }
+    },
+    "Folder": {
+      "description": "A glob over the archive's folders (`*`, `**`, `?`, `[…]`, `{a,b}`; `*`\nstops at `/`) that must match exactly one, such as `\"*/wii/gcmm-dark\"`.\nThat folder's files become apps/<name>/; the rest of the archive is left out.",
+      "type": "string"
     },
     "GithubAsset": {
       "description": "An asset of a tagged GitHub release.",

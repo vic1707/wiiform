@@ -755,7 +755,7 @@ fn apps_find_their_folder_in_the_archive() -> Result<()> {
 }
 
 #[test]
-fn apps_take_loose_files_or_an_extract_mapping() -> Result<()> {
+fn apps_take_loose_files_or_a_chosen_folder() -> Result<()> {
     let loose = card(&format!(
         "{{apps: {{Nintendont: {{files: {{boot.dol: {{{}}}, meta.xml: {{{}}}}}}}}}}}",
         inline_file(b"dol"),
@@ -777,28 +777,60 @@ fn apps_take_loose_files_or_an_extract_mapping() -> Result<()> {
     );
     assert!(message(card(&hashed)).contains("per file"));
 
-    // Two app folders: extract picks one and leaves the rest out.
+    // Several app folders, as in GCMM's release: folder picks one, and the
+    // rest of the archive is left out.
     let release = zip_of(
         &[
-            ("pkg/apps/Main/boot.dol", b"main"),
-            ("pkg/apps/Main/lang/fr.lang", b"fr"),
-            ("pkg/apps/Old/boot.dol", b"old"),
+            ("gcmm_1.5.2/gc/gcmm.dol", b"gc"),
+            ("gcmm_1.5.2/wii/gcmm/boot.dol", b"light"),
+            ("gcmm_1.5.2/wii/gcmm-dark/boot.dol", b"dark"),
+            ("gcmm_1.5.2/wii/gcmm-dark/lang/fr.lang", b"fr"),
+            ("gcmm_1.5.2/readme.txt", b"read me"),
         ],
         &[],
     );
-    let extract = |pairs: &str| {
+    let folder = |glob: &str| {
         card(&format!(
-            "{{apps: {{Main: {{{}, extract: {{{pairs}}}}}}}}}",
+            "{{apps: {{gcmm: {{{}, folder: '{glob}'}}}}}}",
             inline_file(&release)
         ))
     };
-    assert_eq!(
-        paths(&extract("'pkg/apps/Main/**': /")?),
-        ["/apps/Main/boot.dol", "/apps/Main/lang/fr.lang"]
+    let dark = ["/apps/gcmm/boot.dol", "/apps/gcmm/lang/fr.lang"];
+    assert_eq!(paths(&folder("*/wii/gcmm-dark")?), dark);
+    assert_eq!(paths(&folder("*/wii/gcmm-dark/")?), dark, "a trailing /");
+    assert_eq!(paths(&folder("**/gcmm-dark")?), dark);
+    assert!(
+        message(card(&format!(
+            "{{apps: {{gcmm: {{{}}}}}}}",
+            inline_file(&release)
+        )))
+        .contains("choose one with folder")
+    );
+    for (glob, error) in [
+        (
+            "*/wii/*",
+            "matches several folders (gcmm_1.5.2/wii/gcmm, gcmm_1.5.2/wii/gcmm-dark)",
+        ),
+        ("wii/gcmm-dark", "matches no folder"),
+        ("*/gc", "gets no boot.dol"),
+        ("*/wii/gcmm-dark/lang", "gets no boot.dol"),
+        ("/gcmm_1.5.2/wii/gcmm", "without a leading /"),
+        ("[", ""),
+    ] {
+        assert!(message(folder(glob)).contains(error), "{glob}");
+    }
+    let loose_with_folder = format!(
+        "{{apps: {{x: {{files: {{boot.dol: {{{}}}}}, folder: x}}}}}}",
+        inline_file(b"dol")
+    );
+    assert!(message(card(&loose_with_folder)).contains("takes no sha256 or folder"));
+    let extract = format!(
+        "{{apps: {{x: {{{}, extract: {{'**': /}}}}}}}}",
+        inline_file(&release)
     );
     assert!(
-        message(extract("'pkg/apps/Main/lang/*': /lang/")).contains("gets no boot.dol"),
-        "the result needs a boot file"
+        message(card(&extract)).contains("unknown field `extract`"),
+        "apps no longer take extract"
     );
     Ok(())
 }

@@ -96,7 +96,10 @@ Move every NAND key under a top-level `nand:` key: `menu`, `remove`, `setup`,
 `titles`, `hbc`, `priiloader` and `rvloader` (keys from the old
 `system:` block go directly under `nand:`). Files for the SD card go under a
 top-level `sd` key and files for a USB drive under `usb`, each with `apps`
-(keyed by app folder) and `bundles` (the former list entries). `--output` now
+(keyed by app folder) and `bundles` (the former list entries). Apps no longer
+take `extract`: name the archive folder that becomes the app with
+`folder: "*/path/to/app"` instead, or list the archive under `bundles`.
+`--output` now
 holds `sd/` (the card's root: `nand.bin`, `keys.bin` and the `sd` files) and
 `usb/`. `titles` is now a mapping by kind: the former list goes under
 `titles.channels`, the former top-level `cios` under `titles.cios`, and IOS

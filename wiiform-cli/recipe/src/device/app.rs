@@ -6,7 +6,10 @@ use anyhow::{Context, Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::{Deserialize, de::IgnoredAny};
 
-use super::{CardPath, extract::Extract, read};
+mod folder;
+
+use self::folder::Folder;
+use super::{CardPath, read};
 use crate::archive;
 use crate::{github, source::Source, wad::Sha256};
 
@@ -46,7 +49,7 @@ struct LooseFile {
 }
 
 /// A Homebrew Channel app. From an archive, its folder holding boot.dol or
-/// boot.elf becomes apps/<name>/, unless `extract` says what goes where.
+/// boot.elf becomes apps/<name>/, unless `folder` names another.
 #[derive(Deserialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(super) struct App {
@@ -55,9 +58,10 @@ pub(super) struct App {
     /// SHA-256 of the exact archive. Optional for a GitHub release asset whose
     /// release states one; required otherwise.
     sha256: Option<Sha256>,
-    /// Which archive files go where, relative to the app folder (/ is the folder
-    /// itself). Without it, the archive must hold exactly one app folder.
-    extract: Option<Extract>,
+    /// The archive folder that becomes the app's folder, for an archive holding
+    /// several apps or more than one. Without it, the archive must hold exactly
+    /// one folder with boot.dol or boot.elf, and nothing outside it.
+    folder: Option<Folder>,
     #[serde(flatten)]
     #[schemars(skip)]
     unknown: BTreeMap<String, IgnoredAny>,
@@ -77,8 +81,8 @@ impl App {
         let source = match self.content {
             Content::Files(files) => {
                 ensure!(
-                    self.sha256.is_none() && self.extract.is_none(),
-                    "`files` takes no sha256 or extract: give them per file"
+                    self.sha256.is_none() && self.folder.is_none(),
+                    "`files` takes no sha256 or folder: give sha256 per file"
                 );
                 return with_boot_file(&folder, loose(&folder, files)?);
             }
@@ -88,8 +92,8 @@ impl App {
             Content::Github(asset) => Source::Github(asset),
         };
         let files = archive::files(&read(source, self.sha256)?)?;
-        let placed = match self.extract {
-            Some(extract) => extract.place(files, &folder)?,
+        let placed = match self.folder {
+            Some(chosen) => chosen.place(files, &folder)?,
             None => app_folder(files, &folder)?,
         };
         with_boot_file(&folder, placed)
@@ -134,14 +138,14 @@ fn app_folder(
         [root] => root.clone(),
         [] => bail!("the archive holds no boot.dol or boot.elf"),
         _ => bail!(
-            "the archive holds several app folders ({}): choose with extract",
+            "the archive holds several app folders ({}): choose one with folder",
             roots.join(", ")
         ),
     };
     (files.into_iter())
         .map(|(name, bytes)| match name.strip_prefix(&root) {
             Some(relative) => Ok((folder.join(relative)?, bytes)),
-            None => bail!("{name} is outside the app folder {root}: map it with extract, or list the archive under bundles"),
+            None => bail!("{name} is outside the app folder {root}: choose the folder with folder, or list the archive under bundles"),
         })
         .collect()
 }

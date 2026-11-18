@@ -277,8 +277,8 @@ usb:
     - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
       sha256: "…"
       extract:
-        "RVLoader_v2.1/apps/RVLoader/**": /apps/RVLoader/
-        "RVLoader_v2.1/rvloader/**": /rvloader/
+        "*/apps/RVLoader/**": /apps/RVLoader/
+        "*/rvloader/**": /rvloader/
 ```
 
 `sd` and `usb` take the same two keys. Every file names one source and its
@@ -291,9 +291,11 @@ uploaded since June 2025); a given `sha256` always wins.
   - **From an archive:** the archive's one folder holding `boot.dol` or
     `boot.elf` becomes `apps/<key>/`, wherever it sits in the archive
     (`apps/<name>/`, `<name>/`, or the root). An archive with several such
-    folders, or with files outside it, needs `extract`.
-  - **With `extract`:** glob → directory pairs choose the files, with
-    directories relative to the app folder.
+    folders, or with files outside it, needs `folder`.
+  - **With `folder`:** a glob naming the one archive folder that becomes
+    `apps/<key>/`, such as `folder: "*/wii/gcmm-dark"` for one of GCMM's
+    builds. It must match exactly one folder; the rest of the archive is left
+    out.
   - **From loose files:** `files` maps each file name to its own source and
     SHA-256.
   - **Either way,** the app must end up with a `boot.dol` or `boot.elf`.
@@ -303,8 +305,11 @@ uploaded since June 2025); a given `sha256` always wins.
 - **`extract`:** each key is a glob over the archive's paths (`*`, `**`, `?`,
   `[…]`, `{a,b}`), each value a directory. A matching file loses the folders
   the glob names before its `**` (all of them when it has none) and keeps the
-  rest: with `"*/data/**": /data/`, `pkg-1.0/data/x/y` lands at `/data/x/y`,
-  so a versioned top folder needs no version in the glob. Files no glob matches are left out, as
+  rest: with `"*/data/**": /data/`, `pkg-1.0/data/x/y` lands at `/data/x/y`.
+  Globs match the archive's paths as stored, top folder included: start them
+  with `*/` rather than that folder's name, which usually carries the version,
+  so a release bump keeps them matching. A glob without `**` matches single
+  files only, never a folder. Files no glob matches are left out, as
   RVLoader's bundled BBLoader and old Nintendont are above. A glob matching no
   file, or a file matching two globs, stops the build.
 - **Archives:** archives are zips. macOS `__MACOSX/` and `._*` entries are

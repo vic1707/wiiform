@@ -131,6 +131,10 @@ sd:
       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     # usbloader_gx:
     #   github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
+    # gcmm: # An archive with several app folders: folder picks the one to use.
+    #   github: {repo: suloku/gcmm, tag: "1.5.2", asset: gcmm_1.5.2.zip}
+    #   sha256: "840dbfea6d4fbd5f266dcda92e69088d78fb95987685a2d65285d07b66986f5f"
+    #   folder: "*/wii/gcmm-dark" # */ is the release's versioned top folder.
     # Nintendont: # Loose files instead of an archive.
     #   files:
     #     boot.dol: {url: "https://example.com/loader.dol", sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
@@ -147,5 +151,5 @@ sd:
 #     - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
 #       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 #       extract: # The RVLoader app and its data, without the bundled BBLoader and Nintendont.
-#         "RVLoader_v2.1/apps/RVLoader/**": /apps/RVLoader/
-#         "RVLoader_v2.1/rvloader/**": /rvloader/
+#         "*/apps/RVLoader/**": /apps/RVLoader/ # */ is the release's versioned top folder.
+#         "*/rvloader/**": /rvloader/
