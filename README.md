@@ -31,6 +31,15 @@ build/bin/wii-nand --help
 build/bin/wii-seed --help
 ```
 
+Or let mise build first and run a command directly (arguments after `--` go to
+the command):
+
+```sh
+mise run wiiform -- --help
+mise run wii-nand -- inspect-sysconf NAND
+mise run wii-seed -- BACKUP
+```
+
 ### Host dependencies
 
 | Provided by | Requirements |

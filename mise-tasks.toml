@@ -16,6 +16,21 @@ run = [
   "cp build/cargo/release/wiiform build/cargo/release/wii-seed build/cargo/release/wii-nand build/bin/",
 ]
 
+[wiiform]
+description = "Build and run wiiform"
+depends = ["build"]
+run = "build/bin/wiiform"
+
+[wii-seed]
+description = "Build and run wii-seed"
+depends = ["build"]
+run = "build/bin/wii-seed"
+
+[wii-nand]
+description = "Build and run wii-nand"
+depends = ["build"]
+run = "build/bin/wii-nand"
+
 ["test:native"]
 description = "Build and run the C++ tests"
 depends = ["configure"]

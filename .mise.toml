@@ -3,7 +3,8 @@ cmake = "3.31.8"
 rust = "1.99.0"
 
 [tools."github:xmake-io/xmake"]
-version = "3.1.2"
+# 3.1.2's macOS ARM bundle fails at startup with a missing core script.
+version = "3.1.1"
 bin = "xmake"
 
 [tools."github:xmake-io/xmake".platforms]
