@@ -208,7 +208,20 @@ impl Nand {
             BootPolicy::Stock => ffi::initialize_image,
             BootPolicy::PreserveSource => ffi::initialize_image_with_source_boot,
         };
-        let identity = initialize(&mut self.0[..], &seed.as_native(), menu.into())?;
+        let identity = match initialize(&mut self.0[..], &seed.as_native(), menu.into()) {
+            Ok(identity) => identity,
+            // The stock policy refuses BootMii as boot2, which is what the seed records.
+            Err(error)
+                if matches!(policy, BootPolicy::Stock)
+                    && seed.bootmii().boot2 == crate::seed::Boot2::Detected =>
+            {
+                return Err(anyhow::Error::from(error).context(
+                    "the console runs BootMii as boot2, which the stock boot policy refuses: \
+                     pass --boot-policy preserve-source to keep it",
+                ));
+            }
+            Err(error) => return Err(error.into()),
+        };
         Ok(StockIdentity(identity))
     }
 
