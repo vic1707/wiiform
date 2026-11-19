@@ -743,7 +743,7 @@
               "type": "object",
               "properties": {
                 "sha256": {
-                  "description": "SHA-256 of the retail OHBC WAD itself (hbc-reborn-<version>-OHBC.wad). Defaults to the GitHub release asset digest.",
+                  "description": "SHA-256 of the retail OHBC WAD itself (hbc-reborn-<version>-OHBC.wad).\nDefaults to the GitHub release asset digest.",
                   "anyOf": [
                     {
                       "$ref": "#/$defs/Sha256"
