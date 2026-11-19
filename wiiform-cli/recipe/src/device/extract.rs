@@ -57,14 +57,14 @@ impl TryFrom<BTreeMap<String, CardPath>> for Extract {
 
 impl Extract {
     /// Places the archive's files below `base`.
-    pub(super) fn place(
+    pub(super) fn place<T>(
         &self,
-        files: Vec<(String, Vec<u8>)>,
+        files: Vec<(String, T)>,
         base: &CardPath,
-    ) -> Result<Vec<(CardPath, Vec<u8>)>> {
+    ) -> Result<Vec<(CardPath, T)>> {
         let mut used = vec![false; self.0.len()];
         let mut placed = Vec::new();
-        for (name, bytes) in files {
+        for (name, payload) in files {
             let matching: Vec<usize> = (0..self.0.len())
                 .filter(|&index| self.0[index].matcher.is_match(&name))
                 .collect();
@@ -81,7 +81,7 @@ impl Extract {
             let pair = &self.0[index];
             // `*` stops at `/`, so a path matching the glob has at least `strip` folders.
             let relative = name.splitn(pair.strip + 1, '/').last().unwrap_or(&name);
-            placed.push((base.join_path(&pair.directory)?.join(relative)?, bytes));
+            placed.push((base.join_path(&pair.directory)?.join(relative)?, payload));
         }
         if let Some(index) = used.iter().position(|used| !used) {
             bail!("{} matches no file in the archive", self.0[index].glob);

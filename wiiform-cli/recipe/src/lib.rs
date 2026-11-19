@@ -10,6 +10,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 mod archive;
+mod blob;
 mod defaults;
 pub mod device;
 mod files;
@@ -25,6 +26,7 @@ mod wad;
 pub mod yaml;
 
 pub use self::{
+    blob::Blob,
     defaults::Defaulted,
     device::Device,
     files::{ResolvedPath, open_regular_file, read_bounded},
@@ -60,9 +62,11 @@ pub struct Recipe {
 
 impl Recipe {
     /// Reads a recipe whose local paths are relative to `directory`.
-    pub fn read(input: impl Read, directory: &Path) -> Result<Self> {
+    /// Reads the recipe. Relative paths start at `directory`, and downloaded
+    /// files are kept in `store`, which is created if needed.
+    pub fn read(input: impl Read, directory: &Path, store: &Path) -> Result<Self> {
         let (recipe, defaulted) = crate::defaults::collect(|| {
-            crate::source::relative_to(directory.to_owned(), || {
+            crate::source::relative_to(directory.to_owned(), store.to_owned(), || {
                 serde_saphyr::from_reader_with_options(input, crate::yaml::options())
             })
         });

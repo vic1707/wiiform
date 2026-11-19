@@ -6,9 +6,9 @@ use anyhow::{Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::{Deserialize, de::IgnoredAny};
 
-use super::{CardPath, extract::Extract, read};
+use super::{CardPath, extract::Extract};
 use crate::archive;
-use crate::{source::Source, wad::Sha256};
+use crate::{blob::Blob, source::Source, wad::Sha256};
 
 /// Where a bundle's file goes.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -40,21 +40,21 @@ pub(super) struct Bundle {
 }
 
 impl Bundle {
-    pub(super) fn files(self) -> Result<Vec<(CardPath, Vec<u8>)>> {
+    pub(super) fn files(self) -> Result<Vec<(CardPath, Blob)>> {
         if let Some(key) = self.unknown.keys().next() {
             bail!("unknown field `{key}`");
         }
-        let bytes = read(self.source, self.sha256)?;
+        let staged = self.source.stage(self.sha256)?;
         match self.placement {
-            Placement::To(path) => {
-                ensure!(!path.is_root(), "`to` needs a file path, not the root");
-                Ok(vec![(path, bytes)])
+            Placement::To(target) => {
+                ensure!(!target.is_root(), "`to` needs a file path, not the root");
+                Ok(vec![(target, Blob::file(staged)?)])
             }
-            Placement::Unzip(directory) => (archive::files(&bytes)?.into_iter())
-                .map(|(name, bytes)| Ok((directory.join(&name)?, bytes)))
+            Placement::Unzip(directory) => (archive::members(&staged)?.into_iter())
+                .map(|(name, blob)| Ok((directory.join(&name)?, blob)))
                 .collect(),
             Placement::Extract(extract) => {
-                extract.place(archive::files(&bytes)?, &CardPath::default())
+                extract.place(archive::members(&staged)?, &CardPath::default())
             }
         }
     }

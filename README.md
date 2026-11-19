@@ -72,10 +72,10 @@ channel removal, initial setup, display settings, and Priiloader settings and na
 codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
 
 URL sources work for channel and cIOS WADs alike. Downloads use system TLS
-trust, follow up to five HTTPS redirects, and have a 60-second total
-timeout and the same size limit as a local WAD. Use a local `path` or
-`inline` for a network-free build. `WIIFORM_NUS_OFFLINE` controls only
-Nintendo title downloads.
+trust, follow up to five HTTPS redirects, and wait at most 30 seconds to
+connect; a large download may take as long as it needs. WADs keep the size of a
+NAND as their limit. Use a local `path` or `inline` for a network-free build.
+`WIIFORM_NUS_OFFLINE` controls only Nintendo title downloads.
 
 WiiQt's own diagnostic messages are hidden; set `WIIFORM_QT_MESSAGES=1` to see
 them when investigating a failure.
@@ -107,7 +107,8 @@ are read or written. To reuse verified downloads, set `WIIFORM_NUS_CACHE` to a
 directory. Online builds create it automatically. For repeatable offline
 builds (including CI), set both
 `WIIFORM_NUS_CACHE` and `WIIFORM_NUS_OFFLINE=1`. An offline cache miss fails.
-The cache stores only files that pass Wii title signature and content checks.
+The title cache stores only files that pass Wii title signature and content
+checks; `files/` holds the verified device downloads, by SHA-256.
 
 The output must be a new directory. A successful build publishes it whole:
 `sd/` holds `nand.bin` and its matching BootMii `keys.bin` (where BootMii
@@ -149,7 +150,8 @@ hbc:
 Give `version` as a semantic version. Wiiform looks up the corresponding
 GitHub release and downloads its retail OHBC WAD. It verifies the GitHub
 asset’s SHA-256 by default. Add `sha256` under `reborn` to pin the exact WAD
-in your recipe.
+in your recipe: it is the hash of the `-OHBC.wad` file, not of the `boot.dol`
+inside the release.
 `WIIFORM_NUS_OFFLINE` governs Nintendo downloads only. [HBC Reborn releases](https://github.com/Monsterray/hbc-reborn/releases)
 
 ```yaml
@@ -329,7 +331,12 @@ uploaded since June 2025); a given `sha256` always wins.
   a root `nand.bin` or `keys.bin` on the card stop the build.
 
 All files are downloaded and checked when the recipe is read, before the NAND
-build. Open Shop Channel only serves the latest version of each app, so recipes
+build. Device files are streamed to disk rather than held in memory, so a
+multi-gigabyte release works. Each verified download is stored under its
+SHA-256: in `WIIFORM_NUS_CACHE/files` when that is set, so the next build reuses
+it, or in a temporary directory removed with the build otherwise. The one size
+limit is FAT32's: a file of 4 GiB or more stops the build, since the card and
+USB drive cannot hold it. Open Shop Channel only serves the latest version of each app, so recipes
 pin releases on GitHub (or a URL) instead. mega.nz links cannot be downloaded
 (their key is in the URL fragment and the file is decrypted in the browser):
 mirror the file and use `path`, `inline` or another URL.

@@ -1,4 +1,5 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/vic1707/wiiform/main/docs/wiiform.recipe.schema.json
+# yaml-language-server: $schema=./wiiform.recipe.schema.json
+# Perma url: https://raw.githubusercontent.com/vic1707/wiiform/main/docs/wiiform.recipe.schema.json
 # Template only: replace the sample WAD path and hash with real values.
 # The NAND image: every key below sits under nand.
 nand:
@@ -60,7 +61,7 @@ nand:
   # hbc:
   #   reborn:
   #     version: "1.16.0" # Semver of a release with a retail OHBC WAD.
-  #     # sha256 is optional. Wiiform uses the GitHub asset digest by default.
+  #     # sha256 is optional: the hash of the -OHBC.wad. Wiiform uses the GitHub asset digest by default.
   #
   # A custom HBC WAD requires its SHA-256.
   # hbc:

@@ -39,11 +39,11 @@ impl TryFrom<String> for Folder {
 
 impl Folder {
     /// Places the files of the one folder the glob matches in `app`.
-    pub(super) fn place(
+    pub(super) fn place<T>(
         &self,
-        files: Vec<(String, Vec<u8>)>,
+        files: Vec<(String, T)>,
         app: &CardPath,
-    ) -> Result<Vec<(CardPath, Vec<u8>)>> {
+    ) -> Result<Vec<(CardPath, T)>> {
         // Every folder of the archive: the parents of its files.
         let mut folders: Vec<&str> = (files.iter())
             .flat_map(|(name, _)| name.match_indices('/').map(|(end, _)| &name[..end]))
@@ -61,9 +61,9 @@ impl Folder {
             ),
         };
         (files.into_iter())
-            .filter_map(|(name, bytes)| {
+            .filter_map(|(name, payload)| {
                 let relative = name.strip_prefix(&root)?;
-                Some(app.join(relative).map(|path| (path, bytes)))
+                Some(app.join(relative).map(|path| (path, payload)))
             })
             .collect()
     }

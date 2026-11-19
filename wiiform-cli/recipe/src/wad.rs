@@ -19,9 +19,9 @@ pub use self::sha256::Sha256;
 use crate::source::Source;
 
 #[cfg(not(test))]
-pub(crate) use self::https::fetch;
+pub(crate) use self::https::{download, fetch};
 #[cfg(test)]
-pub(crate) use tests::fetch;
+pub(crate) use tests::{download, fetch};
 
 /// The bytes of a WAD whose SHA-256 matched the one its recipe or command line gave.
 #[derive(derive_more::Debug, Deref, Deserialize, JsonSchema)]
@@ -89,6 +89,12 @@ pub(crate) mod tests {
             Some(fetch) => fetch(url, limit),
             None => panic!("unexpected download of {url}"),
         })
+    }
+
+    /// Stands in for a streamed download: the mocked bytes, written at once.
+    pub(crate) fn download(url: &str, sink: &mut dyn std::io::Write) -> Result<()> {
+        sink.write_all(&fetch(url, usize::MAX)?)?;
+        Ok(())
     }
 
     pub(crate) fn with_fetch<T>(

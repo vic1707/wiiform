@@ -9,9 +9,9 @@ use serde::{Deserialize, de::IgnoredAny};
 mod folder;
 
 use self::folder::Folder;
-use super::{CardPath, read};
+use super::CardPath;
 use crate::archive;
-use crate::{github, source::Source, wad::Sha256};
+use crate::{blob::Blob, github, source::Source, wad::Sha256};
 
 /// What an app is made of: an archive (one source) or loose files.
 #[derive(Deserialize, JsonSchema)]
@@ -69,7 +69,7 @@ pub(super) struct App {
 
 impl App {
     /// The app's files on the device.
-    pub(super) fn files(self, name: &str) -> Result<Vec<(CardPath, Vec<u8>)>> {
+    pub(super) fn files(self, name: &str) -> Result<Vec<(CardPath, Blob)>> {
         if let Some(key) = self.unknown.keys().next() {
             bail!("unknown field `{key}`");
         }
@@ -91,7 +91,8 @@ impl App {
             Content::Inline(bytes) => Source::Inline(bytes),
             Content::Github(asset) => Source::Github(asset),
         };
-        let files = archive::files(&read(source, self.sha256)?)?;
+        let archive = source.stage(self.sha256)?;
+        let files = archive::members(&archive)?;
         let placed = match self.folder {
             Some(chosen) => chosen.place(files, &folder)?,
             None => app_folder(files, &folder)?,
@@ -100,17 +101,17 @@ impl App {
     }
 }
 
-fn loose(
-    folder: &CardPath,
-    files: BTreeMap<String, LooseFile>,
-) -> Result<Vec<(CardPath, Vec<u8>)>> {
+fn loose(folder: &CardPath, files: BTreeMap<String, LooseFile>) -> Result<Vec<(CardPath, Blob)>> {
     (files.into_iter())
         .map(|(name, file)| {
             if let Some(key) = file.unknown.keys().next() {
                 bail!("{name}: unknown field `{key}`");
             }
-            let bytes = read(file.source, file.sha256).with_context(|| name.clone())?;
-            Ok((folder.join(&name)?, bytes))
+            let path = file
+                .source
+                .stage(file.sha256)
+                .with_context(|| name.clone())?;
+            Ok((folder.join(&name)?, Blob::file(path)?))
         })
         .collect()
 }
@@ -121,10 +122,7 @@ fn is_boot_file(name: &str) -> bool {
 }
 
 /// Moves the archive's one folder holding boot.dol or boot.elf to `folder`.
-fn app_folder(
-    files: Vec<(String, Vec<u8>)>,
-    folder: &CardPath,
-) -> Result<Vec<(CardPath, Vec<u8>)>> {
+fn app_folder<T>(files: Vec<(String, T)>, folder: &CardPath) -> Result<Vec<(CardPath, T)>> {
     let mut roots: Vec<String> = (files.iter())
         .filter(|(name, _)| is_boot_file(name))
         .map(|(name, _)| {
@@ -143,17 +141,14 @@ fn app_folder(
         ),
     };
     (files.into_iter())
-        .map(|(name, bytes)| match name.strip_prefix(&root) {
-            Some(relative) => Ok((folder.join(relative)?, bytes)),
+        .map(|(name, payload)| match name.strip_prefix(&root) {
+            Some(relative) => Ok((folder.join(relative)?, payload)),
             None => bail!("{name} is outside the app folder {root}: choose the folder with folder, or list the archive under bundles"),
         })
         .collect()
 }
 
-fn with_boot_file(
-    folder: &CardPath,
-    files: Vec<(CardPath, Vec<u8>)>,
-) -> Result<Vec<(CardPath, Vec<u8>)>> {
+fn with_boot_file<T>(folder: &CardPath, files: Vec<(CardPath, T)>) -> Result<Vec<(CardPath, T)>> {
     let prefix = format!("{}/", folder.folded());
     let has_boot = files.iter().any(|(path, _)| {
         let path = path.folded();

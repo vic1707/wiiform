@@ -17,7 +17,8 @@ enum HbcFile {
         /// Semantic version without the leading v.
         #[schemars(with = "String")]
         version: Version,
-        /// Optional WAD checksum. Defaults to the GitHub release asset digest.
+        /// SHA-256 of the retail OHBC WAD itself (hbc-reborn-<version>-OHBC.wad).
+        /// Defaults to the GitHub release asset digest.
         sha256: Option<Sha256>,
     },
     /// Install a user-supplied, hash-pinned Homebrew Channel WAD.

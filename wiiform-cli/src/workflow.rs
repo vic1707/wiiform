@@ -15,7 +15,9 @@ use tempfile::Builder;
 use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
-    recipe::{Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId, nand::titles::cios},
+    recipe::{
+        Blob, Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId, nand::titles::cios,
+    },
     seed::{self, StockSeed},
 };
 
@@ -145,6 +147,19 @@ fn build_with(
         );
     }
 
+    // Downloaded device files wait in the NUS cache when there is one, so the next
+    // build reuses them; otherwise in a directory removed when this build ends.
+    let (store, _scratch) = match &options.cache {
+        NusCache::Directory { path, .. } => (path.join("files"), None),
+        NusCache::Memory => {
+            let directory = Builder::new()
+                .prefix(".wiiform-downloads-")
+                .tempdir_in(output_parent(&options.output)?)
+                .context("cannot create a download directory next to the output")?;
+            (directory.path().to_owned(), Some(directory))
+        }
+    };
+
     // Reading the recipe loads and checks every WAD it names, before the long stock build.
     ensure!(
         !(options.seed.is_stdin() && options.recipe.is_stdin()),
@@ -166,7 +181,7 @@ fn build_with(
             true => std::env::current_dir()?,
             false => directory.canonicalize()?,
         };
-        Recipe::read(open(&options.recipe)?, &directory)?
+        Recipe::read(open(&options.recipe)?, &directory, &store)?
     };
     if let Some(menu) = options.menu {
         recipe.nand.menu = menu;
@@ -423,13 +438,26 @@ fn publish_bundle(
 }
 
 fn write_tree(root: &Path, device: &Device) -> Result<()> {
-    for (path, bytes) in device.files() {
+    for (path, blob) in device.files() {
         let target = path.under(root);
         let parent = target.parent().context("file has no parent directory")?;
         fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
-        write_private(&target, bytes).with_context(|| format!("cannot write {path}"))?;
+        write_blob(&target, blob).with_context(|| format!("cannot write {path}"))?;
     }
+    Ok(())
+}
+
+/// Copies a device file to a new file only its owner may read, streaming it
+/// from where the recipe staged it.
+fn write_blob(path: &Path, blob: &Blob) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    blob.copy_to(&mut file)?;
+    file.sync_all()?;
     Ok(())
 }
 
@@ -521,7 +549,7 @@ mod tests {
 
         let yaml =
             format!("nand: {{menu: 4.3E}}\nsd: {{bundles: [{file}]}}\nusb: {{bundles: [{file}]}}");
-        let recipe = Recipe::read(yaml.as_bytes(), work.path())?;
+        let recipe = Recipe::read(yaml.as_bytes(), work.path(), &work.path().join("downloads"))?;
         let output = work.path().join("both");
         publish_bundle(
             &Nand::zeroed()?,

@@ -28,7 +28,12 @@ fn read(yaml: &str) -> Result<Nand> {
 }
 
 fn read_recipe(yaml: &str) -> Result<Recipe> {
-    Recipe::read(yaml.as_bytes(), Path::new("."))
+    Recipe::read(yaml.as_bytes(), Path::new("."), &store())
+}
+
+/// Where the tests' downloads are kept: one directory per test process.
+fn store() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("wiiform-recipe-tests-{}", std::process::id()))
 }
 
 fn sha(bytes: &[u8]) -> String {
@@ -230,11 +235,11 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
         format!("menu: 4.3E\ntitles: {{channels: [{{path: {path}, sha256: {digest}}}]}}")
     };
 
-    let recipe = Recipe::read(nested(&title("linked.wad")).as_bytes(), &dir)?.nand;
+    let recipe = Recipe::read(nested(&title("linked.wad")).as_bytes(), &dir, &store())?.nand;
     assert_eq!(&*recipe.titles.channels[0].wad, WAD);
     for bad in [".", "missing.wad"] {
         assert!(
-            Recipe::read(nested(&title(bad)).as_bytes(), &dir).is_err(),
+            Recipe::read(nested(&title(bad)).as_bytes(), &dir, &store()).is_err(),
             "{bad}"
         );
     }
@@ -669,10 +674,10 @@ fn inline_file(bytes: &[u8]) -> String {
 /// The files a device mapping such as `{apps: …}` puts on the card.
 fn card(device: &str) -> Result<Vec<(String, Vec<u8>)>> {
     let recipe = read_recipe(&format!("nand: {{menu: 4.3E}}\nsd: {device}"))?;
-    Ok((recipe.sd.iter())
+    (recipe.sd.iter())
         .flat_map(|sd| sd.files())
-        .map(|(path, bytes)| (path.to_string(), bytes.clone()))
-        .collect())
+        .map(|(path, blob)| Ok((path.to_string(), blob.bytes()?)))
+        .collect()
 }
 
 fn paths(files: &[(String, Vec<u8>)]) -> Vec<&str> {
@@ -1136,5 +1141,71 @@ fn bootmii_is_an_empty_mapping_that_priiloader_autoboot_requires() -> Result<()>
     let autoboot = "menu: 4.3E\npriiloader: {autoboot: bootmii_ios}";
     assert!(message(read(autoboot)).contains("requires the bootmii key"));
     read(&format!("{autoboot}\nbootmii: {{}}"))?;
+    Ok(())
+}
+
+#[test]
+fn a_device_download_is_stored_by_digest_and_fetched_once() -> Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static FETCHES: AtomicUsize = AtomicUsize::new(0);
+    let payload = vec![0x5a; 0x3001];
+    let device = format!(
+        "{{bundles: [{{url: https://example.com/pkg.bin, sha256: {}, to: a/pkg.bin}}]}}",
+        sha(&payload)
+    );
+    let fetch = {
+        let payload = payload.clone();
+        move |url: &str, _: usize| {
+            assert_eq!(url, "https://example.com/pkg.bin");
+            FETCHES.fetch_add(1, Ordering::SeqCst);
+            Ok(payload.clone())
+        }
+    };
+    let first = with_fetch(fetch.clone(), || card(&device))?;
+    assert_eq!(first, [("/a/pkg.bin".to_owned(), payload.clone())]);
+    let second = with_fetch(fetch, || card(&device))?;
+    assert_eq!(second, first);
+    assert_eq!(
+        FETCHES.load(Ordering::SeqCst),
+        1,
+        "the stored copy is reused"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_download_that_does_not_match_is_not_stored() -> Result<()> {
+    let expected = vec![0x6b; 0x3002];
+    let device = format!(
+        "{{bundles: [{{url: https://example.com/pkg.bin, sha256: {}, to: a/pkg.bin}}]}}",
+        sha(&expected)
+    );
+    let error = with_fetch(|_, _| Ok(vec![0x00; 0x3002]), || card(&device))
+        .expect_err("a different download must be refused");
+    assert!(format!("{error:#}").contains("does not match its SHA-256"));
+    assert!(
+        !store().join(sha(&expected)).exists(),
+        "nothing unverified is kept"
+    );
+    Ok(())
+}
+
+#[test]
+fn device_files_larger_than_fat32_allows_are_refused() -> Result<()> {
+    use crate::blob::Blob;
+    let path = |name: &str| crate::device::CardPath::try_from(name.to_owned());
+    let large = Blob::File {
+        path: std::path::PathBuf::from("unused"),
+        size: 0x1_0000_0000,
+    };
+    let small = Blob::File {
+        path: std::path::PathBuf::from("unused"),
+        size: 0xffff_ffff,
+    };
+    let fits = [(path("a/small")?, small.clone())].into_iter().collect();
+    device::check_fat32(&fits)?;
+    let too_big = [(path("a/large")?, large)].into_iter().collect();
+    let error = device::check_fat32(&too_big).expect_err("4 GiB and more is refused");
+    assert!(format!("{error:#}").contains("a/large"));
     Ok(())
 }
