@@ -198,6 +198,9 @@ fn build_with(
     for defaulted in &recipe.defaulted {
         eprintln!("info: {} defaults to {}", defaulted.key, defaulted.value);
     }
+    for notice in recipe.collision_notices() {
+        eprintln!("warning: {notice}");
+    }
     let (mut nand, identity, bootmii) = create_stock(&recipe)?;
 
     let removals: Vec<TitleId> = (recipe.nand.remove.iter())

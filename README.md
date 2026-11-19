@@ -329,8 +329,11 @@ uploaded since June 2025); a given `sha256` always wins.
 - **Conflicts:** paths are compared ignoring case, as FAT does. When two entries
   write one path, `--collisions` decides: `overwrite` (the default) keeps the
   later entry, `keep-first` keeps the earlier one, and `error` stops the build
-  unless both files are identical. A path used as both a file and a directory,
-  or a root `nand.bin` or `keys.bin` on the card, always stops the build.
+  unless both files are identical. Under `overwrite` and `keep-first`, each file
+  that several entries wrote gets one `warning:` line naming the entry that
+  won and the ones it displaced or that were ignored. A path used as both a
+  file and a directory, or a root `nand.bin` or `keys.bin` on the card, always
+  stops the build.
 - **Order:** entries are downloaded, extracted and settled in the order they
   appear in the recipe: the `apps` and `bundles` keys in the order you write
   them, and within each one top to bottom. Later entries win under `overwrite`,

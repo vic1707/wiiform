@@ -1324,3 +1324,35 @@ fn entries_are_downloaded_in_recipe_order() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn each_colliding_file_gets_one_notice_naming_its_sources() -> Result<()> {
+    let to = |bytes: &[u8], path: &str| format!("{{{}, to: '{path}'}}", inline_file(bytes));
+    let notices = |collisions: Collisions, entries: &[String]| -> Result<Vec<String>> {
+        let yaml = format!(
+            "nand: {{menu: 4.3E}}\nsd: {{bundles: [{}]}}",
+            entries.join(", ")
+        );
+        Ok(read_recipe_with(&yaml, collisions)?.collision_notices())
+    };
+    let entries = [
+        to(b"one", "a/b"),
+        to(b"two", "A/B"),
+        to(b"three", "a/B"),
+        to(b"four", "a/c"),
+    ];
+    // One notice for the file, however many entries wrote it: the last one wins.
+    assert_eq!(
+        notices(Collisions::Overwrite, &entries)?,
+        ["sd: /a/B: from bundles[2] replaces bundles[0], bundles[1]"]
+    );
+    assert_eq!(
+        notices(Collisions::KeepFirst, &entries)?,
+        ["sd: /a/b: kept from bundles[0]; bundles[1], bundles[2] ignored"]
+    );
+    // Error only reports what it refuses; identical copies say nothing.
+    assert!(notices(Collisions::Error, &entries).is_err());
+    assert!(notices(Collisions::Error, &[to(b"same", "x"), to(b"same", "x")])?.is_empty());
+    assert!(notices(Collisions::Overwrite, &[to(b"x", "p")])?.is_empty());
+    Ok(())
+}

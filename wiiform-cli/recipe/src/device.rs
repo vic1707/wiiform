@@ -56,12 +56,21 @@ struct DeviceFiles {
 // comment: the schema describes `DeviceFiles`.
 #[derive(Debug, JsonSchema)]
 #[schemars(with = "DeviceFiles", rename = "Device")]
-pub struct Device(BTreeMap<CardPath, Blob>);
+pub struct Device {
+    files: BTreeMap<CardPath, Blob>,
+    notices: Vec<String>,
+}
 
 impl Device {
     /// Every file, by path from the device's root.
     pub fn files(&self) -> &BTreeMap<CardPath, Blob> {
-        &self.0
+        &self.files
+    }
+
+    /// One line per file that entries wrote more than once, naming the entry
+    /// that won and the ones it displaced (or those ignored).
+    pub fn notices(&self) -> &[String] {
+        &self.notices
     }
 }
 
@@ -93,13 +102,28 @@ impl<'de> Visitor<'de> for DeviceVisitor {
                 _ => return Err(de::Error::unknown_field(&key, &["apps", "bundles"])),
             }
         }
-        let files = resolve(entries, source::collisions()).map_err(fail)?;
-        Ok(Device(files))
+        let (files, notices) = resolve(entries, source::collisions()).map_err(fail)?;
+        Ok(Device { files, notices })
     }
 }
 
+/// One file an entry writes, and the app or bundle it came from.
+struct FileEntry {
+    path: CardPath,
+    blob: Blob,
+    source: String,
+}
+
+fn push(entries: &mut Vec<FileEntry>, source: &str, files: Vec<(CardPath, Blob)>) {
+    entries.extend(files.into_iter().map(|(path, blob)| FileEntry {
+        path,
+        blob,
+        source: source.to_owned(),
+    }));
+}
+
 /// The `apps` mapping, its apps read in the order listed.
-struct Apps<'a>(&'a mut Vec<(CardPath, Blob)>);
+struct Apps<'a>(&'a mut Vec<FileEntry>);
 
 impl<'de> DeserializeSeed<'de> for Apps<'_> {
     type Value = ();
@@ -127,14 +151,14 @@ impl<'de> Visitor<'de> for Apps<'_> {
                 .files(&name)
                 .with_context(|| format!("app {name}"))
                 .map_err(fail)?;
-            self.0.extend(files);
+            push(self.0, &format!("app {name}"), files);
         }
         Ok(())
     }
 }
 
 /// The `bundles` list, its entries read in the order listed.
-struct Bundles<'a>(&'a mut Vec<(CardPath, Blob)>);
+struct Bundles<'a>(&'a mut Vec<FileEntry>);
 
 impl<'de> DeserializeSeed<'de> for Bundles<'_> {
     type Value = ();
@@ -158,7 +182,7 @@ impl<'de> Visitor<'de> for Bundles<'_> {
                 .files()
                 .with_context(|| format!("bundles[{index}]"))
                 .map_err(fail)?;
-            self.0.extend(files);
+            push(self.0, &format!("bundles[{index}]"), files);
             index += 1;
         }
         Ok(())
@@ -183,33 +207,62 @@ const FAT32_FILE_LIMIT: u64 = u32::MAX as u64;
 
 /// Applies the collision policy to the entries, in recipe order, then checks the
 /// result: a path cannot be both a file and a directory, and FAT32 cannot hold
-/// a file of 4 GiB or more.
+/// a file of 4 GiB or more. Returns the files and one notice per path that more
+/// than one entry wrote (none under `error`, which stops on a difference).
 fn resolve(
-    entries: Vec<(CardPath, Blob)>,
+    entries: Vec<FileEntry>,
     collisions: Collisions,
-) -> Result<BTreeMap<CardPath, Blob>> {
+) -> Result<(BTreeMap<CardPath, Blob>, Vec<String>)> {
     let mut folded: BTreeMap<String, usize> = BTreeMap::new();
-    let mut merged: Vec<(CardPath, Blob)> = Vec::new();
-    for (path, blob) in entries {
-        match folded.entry(path.folded()) {
+    let mut merged: Vec<FileEntry> = Vec::new();
+    // Every source that wrote each merged path, in recipe order.
+    let mut sources: Vec<Vec<String>> = Vec::new();
+    for entry in entries {
+        match folded.entry(entry.path.folded()) {
             Entry::Vacant(slot) => {
                 slot.insert(merged.len());
-                merged.push((path, blob));
+                sources.push(vec![entry.source.clone()]);
+                merged.push(entry);
             }
             Entry::Occupied(existing) => {
                 let index = *existing.get();
+                sources[index].push(entry.source.clone());
                 match collisions {
-                    Collisions::Overwrite => merged[index] = (path, blob),
+                    Collisions::Overwrite => merged[index] = entry,
                     Collisions::KeepFirst => {}
                     Collisions::Error => {
-                        let first = &merged[index].1;
+                        let first = &merged[index].blob;
                         ensure!(
-                            first.size() == blob.size() && first.sha256()? == blob.sha256()?,
-                            "two entries write different files to {path}"
+                            first.size() == entry.blob.size()
+                                && first.sha256()? == entry.blob.sha256()?,
+                            "two entries write different files to {}",
+                            entry.path
                         );
                     }
                 }
             }
+        }
+    }
+    let mut notices = Vec::new();
+    if collisions != Collisions::Error {
+        for (entry, sources) in merged.iter().zip(&sources) {
+            if sources.len() < 2 {
+                continue;
+            }
+            notices.push(match collisions {
+                Collisions::KeepFirst => format!(
+                    "{}: kept from {}; {} ignored",
+                    entry.path,
+                    sources[0],
+                    sources[1..].join(", ")
+                ),
+                _ => format!(
+                    "{}: from {} replaces {}",
+                    entry.path,
+                    sources[sources.len() - 1],
+                    sources[..sources.len() - 1].join(", ")
+                ),
+            });
         }
     }
     for path in folded.keys() {
@@ -221,9 +274,12 @@ fn resolve(
             );
         }
     }
-    let files: BTreeMap<CardPath, Blob> = merged.into_iter().collect();
+    let files: BTreeMap<CardPath, Blob> = merged
+        .into_iter()
+        .map(|entry| (entry.path, entry.blob))
+        .collect();
     check_fat32(&files)?;
-    Ok(files)
+    Ok((files, notices))
 }
 
 /// Refuses a file FAT32 cannot hold.

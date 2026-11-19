@@ -90,6 +90,19 @@ impl Recipe {
         Ok(recipe)
     }
 
+    /// One notice per device file that more than one entry wrote, prefixed with
+    /// the device it is on.
+    pub fn collision_notices(&self) -> Vec<String> {
+        let notices = |name: &str, device: &Option<Device>| {
+            (device.iter().flat_map(|device| device.notices()))
+                .map(|notice| format!("{name}: {notice}"))
+                .collect::<Vec<_>>()
+        };
+        let mut all = notices("sd", &self.sd);
+        all.extend(notices("usb", &self.usb));
+        all
+    }
+
     /// Checks what the types cannot express. Call it again after changing a field.
     pub fn validate(&self) -> Result<()> {
         self.nand.validate()?;
