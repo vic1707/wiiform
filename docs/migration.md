@@ -111,10 +111,11 @@ relative to the recipe. Write inline data as plain base64 text, without the
 WAD that the recipe deliberately permits without a Nintendo signature, replace
 `signature_policy: allow-unsigned` with `allow_unsigned: true`. List channels
 to `remove` by name; title IDs are no longer accepted there.
-Regenerate earlier unreleased seeds with the current `wii-seed`; seeds now also
-have a top-level `bootmii` section (`boot2`, and `ios` with BootMii as IOS or
-`null`), which `nand.bootmii` needs. Seeds without it still build recipes
-without `nand.bootmii`; their `info.bootmii_boot2` note is read and ignored.
+Regenerate earlier unreleased seeds with the current `wii-seed`. The key footer
+is now three digest-checked groups under `keys` (`console`, `counters`,
+`secret`), and the BootMii facts sit in `bootmii` with their markers. Seeds from
+the earlier layouts (with `keys.footer`, or an `info` section) are rejected; the
+`bootmii` section is required.
 Remove `--reference` from scripts. A `setup` mapping, including any
 `setup.display` options, generates SYSCONF and completes first-run setup.
 Omit `setup` or set it to null to keep the wizard enabled. A `setup` mapping
@@ -140,23 +141,37 @@ Rebuild from the seed and recipe to migrate an early image containing the
 
 ## What a seed contributes
 
-The seed stores the exact 1,024-byte key footer and the XZ-compressed boot area
-as YAML binary fields. It also stores bad-block numbers and the eight readable
-`setting.txt` fields. SHA-256 covers the footer, the decompressed boot area, and
-the encoded original settings. Wiiform verifies these before retargeting the
-settings to the requested menu.
+The seed stores the console's 1,024-byte key footer as three groups. Each group
+is one binary blob with its own SHA-256:
 
-The `bootmii` section records what the backup shows of BootMii: `boot2`
-(`detected`, `stock` or `unknown`, recognized from the boot area) and `ios`,
-the IOS254 title HackMii installs for BootMii as IOS (its version, TMD, ticket
-and content under one SHA-256), or `null` when the backup has none. Optional
-`info` shows the readable footer header.
+- `keys.console`: identifiers and the boot1 hash. These never change for one
+  console.
+- `keys.counters`: counters that move with use, kept as dumped. The SEEPROM
+  `prng_seed` changes at each IOS start.
+- `keys.secret`: key material. It never changes for one console.
 
-The seed digest covers the original footer, including its text header and
-padding. Stock creation writes a BackupMii text header using the OTP console
-ID and emits a warning if the header changed. The binary key data and its
-padding remain byte-identical to the seed. The build publishes the verified
-NAND footer as `keys.bin`.
+The dump's text header is not stored, because each build writes a BackupMii
+header with the OTP console ID, as BootMii expects. Bytes outside the groups are
+kept under `keys.other`, which is empty for a known console. Wiiform checks each
+group's digest and rebuilds the footer, so the build's `keys.bin` carries the
+dump's key bytes and counters.
+
+The seed also stores the bad-block numbers, the XZ-compressed boot area and the
+eight readable `setting.txt` fields, each with its SHA-256. Wiiform verifies
+these before retargeting the settings to the requested menu.
+
+The `bootmii` section records what the backup shows of BootMii:
+
+- `boot2`: `state` (`detected`, `stock` or `unknown`, recognized from the boot
+  area) and, when detected, `version`, the BootMii marker such as `BM1.5`.
+- `ios`: the IOS254 title HackMii installs for BootMii as IOS. Its `version` is
+  the `BM1.x` marker from its TMD, not the TMD title version. Its TMD, ticket and
+  content sit under one SHA-256. The value is `null` when the backup has none.
+
+Comparing two seeds of one console shows what changed: `keys.counters` after
+use, `bootmii` and `boot_blocks` after a reinstall. `keys.console` and
+`keys.secret` do not change.
+
 Use `wiiform --seed -` to read plaintext YAML from stdin, or `--recipe -` for the recipe. Either may also be a pipe, such as `<(age -d console.seed.yaml.age)`.
 
 ## Releases

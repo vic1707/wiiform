@@ -34,7 +34,8 @@ namespace wiiform {
     ConsoleSettings settings;
     Sha256 settings_sha256;
     BootMiiState bootmii;
-    std::string footer_header;
+    // The BootMii marker of the boot2 copy ("BM1.5"); empty when none or ambiguous.
+    std::string bootmii_boot2_version;
     // BootMii as IOS (IOS254) as the backup holds it; empty when it has none.
     std::vector<std::uint8_t> bootmii_ios_tmd;
     std::vector<std::uint8_t> bootmii_ios_ticket;

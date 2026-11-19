@@ -49,7 +49,7 @@ auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts {
   return {rust_vec(source.keys), rust_vec(source.boot_blocks), rust_vec(source.bad_blocks),
           ConsoleSettings{settings.area, settings.model, settings.dvd, settings.mpch,
                           settings.code, settings.serial, settings.video, settings.game},
-          source.settings_sha256, source.bootmii, source.footer_header, rust_vec(source.bootmii_ios_tmd),
+          source.settings_sha256, source.bootmii, source.bootmii_boot2_version, rust_vec(source.bootmii_ios_tmd),
           rust_vec(source.bootmii_ios_ticket), rust_vec(source.bootmii_ios_content)};
 }
 

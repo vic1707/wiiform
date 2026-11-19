@@ -22,12 +22,8 @@ use crate::{
 pub use crate::native::{BootPolicy, NusCache};
 
 /// The BootMii as IOS to install for `bootmii`, or None when the console only
-/// runs BootMii as boot2 (still reachable). A console with neither is an error,
-/// and so is a seed written before wii-seed looked for BootMii.
-fn bootmii_ios(bootmii: Option<&seed::Bootmii>) -> Result<Option<&seed::BootmiiIos>> {
-    let Some(bootmii) = bootmii else {
-        bail!("the seed predates BootMii as IOS support: regenerate it with the current wii-seed");
-    };
+/// runs BootMii as boot2 (still reachable). A console with neither is an error.
+fn bootmii_ios(bootmii: &seed::Bootmii) -> Result<Option<&seed::BootmiiIos>> {
     match (&bootmii.ios, bootmii.boot2) {
         (Some(ios), _) => Ok(Some(ios)),
         (None, seed::Boot2::Detected) => Ok(None),
@@ -113,7 +109,7 @@ pub fn build(options: &BuildOptions) -> Result<()> {
             &options.cache,
         )
         .context("cannot create stock NAND")?;
-        Ok((nand, identity, seed.bootmii().cloned()))
+        Ok((nand, identity, seed.bootmii().clone()))
     })
 }
 
@@ -124,9 +120,6 @@ fn create_stock(
     boot_policy: BootPolicy,
     cache: &NusCache,
 ) -> Result<(Nand, StockIdentity)> {
-    if seed.write_backupmii_header()? {
-        eprintln!("warning: replaced the seed's key footer header with a BackupMii header");
-    }
     let mut nand = Nand::zeroed()?;
     let identity = nand.initialize_image(seed, menu, boot_policy)?;
     for (title_id, version) in native::stock_titles(menu)? {
@@ -139,7 +132,7 @@ fn create_stock(
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity, Option<seed::Bootmii>)>,
+    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity, seed::Bootmii)>,
 ) -> Result<()> {
     validate_output(&options.output)?;
     if let NusCache::Directory { path, .. } = &options.cache {
@@ -230,12 +223,9 @@ fn build_with(
     }
 
     if recipe.nand.bootmii.is_some() {
-        match bootmii_ios(bootmii.as_ref())? {
+        match bootmii_ios(&bootmii)? {
             Some(ios) => {
-                if bootmii
-                    .as_ref()
-                    .is_some_and(|bootmii| bootmii.boot2 == seed::Boot2::Detected)
-                {
+                if bootmii.boot2 == seed::Boot2::Detected {
                     eprintln!("info: this console also runs BootMii as boot2");
                 }
                 let installed = nand
@@ -494,25 +484,23 @@ mod tests {
             ticket: vec![2],
             content: vec![3],
         };
-        let state = |ios: Option<seed::BootmiiIos>, boot2| seed::Bootmii { boot2, ios };
+        let state = |ios: Option<seed::BootmiiIos>, boot2| seed::Bootmii {
+            boot2,
+            boot2_version: None,
+            ios,
+        };
         assert!(matches!(
-            bootmii_ios(Some(&state(Some(ios.clone()), seed::Boot2::Stock))),
+            bootmii_ios(&state(Some(ios.clone()), seed::Boot2::Stock)),
             Ok(Some(_))
         ));
         assert!(
-            matches!(
-                bootmii_ios(Some(&state(None, seed::Boot2::Detected))),
-                Ok(None)
-            ),
+            matches!(bootmii_ios(&state(None, seed::Boot2::Detected)), Ok(None)),
             "boot2 still reaches BootMii"
         );
-        fn error(bootmii: Option<&seed::Bootmii>) -> String {
-            format!("{:#}", bootmii_ios(bootmii).unwrap_err())
-        }
         for boot2 in [seed::Boot2::Stock, seed::Boot2::Unknown] {
-            assert!(error(Some(&state(None, boot2))).contains("neither as IOS nor as boot2"));
+            let error = format!("{:#}", bootmii_ios(&state(None, boot2)).unwrap_err());
+            assert!(error.contains("neither as IOS nor as boot2"));
         }
-        assert!(error(None).contains("regenerate it"));
     }
 
     #[test]
@@ -608,7 +596,16 @@ mod tests {
             menu: None,
         };
         let failure = build_with(&options, |_| {
-            Ok((Nand::read(&image)?, StockIdentity::unverifiable(), None))
+            let no_bootmii = seed::Bootmii {
+                boot2: seed::Boot2::Unknown,
+                boot2_version: None,
+                ios: None,
+            };
+            Ok((
+                Nand::read(&image)?,
+                StockIdentity::unverifiable(),
+                no_bootmii,
+            ))
         })
         .expect_err("the WAD cannot fit the synthetic NAND");
         assert!(

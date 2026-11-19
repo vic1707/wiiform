@@ -30,12 +30,12 @@ namespace {
       {"CODE", &wiiform::ConsoleSettings::code}, {"SERNO", &wiiform::ConsoleSettings::serial},
       {"VIDEO", &wiiform::ConsoleSettings::video}, {"GAME", &wiiform::ConsoleSettings::game}};
 
-  auto footer_header(const QByteArray& keys) -> std::string {
-    int size = 0;
-    while (size < 0x100 && keys[size] != '\0' && static_cast<unsigned char>(keys[size]) >= 0x20 &&
-           static_cast<unsigned char>(keys[size]) <= 0x7e)
-      ++size;
-    return std::string(keys.constData(), static_cast<std::size_t>(size));
+  // The BootMii marker a boot2 copy carries, as the TMD does; empty when unknown.
+  auto boot2_marker(auto version) -> std::string {
+    if (version == BOOTMII_15) return "BM1.5";
+    if (version == BOOTMII_13) return "BM1.3";
+    if (version == BOOTMII_11) return "BM1.1";
+    return {};
   }
 
 } // namespace
@@ -137,7 +137,6 @@ namespace seed {
                        reinterpret_cast<const std::uint8_t*>(all_keys.constData()) + all_keys.size());
     result.boot_blocks.assign(reinterpret_cast<const std::uint8_t*>(boots.constData()),
                               reinterpret_cast<const std::uint8_t*>(boots.constData()) + boots.size());
-    result.footer_header = footer_header(all_keys);
     for (int block = 8; block < 4080; ++block)
       if (fats[block * 8] == 0xfffd)
         result.bad_blocks.push_back(static_cast<std::uint16_t>(block));
@@ -150,6 +149,9 @@ namespace seed {
     bool detected_bootmii = false;
     bool all_copies_stock = true;
     bool stock_primary = false;
+    // Empty when detected copies disagree about their version.
+    std::string boot2_version;
+    bool boot2_versions_agree = true;
     for (const auto& info : nand.Boot2Infos()) {
       std::string state = "unknown";
       if (info.state < 0 || boot::has_bad_content_hash(info.state)) state = "invalid";
@@ -161,12 +163,17 @@ namespace seed {
       if (stock && (info.state & BOOT_2_USED_TO_BOOT) && !(info.state & BOOT_2_MARKED_BAD)) stock_primary = true;
       if (state == "fakesigned" && (info.state & BOOT_2_TMD_FAKESIGNED) &&
           (info.version == BOOTMII_11 || info.version == BOOTMII_13 || info.version == BOOTMII_15) &&
-          !(info.state & BOOT_2_MARKED_BAD))
+          !(info.state & BOOT_2_MARKED_BAD)) {
         detected_bootmii = true;
+        const auto marker = boot2_marker(info.version);
+        if (!boot2_version.empty() && boot2_version != marker) boot2_versions_agree = false;
+        boot2_version = marker;
+      }
     }
     result.bootmii = detected_bootmii ? wiiform::BootMiiState::detected
         : all_copies_stock && stock_primary ? wiiform::BootMiiState::stock
         : wiiform::BootMiiState::unknown;
+    result.bootmii_boot2_version = detected_bootmii && boot2_versions_agree ? boot2_version : std::string{};
     read_bootmii_ios(nand, result);
     return result;
   }

@@ -186,17 +186,18 @@ sd:
 - **Seeds:** take the backup after running HackMii and regenerate the seed;
   re-running HackMii updates the IOS.
 - **Versions:** any version is accepted. Like the Homebrew Channel, wiiform
-  recognizes BootMii by the `BM` marker in its TMD; your consoles show v31338
-  and v65281.
+  recognizes BootMii by the `BM` marker in its TMD (for example `BM1.5`), not by
+  the TMD's title version, which did not change between BootMii 1.3 and 1.5.
 - **Checks:** the seed's `bootmii` section records what the backup showed:
-  `boot2` (`detected`, `stock` or `unknown`) and `ios` (BootMii as IOS with its
-  version, or `null`). With `bootmii`:
-  - BootMii as IOS in the seed: installed, with an `info:` line if the console
+  `boot2` (`state`: `detected`, `stock` or `unknown`, and its `version` when
+  detected) and `ios` (BootMii as IOS with its `version`, or `null`). With
+  `bootmii`:
+  - BootMii as IOS in the seed: installed; the build notes it when the console
     also runs BootMii as boot2.
   - None, but BootMii as boot2: a warning, and the build goes on without it
     (boot2 still reaches BootMii; a system update can delete the IOS).
   - Neither: the build stops, since BootMii would be unreachable.
-  - A seed from before this support: the build stops and asks to regenerate it.
+  - A seed from an earlier layout: the build stops and asks to regenerate it.
 - **Without the key:** wiiform leaves BootMii alone. The image keeps Nintendo's
   IOS254 stub, so a recipe can return a console to stock.
 - **SD files:** these stay an explicit `sd` bundle.
@@ -383,6 +384,11 @@ its matching 1,024-byte sidecar explicitly.
 (umask 077; wii-seed FOOTERLESS_BACKUP --keys keys.bin > console.seed.yaml)
 ```
 
+The key footer is stored as three groups, each with its own SHA-256: `console`
+(identifiers, fixed for a console), `counters` (they move with use) and `secret`
+(key material, fixed). Comparing two seeds of one console therefore shows what
+changed. The text header is not stored; each build writes a BackupMii header.
+
 Use `--seed -` to pipe plaintext YAML directly into the builder.
 
 ```sh
@@ -399,7 +405,7 @@ cat wads.yaml recipe.yaml | yq 'explode(.) | del(."x-WAD")' \
   | wiiform --seed <(age -d console.seed.yaml.age) --recipe - --output prepared-console
 ```
 
-Earlier seeds from the unreleased format need to be regenerated from their
+Seeds from an earlier layout are rejected and need regenerating from their
 backups. See the [seed format](docs/migration.md#what-a-seed-contributes).
 
 ## Direct commands

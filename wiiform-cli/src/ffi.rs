@@ -217,7 +217,7 @@ pub mod bridge {
         settings: ConsoleSettings,
         settings_sha256: [u8; 32],
         bootmii: BootMiiState,
-        footer_header: String,
+        bootmii_boot2_version: String,
         bootmii_ios_tmd: Vec<u8>,
         bootmii_ios_ticket: Vec<u8>,
         bootmii_ios_content: Vec<u8>,
