@@ -16,7 +16,8 @@ use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
     recipe::{
-        Blob, Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId, nand::titles::cios,
+        Blob, Collisions, Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId,
+        nand::titles::cios,
     },
     seed::{self, StockSeed},
 };
@@ -46,6 +47,8 @@ pub struct BuildOptions {
     pub cache: NusCache,
     pub boot_policy: BootPolicy,
     pub menu: Option<Menu>,
+    /// What happens when two device entries write the same path.
+    pub collisions: Collisions,
 }
 
 impl NusCache {
@@ -181,7 +184,12 @@ fn build_with(
             true => std::env::current_dir()?,
             false => directory.canonicalize()?,
         };
-        Recipe::read(open(&options.recipe)?, &directory, &store)?
+        Recipe::read(
+            open(&options.recipe)?,
+            &directory,
+            &store,
+            options.collisions,
+        )?
     };
     if let Some(menu) = options.menu {
         recipe.nand.menu = menu;
@@ -549,7 +557,12 @@ mod tests {
 
         let yaml =
             format!("nand: {{menu: 4.3E}}\nsd: {{bundles: [{file}]}}\nusb: {{bundles: [{file}]}}");
-        let recipe = Recipe::read(yaml.as_bytes(), work.path(), &work.path().join("downloads"))?;
+        let recipe = Recipe::read(
+            yaml.as_bytes(),
+            work.path(),
+            &work.path().join("downloads"),
+            Collisions::default(),
+        )?;
         let output = work.path().join("both");
         publish_bundle(
             &Nand::zeroed()?,
@@ -622,6 +635,7 @@ mod tests {
             cache: NusCache::Memory,
             boot_policy: BootPolicy::Stock,
             menu: None,
+            collisions: Collisions::default(),
         };
         let failure = build_with(&options, |_| {
             let no_bootmii = seed::Bootmii {

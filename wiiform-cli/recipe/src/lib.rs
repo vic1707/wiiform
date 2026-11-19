@@ -28,7 +28,7 @@ pub mod yaml;
 pub use self::{
     blob::Blob,
     defaults::Defaulted,
-    device::Device,
+    device::{Collisions, Device},
     files::{ResolvedPath, open_regular_file, read_bounded},
     nand::{
         Nand,
@@ -62,11 +62,17 @@ pub struct Recipe {
 
 impl Recipe {
     /// Reads a recipe whose local paths are relative to `directory`.
-    /// Reads the recipe. Relative paths start at `directory`, and downloaded
-    /// files are kept in `store`, which is created if needed.
-    pub fn read(input: impl Read, directory: &Path, store: &Path) -> Result<Self> {
+    /// Reads the recipe. Relative paths start at `directory`, downloaded files
+    /// are kept in `store` (created if needed), and device entries that write the
+    /// same path are settled by `collisions`.
+    pub fn read(
+        input: impl Read,
+        directory: &Path,
+        store: &Path,
+        collisions: Collisions,
+    ) -> Result<Self> {
         let (recipe, defaulted) = crate::defaults::collect(|| {
-            crate::source::relative_to(directory.to_owned(), store.to_owned(), || {
+            crate::source::relative_to(directory.to_owned(), store.to_owned(), collisions, || {
                 serde_saphyr::from_reader_with_options(input, crate::yaml::options())
             })
         });

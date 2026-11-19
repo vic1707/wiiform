@@ -28,7 +28,11 @@ fn read(yaml: &str) -> Result<Nand> {
 }
 
 fn read_recipe(yaml: &str) -> Result<Recipe> {
-    Recipe::read(yaml.as_bytes(), Path::new("."), &store())
+    read_recipe_with(yaml, Collisions::default())
+}
+
+fn read_recipe_with(yaml: &str, collisions: Collisions) -> Result<Recipe> {
+    Recipe::read(yaml.as_bytes(), Path::new("."), &store(), collisions)
 }
 
 /// Where the tests' downloads are kept: one directory per test process.
@@ -235,11 +239,23 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
         format!("menu: 4.3E\ntitles: {{channels: [{{path: {path}, sha256: {digest}}}]}}")
     };
 
-    let recipe = Recipe::read(nested(&title("linked.wad")).as_bytes(), &dir, &store())?.nand;
+    let recipe = Recipe::read(
+        nested(&title("linked.wad")).as_bytes(),
+        &dir,
+        &store(),
+        Collisions::default(),
+    )?
+    .nand;
     assert_eq!(&*recipe.titles.channels[0].wad, WAD);
     for bad in [".", "missing.wad"] {
         assert!(
-            Recipe::read(nested(&title(bad)).as_bytes(), &dir, &store()).is_err(),
+            Recipe::read(
+                nested(&title(bad)).as_bytes(),
+                &dir,
+                &store(),
+                Collisions::default(),
+            )
+            .is_err(),
             "{bad}"
         );
     }
@@ -673,7 +689,11 @@ fn inline_file(bytes: &[u8]) -> String {
 
 /// The files a device mapping such as `{apps: …}` puts on the card.
 fn card(device: &str) -> Result<Vec<(String, Vec<u8>)>> {
-    let recipe = read_recipe(&format!("nand: {{menu: 4.3E}}\nsd: {device}"))?;
+    card_with(Collisions::default(), device)
+}
+
+fn card_with(collisions: Collisions, device: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    let recipe = read_recipe_with(&format!("nand: {{menu: 4.3E}}\nsd: {device}"), collisions)?;
     (recipe.sd.iter())
         .flat_map(|sd| sd.files())
         .map(|(path, blob)| Ok((path.to_string(), blob.bytes()?)))
@@ -901,7 +921,12 @@ fn bundles_unzip_extract_or_copy_from_the_root() -> Result<()> {
 #[test]
 fn device_files_must_not_collide() -> Result<()> {
     let to = |bytes: &[u8], path: &str| format!("{{{}, to: '{path}'}}", inline_file(bytes));
-    let bundles = |entries: &[String]| card(&format!("{{bundles: [{}]}}", entries.join(", ")));
+    let bundles = |entries: &[String]| {
+        card_with(
+            Collisions::Error,
+            &format!("{{bundles: [{}]}}", entries.join(", ")),
+        )
+    };
     assert!(message(bundles(&[to(b"one", "a/b"), to(b"two", "A/B")])).contains("different files"));
     bundles(&[to(b"same", "a/b"), to(b"same", "a/b")])?;
     assert!(
@@ -913,7 +938,7 @@ fn device_files_must_not_collide() -> Result<()> {
         inline_file(b"dol"),
         to(b"other", "apps/X/BOOT.DOL")
     );
-    assert!(message(card(&app_and_bundle)).contains("different files"));
+    assert!(message(card_with(Collisions::Error, &app_and_bundle)).contains("different files"));
     for reserved in ["nand.bin", "/KEYS.BIN"] {
         assert!(message(bundles(&[to(b"x", reserved)])).contains("NAND and its keys"));
     }
@@ -1207,5 +1232,95 @@ fn device_files_larger_than_fat32_allows_are_refused() -> Result<()> {
     let too_big = [(path("a/large")?, large)].into_iter().collect();
     let error = device::check_fat32(&too_big).expect_err("4 GiB and more is refused");
     assert!(format!("{error:#}").contains("a/large"));
+    Ok(())
+}
+
+#[test]
+fn collisions_are_settled_in_recipe_order_by_the_flag() -> Result<()> {
+    let to = |bytes: &[u8], path: &str| format!("{{{}, to: '{path}'}}", inline_file(bytes));
+    let pair = |first: &[u8], second: &[u8]| {
+        format!("{{bundles: [{}, {}]}}", to(first, "a/b"), to(second, "A/B"))
+    };
+    // Overwrite is the default: the later entry wins, under the later spelling.
+    assert_eq!(
+        card(&pair(b"one", b"two"))?,
+        [("/A/B".to_owned(), b"two".to_vec())]
+    );
+    assert_eq!(
+        card_with(Collisions::Overwrite, &pair(b"one", b"two"))?,
+        [("/A/B".to_owned(), b"two".to_vec())]
+    );
+    // Keep-first: the earlier entry stays, whichever order the files come in.
+    assert_eq!(
+        card_with(Collisions::KeepFirst, &pair(b"one", b"two"))?,
+        [("/a/b".to_owned(), b"one".to_vec())]
+    );
+    assert_eq!(
+        card_with(Collisions::KeepFirst, &pair(b"two", b"one"))?,
+        [("/a/b".to_owned(), b"two".to_vec())]
+    );
+    // Error: identical copies are fine, different ones stop the build.
+    assert_eq!(
+        card_with(Collisions::Error, &pair(b"same", b"same"))?,
+        [("/a/b".to_owned(), b"same".to_vec())]
+    );
+    assert!(
+        message(card_with(Collisions::Error, &pair(b"one", b"two"))).contains("different files")
+    );
+    Ok(())
+}
+
+#[test]
+fn entries_are_downloaded_in_recipe_order() -> Result<()> {
+    use std::sync::{Arc, Mutex};
+    // A download's bytes are its name, so each digest is known up front. Names
+    // carry the prefix because the store is shared by the tests of a process.
+    let name_of = |url: &str| {
+        url.trim_start_matches("https://example.com/")
+            .trim_end_matches(".bin")
+            .to_owned()
+    };
+    let device = |prefix: &str, apps_first: bool| {
+        let url = |name: &str| format!("https://example.com/{prefix}{name}.bin");
+        let bundle = |name: &str| {
+            format!(
+                "{{url: {}, sha256: {}, to: '{name}.bin'}}",
+                url(name),
+                sha(format!("{prefix}{name}").as_bytes())
+            )
+        };
+        let app = format!(
+            "{{files: {{boot.dol: {{url: {}, sha256: {}}}}}}}",
+            url("dol"),
+            sha(format!("{prefix}dol").as_bytes())
+        );
+        let bundles = format!("bundles: [{}, {}]", bundle("first"), bundle("second"));
+        let apps = format!("apps: {{alpha: {app}}}");
+        match apps_first {
+            true => format!("{{{apps}, {bundles}}}"),
+            false => format!("{{{bundles}, {apps}}}"),
+        }
+    };
+    let downloads = |device: &str| -> Result<Vec<String>> {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&requests);
+        with_fetch(
+            move |requested: &str, _| {
+                seen.lock().unwrap().push(name_of(requested));
+                Ok(name_of(requested).into_bytes())
+            },
+            || card(device),
+        )?;
+        let order = requests.lock().unwrap().clone();
+        Ok(order)
+    };
+    assert_eq!(
+        downloads(&device("bundles-", false))?,
+        ["bundles-first", "bundles-second", "bundles-dol"]
+    );
+    assert_eq!(
+        downloads(&device("apps-", true))?,
+        ["apps-dol", "apps-first", "apps-second"]
+    );
     Ok(())
 }

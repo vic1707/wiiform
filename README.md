@@ -326,9 +326,15 @@ uploaded since June 2025); a given `sha256` always wins.
   file, or a file matching two globs, stops the build.
 - **Archives:** archives are zips. macOS `__MACOSX/` and `._*` entries are
   skipped; other entries must be plain files with relative paths.
-- **Conflicts:** paths are compared ignoring case, as FAT does. Two files with
-  different bytes at one path, a path used as both a file and a directory, or
-  a root `nand.bin` or `keys.bin` on the card stop the build.
+- **Conflicts:** paths are compared ignoring case, as FAT does. When two entries
+  write one path, `--collisions` decides: `overwrite` (the default) keeps the
+  later entry, `keep-first` keeps the earlier one, and `error` stops the build
+  unless both files are identical. A path used as both a file and a directory,
+  or a root `nand.bin` or `keys.bin` on the card, always stops the build.
+- **Order:** entries are downloaded, extracted and settled in the order they
+  appear in the recipe: the `apps` and `bundles` keys in the order you write
+  them, and within each one top to bottom. Later entries win under `overwrite`,
+  so put a file you want to keep after the one it replaces.
 
 All files are downloaded and checked when the recipe is read, before the NAND
 build. Device files are streamed to disk rather than held in memory, so a

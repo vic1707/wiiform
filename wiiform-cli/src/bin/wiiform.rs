@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::{path::PathBuf, process::ExitCode};
 use wiiform::{
-    recipe::Menu,
+    recipe::{Collisions, Menu},
     workflow::{self, BootPolicy, BuildOptions, FileOrStdin, NusCache},
 };
 
@@ -38,6 +38,12 @@ struct Cli {
     /// Override the recipe menu with 4.3E, 4.3U, or 4.3J.
     #[arg(long, value_enum)]
     menu: Option<Menu>,
+
+    /// What happens when two entries write the same path on a card or drive: the
+    /// later entry (in recipe order) replaces the earlier one, the earlier one is
+    /// kept, or the build stops when the two files differ.
+    #[arg(long, value_enum, default_value = "overwrite")]
+    collisions: Collisions,
 }
 
 fn run(cli: Cli) -> Result<()> {
@@ -48,6 +54,7 @@ fn run(cli: Cli) -> Result<()> {
         cache: NusCache::from_environment()?,
         boot_policy: cli.boot_policy,
         menu: cli.menu,
+        collisions: cli.collisions,
     };
     workflow::build(&options).context("Wiiform build failed")?;
     println!("Built NAND restore bundle at {}", options.output.display());

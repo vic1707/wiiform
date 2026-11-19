@@ -5,20 +5,41 @@ mod bundle;
 mod card_path;
 mod extract;
 
-use std::collections::{BTreeMap, btree_map::Entry};
+use std::{
+    collections::{BTreeMap, HashSet, btree_map::Entry},
+    fmt,
+};
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
+};
 
 pub use self::card_path::CardPath;
 use self::{app::App, bundle::Bundle};
-use crate::blob::Blob;
+use crate::{blob::Blob, source};
+
+/// What happens when two entries write the same path. Paths are compared ignoring
+/// case, as FAT does. The entries are taken in recipe order.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
+pub enum Collisions {
+    /// The later entry replaces the earlier one.
+    #[default]
+    Overwrite,
+    /// The earlier entry stays and the later one is ignored.
+    KeepFirst,
+    /// Two entries writing different files to one path stop the build.
+    Error,
+}
 
 /// The files of an SD card or a USB drive.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(rename = "Device")]
+#[schemars(rename = "Device", deny_unknown_fields)]
+#[allow(dead_code)] // Only the schema uses it.
 struct DeviceFiles {
     /// Homebrew apps. Each key is the folder apps/<key>/ the app goes in.
     #[serde(default)]
@@ -29,10 +50,11 @@ struct DeviceFiles {
     bundles: Vec<Bundle>,
 }
 
-// Every file the entries put on the device, read and checked. No doc comment:
-// the schema describes `DeviceFiles`.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(try_from = "DeviceFiles")]
+// Every file the entries put on the device, read and checked. Each app and
+// bundle is read as the recipe reaches it, so downloads and extraction follow
+// the recipe's order, and collisions are settled in that order too. No doc
+// comment: the schema describes `DeviceFiles`.
+#[derive(Debug, JsonSchema)]
 #[schemars(with = "DeviceFiles", rename = "Device")]
 pub struct Device(BTreeMap<CardPath, Blob>);
 
@@ -43,33 +65,115 @@ impl Device {
     }
 }
 
-impl TryFrom<DeviceFiles> for Device {
-    type Error = String;
-
-    fn try_from(device: DeviceFiles) -> Result<Self, String> {
-        device
-            .read()
-            .map(Self)
-            .map_err(|error| format!("{error:#}"))
+impl<'de> Deserialize<'de> for Device {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(DeviceVisitor)
     }
 }
 
-impl DeviceFiles {
-    fn read(self) -> Result<BTreeMap<CardPath, Blob>> {
-        let mut files = Vec::new();
-        for (name, app) in self.apps {
-            files.extend(app.files(&name).with_context(|| format!("app {name}"))?);
+struct DeviceVisitor;
+
+impl<'de> Visitor<'de> for DeviceVisitor {
+    type Value = Device;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a device with apps and bundles")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Device, A::Error> {
+        let mut entries = Vec::new();
+        let mut keys = HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            ensure_custom::<A::Error>(keys.insert(key.clone()), || {
+                format!("{key} is listed twice")
+            })?;
+            match key.as_str() {
+                "apps" => map.next_value_seed(Apps(&mut entries))?,
+                "bundles" => map.next_value_seed(Bundles(&mut entries))?,
+                _ => return Err(de::Error::unknown_field(&key, &["apps", "bundles"])),
+            }
         }
-        for (index, bundle) in self.bundles.into_iter().enumerate() {
-            files.extend(
-                bundle
-                    .files()
-                    .with_context(|| format!("bundles[{index}]"))?,
-            );
+        let files = resolve(entries, source::collisions()).map_err(fail)?;
+        Ok(Device(files))
+    }
+}
+
+/// The `apps` mapping, its apps read in the order listed.
+struct Apps<'a>(&'a mut Vec<(CardPath, Blob)>);
+
+impl<'de> DeserializeSeed<'de> for Apps<'_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for Apps<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("apps, each keyed by its folder name")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let mut names = HashSet::new();
+        while let Some(name) = map.next_key::<String>()? {
+            ensure_custom::<A::Error>(names.insert(name.clone()), || {
+                format!("app {name} is listed twice")
+            })?;
+            let app = map.next_value::<App>()?;
+            let files = app
+                .files(&name)
+                .with_context(|| format!("app {name}"))
+                .map_err(fail)?;
+            self.0.extend(files);
         }
-        let merged = merge(files)?;
-        check_fat32(&merged)?;
-        Ok(merged)
+        Ok(())
+    }
+}
+
+/// The `bundles` list, its entries read in the order listed.
+struct Bundles<'a>(&'a mut Vec<(CardPath, Blob)>);
+
+impl<'de> DeserializeSeed<'de> for Bundles<'_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de> Visitor<'de> for Bundles<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("bundles, a list")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        let mut index = 0;
+        while let Some(bundle) = seq.next_element::<Bundle>()? {
+            let files = bundle
+                .files()
+                .with_context(|| format!("bundles[{index}]"))
+                .map_err(fail)?;
+            self.0.extend(files);
+            index += 1;
+        }
+        Ok(())
+    }
+}
+
+fn fail<E: de::Error>(error: anyhow::Error) -> E {
+    E::custom(format!("{error:#}"))
+}
+
+fn ensure_custom<E: de::Error>(condition: bool, message: impl FnOnce() -> String) -> Result<(), E> {
+    if condition {
+        Ok(())
+    } else {
+        Err(E::custom(message()))
     }
 }
 
@@ -77,35 +181,34 @@ impl DeviceFiles {
 /// no device file may be larger.
 const FAT32_FILE_LIMIT: u64 = u32::MAX as u64;
 
-/// Refuses a file FAT32 cannot hold.
-pub(crate) fn check_fat32(files: &BTreeMap<CardPath, Blob>) -> Result<()> {
-    for (path, blob) in files {
-        ensure!(
-            blob.size() <= FAT32_FILE_LIMIT,
-            "{path} is larger than 4 GiB: FAT32, which the Wii reads, cannot hold it"
-        );
-    }
-    Ok(())
-}
-
-/// Merges the entries' files, refusing collisions: FAT ignores case, and a
-/// path cannot be both a file and a directory. Contents are compared by
-/// SHA-256, and only when two entries share a path.
-fn merge(files: Vec<(CardPath, Blob)>) -> Result<BTreeMap<CardPath, Blob>> {
+/// Applies the collision policy to the entries, in recipe order, then checks the
+/// result: a path cannot be both a file and a directory, and FAT32 cannot hold
+/// a file of 4 GiB or more.
+fn resolve(
+    entries: Vec<(CardPath, Blob)>,
+    collisions: Collisions,
+) -> Result<BTreeMap<CardPath, Blob>> {
     let mut folded: BTreeMap<String, usize> = BTreeMap::new();
     let mut merged: Vec<(CardPath, Blob)> = Vec::new();
-    for (path, blob) in files {
+    for (path, blob) in entries {
         match folded.entry(path.folded()) {
             Entry::Vacant(slot) => {
                 slot.insert(merged.len());
                 merged.push((path, blob));
             }
             Entry::Occupied(existing) => {
-                let first = &merged[*existing.get()].1;
-                ensure!(
-                    first.size() == blob.size() && first.sha256()? == blob.sha256()?,
-                    "two entries write different files to {path}"
-                );
+                let index = *existing.get();
+                match collisions {
+                    Collisions::Overwrite => merged[index] = (path, blob),
+                    Collisions::KeepFirst => {}
+                    Collisions::Error => {
+                        let first = &merged[index].1;
+                        ensure!(
+                            first.size() == blob.size() && first.sha256()? == blob.sha256()?,
+                            "two entries write different files to {path}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -118,5 +221,18 @@ fn merge(files: Vec<(CardPath, Blob)>) -> Result<BTreeMap<CardPath, Blob>> {
             );
         }
     }
-    Ok(merged.into_iter().collect())
+    let files: BTreeMap<CardPath, Blob> = merged.into_iter().collect();
+    check_fat32(&files)?;
+    Ok(files)
+}
+
+/// Refuses a file FAT32 cannot hold.
+pub(crate) fn check_fat32(files: &BTreeMap<CardPath, Blob>) -> Result<()> {
+    for (path, blob) in files {
+        ensure!(
+            blob.size() <= FAT32_FILE_LIMIT,
+            "{path} is larger than 4 GiB: FAT32, which the Wii reads, cannot hold it"
+        );
+    }
+    Ok(())
 }

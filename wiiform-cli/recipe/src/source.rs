@@ -16,6 +16,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::{
     blob::Hashed,
+    device::Collisions,
     files::open_regular_file,
     github, read_bounded,
     wad::{Sha256, download, fetch},
@@ -34,18 +35,26 @@ struct Scope {
     directory: PathBuf,
     /// Where verified downloads wait, by SHA-256.
     store: Option<PathBuf>,
+    /// What happens when device entries collide.
+    collisions: Collisions,
 }
 
 thread_local! {
     static SCOPE: RefCell<Scope> = RefCell::new(Scope::default());
 }
 
-/// Runs `read` with relative paths resolved against `directory` and downloads
-/// kept in `store`.
-pub(crate) fn relative_to<T>(directory: PathBuf, store: PathBuf, read: impl FnOnce() -> T) -> T {
+/// Runs `read` with relative paths resolved against `directory`, downloads kept
+/// in `store`, and device collisions settled by `collisions`.
+pub(crate) fn relative_to<T>(
+    directory: PathBuf,
+    store: PathBuf,
+    collisions: Collisions,
+    read: impl FnOnce() -> T,
+) -> T {
     let previous = SCOPE.replace(Scope {
         directory,
         store: Some(store),
+        collisions,
     });
     let result = read();
     SCOPE.set(previous);
@@ -181,6 +190,11 @@ impl Source {
             }
         }
     }
+}
+
+/// What happens when device entries collide, as the recipe was read.
+pub(crate) fn collisions() -> Collisions {
+    SCOPE.with_borrow(|scope| scope.collisions)
 }
 
 /// The recipe's store directory, created if needed.
