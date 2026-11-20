@@ -167,6 +167,70 @@
       "type": "object",
       "additionalProperties": false
     },
+    "BootmiiAutoboot": {
+      "description": "What BootMii starts once its boot delay runs out.",
+      "oneOf": [
+        {
+          "description": "The Homebrew Channel, through its \"Launch BootMii\" entry.",
+          "type": "string",
+          "const": "hbc"
+        },
+        {
+          "description": "The System Menu.",
+          "type": "string",
+          "const": "sysmenu"
+        }
+      ]
+    },
+    "BootmiiIni": {
+      "description": "BootMii's settings, written to `/bootmii/bootmii.ini`, one `KEY=value` line per\nkey given. A key left out keeps BootMii's own default.",
+      "type": "object",
+      "properties": {
+        "autoboot": {
+          "description": "What BootMii starts after the boot delay.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BootmiiAutoboot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boot_delay": {
+          "description": "BootMii's boot delay. Its unit is not documented.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "video": {
+          "description": "The video mode BootMii sets.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BootmiiVideo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "BootmiiVideo": {
+      "description": "The video mode BootMii sets.",
+      "type": "string",
+      "enum": [
+        "ntsc",
+        "pal50",
+        "pal60",
+        "progressive"
+      ]
+    },
     "Bundle": {
       "description": "A file or archive placed from the device's root.",
       "type": "object",
@@ -525,12 +589,34 @@
             "$ref": "#/$defs/App"
           }
         },
+        "bootmii": {
+          "description": "BootMii's settings, written to /bootmii/bootmii.ini. BootMii reads that\nfile from the SD card only, so this goes under `sd`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BootmiiIni"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "bundles": {
           "description": "Anything else, placed from the device's root: packages spanning several\nroot folders, single files, covers.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Bundle"
           }
+        },
+        "rvloader": {
+          "description": "RVLoader's settings for games, written to /rvloader/configs/<ID>.cfg.\nRVLoader reads them from the USB drive, so this goes under `usb`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderSettings"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -1230,10 +1316,260 @@
         "vga"
       ]
     },
+    "RvloaderDeflicker": {
+      "description": "Deflicker filter (`Deflicker Mode`).",
+      "type": "string",
+      "enum": [
+        "auto",
+        "off",
+        "off_extended",
+        "on_low",
+        "on_medium",
+        "on_high"
+      ]
+    },
+    "RvloaderGame": {
+      "description": "One game's settings. A key left out keeps RVLoader's default for the game.\n\nWii discs (`wbfs`), VC and channels share the Wii keys; `usb_saves` is a Wii\ndisc option only; the GameCube keys apply to GameCube games.",
+      "type": "object",
+      "properties": {
+        "bluetooth": {
+          "description": "Bluetooth (a Wiimote and other Bluetooth controllers). Wii discs, VC and channels.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cheats": {
+          "description": "Cheats on. Wii discs, VC, channels and GameCube games.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cheats_hooktype": {
+          "description": "Where cheats hook into the game. Wii discs, VC and channels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderHooktype"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deflicker_mode": {
+          "description": "Deflicker filter. Wii discs, VC and channels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderDeflicker"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "force_progressive": {
+          "description": "Force progressive scan. GameCube games.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "force_rvl_dd_stretching": {
+          "description": "Force RVL-DD stretching. GameCube games.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "force_widescreen": {
+          "description": "Force widescreen. GameCube games.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "gc2wiimote": {
+          "description": "GC2Wiimote: a Wiimote as a GameCube controller. Wii discs, VC and channels.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "language": {
+          "description": "Language. GameCube games.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderLanguage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_pads": {
+          "description": "Pads, 1 to 4. GameCube games.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "memory_card_emulation": {
+          "description": "Memory card emulation. GameCube games.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "native_si": {
+          "description": "Native SI. GameCube games.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "padread_mode": {
+          "description": "Pad reading. Wii discs, VC and channels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderPadRead"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "patch_mx_chip": {
+          "description": "Patch the MX chip. Wii discs, VC and channels.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "usb_saves": {
+          "description": "Saves on the USB drive instead of the NAND. Wii discs only.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "video_mode": {
+          "description": "Video mode. GameCube games.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderGcVideo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "video_width": {
+          "description": "Video width: 0 for auto, otherwise 640 to 720. GameCube games.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "wifi": {
+          "description": "Wi-Fi: auto, on or off. Wii discs, VC and channels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderWifi"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RvloaderGcVideo": {
+      "description": "GameCube video mode (`Video mode`), as Nintendont's force flags encode it.",
+      "type": "string",
+      "enum": [
+        "auto",
+        "pal50",
+        "pal60",
+        "ntsc",
+        "mpal"
+      ]
+    },
+    "RvloaderHooktype": {
+      "description": "Where cheats hook into the game (`Cheats Hooktype`).",
+      "type": "string",
+      "enum": [
+        "vbi",
+        "kpadread",
+        "joypad",
+        "gxdraw",
+        "gxflush",
+        "ossleepthread",
+        "axnextframe"
+      ]
+    },
+    "RvloaderLanguage": {
+      "description": "GameCube language (`Language`).",
+      "type": "string",
+      "enum": [
+        "auto",
+        "english",
+        "german",
+        "french",
+        "spanish",
+        "italian",
+        "dutch"
+      ]
+    },
+    "RvloaderPadRead": {
+      "description": "Pad reading (`PADRead Mode`).",
+      "type": "string",
+      "enum": [
+        "auto",
+        "bypass",
+        "redirect"
+      ]
+    },
+    "RvloaderSettings": {
+      "description": "RVLoader's settings for games, written to `/rvloader/configs/<ID>.cfg`.",
+      "type": "object",
+      "properties": {
+        "games": {
+          "description": "Each game's settings, keyed by the game's ID.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Z0-9]{4,6}$": {
+              "$ref": "#/$defs/RvloaderGame"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "games"
+      ]
+    },
     "RvloaderVersion": {
       "description": "RVLoader release number: major.minor, without the leading v.",
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "RvloaderWifi": {
+      "description": "Wi-Fi for the game (`Enable WiFi`).",
+      "type": "string",
+      "enum": [
+        "off",
+        "on",
+        "auto"
+      ]
     },
     "SensorBar": {
       "description": "Sensor bar position relative to the display.",

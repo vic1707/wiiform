@@ -299,6 +299,28 @@ release asset by `repo`, `tag` and exact `asset` name. `sha256` may be left out
 only for a GitHub asset whose release states one (GitHub records it for assets
 uploaded since June 2025); a given `sha256` always wins.
 
+`sd` also takes `bootmii`, which writes `/bootmii/bootmii.ini` (BootMii never
+writes it): `video` (`ntsc`, `pal50`, `pal60` or `progressive`), `autoboot`
+(`hbc` or `sysmenu`) and `boot_delay` (a number, whose unit is undocumented).
+Each key is optional and the file lists the keys given, one `KEY=value` per
+line. That format comes from a wiki page, not from BootMii's source, so check
+it on a console.
+
+`usb` takes `rvloader`, which writes `/rvloader/configs/<ID>.cfg` for each game
+listed. The ID is the game's code: `RHAP01` for Wii Play, or the four letters of
+a WAD's title. Every key is optional and only the keys given are written; the
+rest keep RVLoader's default for the game's type. The schema lists the keys.
+
+```yaml
+usb:
+  rvloader:
+    games:
+      RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}
+```
+
+A file from `bootmii` or `rvloader` collides with others like any device file,
+so a bundle writing the same path gets the usual warning.
+
 - **`apps`:** each key is the app's folder, `apps/<key>/`.
   - **From an archive:** the archive's one folder holding `boot.dol` or
     `boot.elf` becomes `apps/<key>/`, wherever it sits in the archive

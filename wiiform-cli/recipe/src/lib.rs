@@ -106,6 +106,19 @@ impl Recipe {
     /// Checks what the types cannot express. Call it again after changing a field.
     pub fn validate(&self) -> Result<()> {
         self.nand.validate()?;
+        // BootMii runs from the SD card and RVLoader from the USB drive.
+        if let Some(usb) = &self.usb {
+            ensure!(
+                !usb.has_bootmii(),
+                "usb: bootmii writes /bootmii/bootmii.ini, which BootMii reads from the SD card; put it under sd"
+            );
+        }
+        if let Some(sd) = &self.sd {
+            ensure!(
+                !sd.has_rvloader(),
+                "sd: rvloader writes /rvloader/configs, which RVLoader reads from the USB drive; put it under usb"
+            );
+        }
         // The card's root also holds the NAND and its keys.
         for path in self.sd.iter().flat_map(|sd| sd.files().keys()) {
             ensure!(

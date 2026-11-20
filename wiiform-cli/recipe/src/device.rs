@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! Files for a storage device: the `sd` and `usb` keys.
 mod app;
+mod bootmii;
 mod bundle;
 mod card_path;
 mod extract;
+mod rvloader;
 
 use std::{
     collections::{BTreeMap, HashSet, btree_map::Entry},
@@ -18,7 +20,7 @@ use serde::{
 };
 
 pub use self::card_path::CardPath;
-use self::{app::App, bundle::Bundle};
+use self::{app::App, bootmii::BootmiiIni, bundle::Bundle, rvloader::RvloaderSettings};
 use crate::{blob::Blob, source};
 
 /// What happens when two entries write the same path. Paths are compared ignoring
@@ -48,6 +50,14 @@ struct DeviceFiles {
     /// root folders, single files, covers.
     #[serde(default)]
     bundles: Vec<Bundle>,
+    /// BootMii's settings, written to /bootmii/bootmii.ini. BootMii reads that
+    /// file from the SD card only, so this goes under `sd`.
+    #[serde(default)]
+    bootmii: Option<BootmiiIni>,
+    /// RVLoader's settings for games, written to /rvloader/configs/<ID>.cfg.
+    /// RVLoader reads them from the USB drive, so this goes under `usb`.
+    #[serde(default)]
+    rvloader: Option<RvloaderSettings>,
 }
 
 // Every file the entries put on the device, read and checked. Each app and
@@ -59,6 +69,8 @@ struct DeviceFiles {
 pub struct Device {
     files: BTreeMap<CardPath, Blob>,
     notices: Vec<String>,
+    bootmii: bool,
+    rvloader: bool,
 }
 
 impl Device {
@@ -71,6 +83,16 @@ impl Device {
     /// that won and the ones it displaced (or those ignored).
     pub fn notices(&self) -> &[String] {
         &self.notices
+    }
+
+    /// Whether the recipe sets BootMii's `bootmii.ini` on this device.
+    pub fn has_bootmii(&self) -> bool {
+        self.bootmii
+    }
+
+    /// Whether the recipe sets RVLoader's game settings on this device.
+    pub fn has_rvloader(&self) -> bool {
+        self.rvloader
     }
 }
 
@@ -92,6 +114,7 @@ impl<'de> Visitor<'de> for DeviceVisitor {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Device, A::Error> {
         let mut entries = Vec::new();
         let mut keys = HashSet::new();
+        let (mut bootmii, mut rvloader) = (false, false);
         while let Some(key) = map.next_key::<String>()? {
             ensure_custom::<A::Error>(keys.insert(key.clone()), || {
                 format!("{key} is listed twice")
@@ -99,12 +122,53 @@ impl<'de> Visitor<'de> for DeviceVisitor {
             match key.as_str() {
                 "apps" => map.next_value_seed(Apps(&mut entries))?,
                 "bundles" => map.next_value_seed(Bundles(&mut entries))?,
-                _ => return Err(de::Error::unknown_field(&key, &["apps", "bundles"])),
+                "bootmii" => {
+                    let settings: BootmiiIni = map.next_value()?;
+                    let file = settings.file().map_err(fail)?;
+                    push(
+                        &mut entries,
+                        "bootmii settings",
+                        generated(vec![file]).map_err(fail)?,
+                    );
+                    bootmii = true;
+                }
+                "rvloader" => {
+                    let settings: RvloaderSettings = map.next_value()?;
+                    let files = settings.files().map_err(fail)?;
+                    push(
+                        &mut entries,
+                        "rvloader settings",
+                        generated(files).map_err(fail)?,
+                    );
+                    rvloader = true;
+                }
+                _ => {
+                    return Err(de::Error::unknown_field(
+                        &key,
+                        &["apps", "bundles", "bootmii", "rvloader"],
+                    ));
+                }
             }
         }
         let (files, notices) = resolve(entries, source::collisions()).map_err(fail)?;
-        Ok(Device { files, notices })
+        Ok(Device {
+            files,
+            notices,
+            bootmii,
+            rvloader,
+        })
     }
+}
+
+/// Puts generated contents in the store, as device files at their paths.
+fn generated(files: Vec<(CardPath, Vec<u8>)>) -> Result<Vec<(CardPath, Blob)>> {
+    files
+        .into_iter()
+        .map(|(path, bytes)| {
+            let staged = source::store_bytes(&bytes)?;
+            Ok((path, Blob::file(staged)?))
+        })
+        .collect()
 }
 
 /// One file an entry writes, and the app or bundle it came from.

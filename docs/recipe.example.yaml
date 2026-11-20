@@ -139,6 +139,7 @@ sd:
     # Nintendont: # Loose files instead of an archive.
     #   files:
     #     boot.dol: {url: "https://example.com/loader.dol", sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+  # bootmii: {video: ntsc, autoboot: hbc, boot_delay: 5} # Writes /bootmii/bootmii.ini; each key optional.
   # bundles: # Anything else, placed from the card's root.
   #   - github: {repo: Fledge68/WiiFlow_Lite, tag: v5.6.2, asset: wiiflow_v5.6.2.zip}
   #     unzip: / # The whole archive.
@@ -148,6 +149,9 @@ sd:
 
 # Files for a USB drive, published in usb/. Same shape as sd.
 # usb:
+#   rvloader: # Writes /rvloader/configs/<ID>.cfg per game; keys optional.
+#     games:
+#       RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}
 #   bundles:
 #     - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
 #       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

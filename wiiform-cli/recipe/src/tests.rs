@@ -1356,3 +1356,119 @@ fn each_colliding_file_gets_one_notice_naming_its_sources() -> Result<()> {
     assert!(notices(Collisions::Overwrite, &[to(b"x", "p")])?.is_empty());
     Ok(())
 }
+
+/// The files a `usb` mapping such as `{rvloader: …}` puts on the drive.
+fn usb(device: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    let recipe = read_recipe(&format!("nand: {{menu: 4.3E}}\nusb: {device}"))?;
+    (recipe.usb.iter())
+        .flat_map(|usb| usb.files())
+        .map(|(path, blob)| Ok((path.to_string(), blob.bytes()?)))
+        .collect()
+}
+
+/// The contents of the file at `path`, which must be among `files`.
+fn contents<'a>(files: &'a [(String, Vec<u8>)], path: &str) -> &'a [u8] {
+    files
+        .iter()
+        .find(|(name, _)| name == path)
+        .map(|(_, bytes)| bytes.as_slice())
+        .unwrap_or_else(|| panic!("{path} is not on the device"))
+}
+
+#[test]
+fn bootmii_ini_holds_the_keys_it_is_given() -> Result<()> {
+    let files = card("{bootmii: {video: ntsc, autoboot: hbc, boot_delay: 5}}")?;
+    assert_eq!(
+        contents(&files, "/bootmii/bootmii.ini"),
+        b"VIDEO=NTSC\nAUTOBOOT=HBC\nBOOTDELAY=5\n"
+    );
+    let files = card("{bootmii: {video: progressive}}")?;
+    assert_eq!(
+        contents(&files, "/bootmii/bootmii.ini"),
+        b"VIDEO=PROGRESSIVE\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn bootmii_needs_a_key_and_the_sd_card() {
+    let refused = |device: &str| message(read_recipe(&format!("nand: {{menu: 4.3E}}\n{device}")));
+    assert!(refused("sd: {bootmii: {}}").contains("sets no key"));
+    assert!(refused("usb: {bootmii: {video: ntsc}}").contains("under sd"));
+}
+
+#[test]
+fn rvloader_writes_only_the_settings_given_per_game() -> Result<()> {
+    let files =
+        usb("{rvloader: {games: {RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}}}}")?;
+    assert_eq!(
+        contents(&files, "/rvloader/configs/RHAP01.cfg"),
+        b"Enable_WiFi = 2\nEnable_Bluetooth = 1\nEnable_USB_saves = 0\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn rvloader_values_are_the_numbers_the_loader_reads() -> Result<()> {
+    let files = usb(
+        "{rvloader: {games: {RHAP01: {wifi: off, padread_mode: redirect, deflicker_mode: on_high, cheats_hooktype: axnextframe}}}}",
+    )?;
+    assert_eq!(
+        contents(&files, "/rvloader/configs/RHAP01.cfg"),
+        b"Enable_WiFi = 0\nPADRead_Mode = 2\nDeflicker_Mode = 5\nCheats_Hooktype = 7\n"
+    );
+    let files = usb(
+        "{rvloader: {games: {GALE01: {video_mode: ntsc, language: auto, max_pads: 2, video_width: 640}}}}",
+    )?;
+    assert_eq!(
+        contents(&files, "/rvloader/configs/GALE01.cfg"),
+        b"Video_mode = 65540\nLanguage = -1\nMax_Pads = 2\nVideo_Width = 640\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn rvloader_refuses_bad_ids_settings_and_the_sd_card() {
+    let refused = |device: &str| message(read_recipe(&format!("nand: {{menu: 4.3E}}\n{device}")));
+    assert!(
+        refused("usb: {rvloader: {games: {rhap01: {bluetooth: true}}}}")
+            .contains("is not a game ID")
+    );
+    assert!(
+        refused("usb: {rvloader: {games: {ABC: {bluetooth: true}}}}").contains("is not a game ID")
+    );
+    assert!(refused("usb: {rvloader: {games: {}}}").contains("lists no games"));
+    assert!(refused("usb: {rvloader: {games: {RHAP01: {}}}}").contains("sets no key"));
+    assert!(
+        refused("usb: {rvloader: {games: {RHAP01: {bluetoth: true}}}}").contains("unknown field")
+    );
+    assert!(
+        refused("usb: {rvloader: {games: {GALE01: {max_pads: 5}}}}").contains("max_pads is 1 to 4")
+    );
+    assert!(
+        refused("usb: {rvloader: {games: {GALE01: {video_width: 800}}}}")
+            .contains("video_width is 0")
+    );
+    assert!(refused("sd: {rvloader: {games: {RHAP01: {bluetooth: true}}}}").contains("under usb"));
+    // The YAML reader refuses a repeated key before the recipe is read.
+    assert!(
+        refused(
+            "usb: {rvloader: {games: {RHAP01: {bluetooth: true}, RHAP01: {bluetooth: false}}}}"
+        )
+        .contains("duplicate mapping key")
+    );
+}
+
+#[test]
+fn generated_settings_collide_like_any_device_file() -> Result<()> {
+    let recipe = read_recipe(&format!(
+        "nand: {{menu: 4.3E}}\nusb:\n  rvloader: {{games: {{RHAP01: {{bluetooth: true}}}}}}\n  bundles:\n    - {{{}, to: /rvloader/configs/RHAP01.cfg}}\n",
+        inline_file(b"own settings")
+    ))?;
+    let usb = recipe.usb.expect("usb is set");
+    assert_eq!(usb.notices().len(), 1, "{:?}", usb.notices());
+    assert!(usb.notices()[0].contains("/rvloader/configs/RHAP01.cfg"));
+    assert!(usb.notices()[0].contains("bundles[0]"));
+    assert_eq!(usb.files().len(), 1);
+    Ok(())
+}
