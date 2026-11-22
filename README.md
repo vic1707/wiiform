@@ -42,11 +42,11 @@ mise run wii-seed -- BACKUP
 
 ### Host dependencies
 
-| Provided by | Requirements |
-| --- | --- |
-| mise | Xmake, CMake, Rust and Cargo, rustfmt, and Clippy |
-| Xmake and Cargo | Pinned WiiQt and locked Rust crates |
-| Host | Git, a C++20 compiler and linker, make, and a Qt SDK with qmake, Qt Core, and Qt Network |
+| Provided by     | Requirements                                                                             |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| mise            | Xmake, CMake, Rust and Cargo, rustfmt, and Clippy                                        |
+| Xmake and Cargo | Pinned WiiQt and locked Rust crates                                                      |
+| Host            | Git, a C++20 compiler and linker, make, and a Qt SDK with qmake, Qt Core, and Qt Network |
 
 On macOS, install Xcode Command Line Tools and Homebrew's `qt@5`; xmake finds
 it by itself. On Debian or Ubuntu, install `build-essential`, `git`,
@@ -86,8 +86,7 @@ them when investigating a failure.
   channels. They must be Nintendo-signed, unless `allow_unsigned: true` permits
   an unsigned downloadable channel. IOS WADs are refused here.
 - **`ios`:** Nintendo IOS, downloaded from NUS by `slot` and `version`, like
-  the stock titles. Stock 4.3 already has every IOS it ships, so `{slot: 9,
-  version: 1034}` (the Ocarina of Time dependency) only verifies IOS9.
+  the stock titles. Stock 4.3 already has every IOS it ships, so `{slot: 9, version: 1034}` (the Ocarina of Time dependency) only verifies IOS9.
 - **`cios`:** d2x cIOS, built or prebuilt; see [cIOS](#cios).
 
 Every title is installed when absent. An exact installed match is verified and
@@ -218,7 +217,11 @@ sd:
 ### RVLoader
 
 ```yaml
-setup: {language: en, country: GB, display: {progressive: true, pal60: true}} # display is needed only for vga.
+setup: 
+  language: en
+  country: GB
+  display: { progressive: true, pal60: true } # display is needed only for vga.
+
 priiloader: {}
 rvloader:
   version: "2.1"
@@ -276,19 +279,19 @@ Booting RVLoader from a prepared image has not yet been confirmed on a console.
 sd:
   apps: # Each key is the folder apps/<key>/.
     usbloader_gx:
-      github: {repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip}
+      github: { repo: wiidev/usbloadergx, tag: v4.0-r1283, asset: usbloadergx_r1283.zip }
     riivolution:
       url: https://aerialx.github.io/rvlution.net/riivolution.zip
       sha256: "…"
     Nintendont:
       files:
-        boot.dol: {url: "https://raw.githubusercontent.com/FIX94/Nintendont/COMMIT/loader/loader.dol", sha256: "…"}
+        boot.dol: { url: "https://raw.githubusercontent.com/FIX94/Nintendont/COMMIT/loader/loader.dol", sha256: "…" }
   bundles:
-    - github: {repo: Fledge68/WiiFlow_Lite, tag: v5.6.2, asset: wiiflow_v5.6.2.zip}
+    - github: { repo: Fledge68/WiiFlow_Lite, tag: v5.6.2, asset: wiiflow_v5.6.2.zip }
       unzip: /
 usb:
   bundles:
-    - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
+    - github: { repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip }
       sha256: "…"
       extract:
         "*/apps/RVLoader/**": /apps/RVLoader/
@@ -316,9 +319,9 @@ rest keep RVLoader's default for the game's type. The schema lists the keys.
 ```yaml
 usb:
   rvloader:
-    config: {theme: main, wii_load_screen: spinning_disc}
+    config: { theme: main, wii_load_screen: spinning_disc }
     games:
-      RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}
+      RHAP01: { bluetooth: true, usb_saves: false, wifi: auto }
 ```
 
 `config` writes RVLoader's own `/rvloader/config.cfg`: `theme` names a folder
@@ -392,12 +395,12 @@ RVLoader cannot run from the card; it needs its release on a USB drive.
 titles:
   cios:
     - d2x:
-        github: {repo: wiidev/d2x-cios, tag: d2x-v11-beta3, asset: d2x-v11-beta3.zip}
+        github: { repo: wiidev/d2x-cios, tag: d2x-v11-beta3, asset: d2x-v11-beta3.zip }
         sha256: "c2c7c9c5dad247c48f561a2b08f74359227e09271104dec814dbab4ad97e68d3"
-      target: {slot: 249, base: 56, revision: 65535, replace_stock_stub: true}
+      target: { slot: 249, base: 56, revision: 65535, replace_stock_stub: true }
     - path: wads/d2x-250-base57.wad # or a prebuilt cIOS WAD
       sha256: "…"
-      target: {slot: 250, base: 57, revision: 65535}
+      target: { slot: 250, base: 57, revision: 65535 }
 ```
 
 A `cios` entry gives the target slot, base IOS and revision, and either a
