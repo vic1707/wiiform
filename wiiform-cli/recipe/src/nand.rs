@@ -24,6 +24,7 @@ use self::{
 /// The NAND image: stock menu, then everything installed on top of it.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = crate::schema::nand_rules)]
 pub struct Nand {
     /// Stock System Menu target (4.3E, 4.3U, or 4.3J).
     pub menu: Menu,
@@ -57,7 +58,6 @@ impl Nand {
     pub fn validate(&self) -> Result<()> {
         let menu = self.menu;
         if let Some(priiloader) = &self.priiloader {
-            priiloader.validate()?;
             ensure!(
                 priiloader.autoboot != Some(priiloader::Autoboot::BootmiiIos)
                     || self.bootmii.is_some(),

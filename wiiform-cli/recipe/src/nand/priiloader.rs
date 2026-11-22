@@ -5,7 +5,7 @@ mod hack;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub use self::hack::Hack;
+pub use self::hack::{BackgroundMusic, DiscIos, Hack, UsbGecko};
 
 /// Declares an option enum that the recipe and the command line spell the same way.
 macro_rules! options {
@@ -106,30 +106,28 @@ pub struct Priiloader {
     #[cfg_attr(feature = "cli", arg(long))]
     #[serde(default = "defaults::show_rc_updates")]
     pub show_rc_updates: bool,
-    /// Hacks to enable. Every other hack is disabled. The two music hacks, the
-    /// two USB Gecko hacks, and the four force_disc_ios hacks exclude each other.
+    /// Hacks to enable, each combining with any other. Every hack not listed is
+    /// disabled. The background music, USB Gecko and force_disc_ios hacks have
+    /// their own keys, since each group takes at most one hack.
     #[cfg_attr(feature = "cli", arg(long = "hack", value_enum, value_name = "HACK"))]
     #[schemars(extend("uniqueItems" = true), transform = crate::schema::list_values::<Hack>)]
     #[serde(default)]
     pub hacks: Vec<Hack>,
+    /// The System Menu's background music hack, or none.
+    #[cfg_attr(feature = "cli", arg(long, value_enum))]
+    #[serde(default)]
+    pub background_music: Option<BackgroundMusic>,
+    /// Where the Wii Menu's logs go to a USB Gecko, or none.
+    #[cfg_attr(feature = "cli", arg(long, value_enum))]
+    #[serde(default)]
+    pub usb_gecko: Option<UsbGecko>,
+    /// The IOS that runs disc games, or none. The IOS must hold a cIOS.
+    #[cfg_attr(feature = "cli", arg(long, value_enum))]
+    #[serde(default)]
+    pub force_disc_ios: Option<DiscIos>,
 }
 
 impl Priiloader {
-    /// Refuses hacks that cannot be enabled together.
-    pub fn validate(&self) -> anyhow::Result<()> {
-        for group in Hack::EXCLUSIVE {
-            let enabled: Vec<&Hack> = group
-                .iter()
-                .filter(|hack| self.hacks.contains(hack))
-                .collect();
-            anyhow::ensure!(
-                enabled.len() <= 1,
-                "Priiloader hacks {enabled:?} cannot be enabled together"
-            );
-        }
-        Ok(())
-    }
-
     /// These settings, starting the executable stored as Priiloader's boot file
     /// at power-on and whenever a program returns.
     pub fn booting_file(&self) -> Self {

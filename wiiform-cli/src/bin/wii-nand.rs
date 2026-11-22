@@ -166,7 +166,6 @@ fn run(cli: Cli) -> Result<()> {
             config,
             rvloader,
         } => {
-            config.validate()?;
             let rvloader = rvloader.map(Rvloader::try_from).transpose()?;
             let cache = NusCache::from_environment()?;
             image.edit(|nand| install_priiloader(nand, &config, rvloader.as_ref(), &cache))

@@ -7,7 +7,7 @@ use super::*;
 use crate::{
     nand::{
         menu::Menu,
-        priiloader::{Autoboot, Hack, ReturnTo},
+        priiloader::{Autoboot, BackgroundMusic, DiscIos, Hack, ReturnTo, UsbGecko},
         setup::{Display, Language, SensorBar, display::Aspect},
         titles::cios::{Kind as CiosKind, d2x::Module},
     },
@@ -538,7 +538,12 @@ priiloader: {autoboot: system_menu, return_to: system_menu, shutdown_to: none,
             });
             let optional = !required.contains(&key.as_str().into());
             assert!(
-                reported || !optional || key == "hacks",
+                reported
+                    || !optional
+                    || matches!(
+                        key.as_str(),
+                        "hacks" | "background_music" | "usb_gecko" | "force_disc_ios"
+                    ),
                 "{path}.{key} may be left out but is not reported"
             );
         }
@@ -990,21 +995,36 @@ fn github_sources_use_the_release_digest_or_a_given_hash() -> Result<()> {
 }
 
 #[test]
-fn exclusive_hacks_are_refused() -> Result<()> {
+fn exclusive_hacks_each_have_one_key_taking_one_value() -> Result<()> {
+    // The hacks that exclude each other are not list entries: each group is a key.
     for hacks in [
-        "[no_background_music, no_sfx_and_background_music]",
-        "[usb_gecko_report, usb_gecko_report_geckoos]",
-        "[force_disc_ios249, force_disc_ios250]",
+        "[no_background_music]",
+        "[usb_gecko_report]",
+        "[force_disc_ios249]",
     ] {
         let result = read(&format!("menu: 4.3E\npriiloader: {{hacks: {hacks}}}"));
-        assert!(
-            message(result).contains("cannot be enabled together"),
-            "{hacks}"
-        );
+        assert!(message(result).contains("unknown variant"), "{hacks}");
     }
-    read(
-        "menu: 4.3E\npriiloader: {hacks: [force_disc_ios249, no_sfx_and_background_music, remove_ios16_disc_error]}",
-    )?;
+    for setting in [
+        "background_music: [no_background_music, no_sfx_and_background_music]",
+        "usb_gecko: [usb_gecko_report, usb_gecko_report_geckoos]",
+        "force_disc_ios: [force_disc_ios249, force_disc_ios250]",
+    ] {
+        let result = read(&format!("menu: 4.3E\npriiloader: {{{setting}}}"));
+        assert!(result.is_err(), "{setting}");
+    }
+    let config = read(
+        "menu: 4.3E\npriiloader: {hacks: [remove_ios16_disc_error, fix_480p], background_music: no_sfx_and_background_music, usb_gecko: usb_gecko_report_geckoos, force_disc_ios: force_disc_ios249}",
+    )?
+    .priiloader
+    .context("expected Priiloader settings")?;
+    assert_eq!(config.hacks, [Hack::RemoveIos16DiscError, Hack::Fix480p]);
+    assert_eq!(
+        config.background_music,
+        Some(BackgroundMusic::NoSfxAndBackgroundMusic)
+    );
+    assert_eq!(config.usb_gecko, Some(UsbGecko::UsbGeckoReportGeckoOs));
+    assert_eq!(config.force_disc_ios, Some(DiscIos::ForceDiscIos249));
     Ok(())
 }
 
@@ -1394,7 +1414,8 @@ fn bootmii_ini_holds_the_keys_it_is_given() -> Result<()> {
 fn bootmii_needs_a_key_and_the_sd_card() {
     let refused = |device: &str| message(read_recipe(&format!("nand: {{menu: 4.3E}}\n{device}")));
     assert!(refused("sd: {bootmii: {}}").contains("sets no key"));
-    assert!(refused("usb: {bootmii: {video: ntsc}}").contains("under sd"));
+    // The usb mapping has no bootmii key at all.
+    assert!(refused("usb: {bootmii: {video: ntsc}}").contains("unknown field `bootmii`"));
 }
 
 #[test]
@@ -1449,7 +1470,11 @@ fn rvloader_refuses_bad_ids_settings_and_the_sd_card() {
         refused("usb: {rvloader: {games: {GALE01: {video_width: 800}}}}")
             .contains("video_width is 0")
     );
-    assert!(refused("sd: {rvloader: {games: {RHAP01: {bluetooth: true}}}}").contains("under usb"));
+    // The sd mapping has no rvloader key at all.
+    assert!(
+        refused("sd: {rvloader: {games: {RHAP01: {bluetooth: true}}}}")
+            .contains("unknown field `rvloader`")
+    );
     // The YAML reader refuses a repeated key before the recipe is read.
     assert!(
         refused(
@@ -1471,4 +1496,40 @@ fn generated_settings_collide_like_any_device_file() -> Result<()> {
     assert!(usb.notices()[0].contains("bundles[0]"));
     assert_eq!(usb.files().len(), 1);
     Ok(())
+}
+
+#[test]
+fn rvloader_config_writes_only_the_keys_given() -> Result<()> {
+    let theme = inline_file(b"theme");
+    let files = usb(&format!(
+        "{{rvloader: {{config: {{theme: main, wii_load_screen: spinning_disc}}}}, bundles: [{{{theme}, to: /rvloader/themes/main/theme.txt}}]}}"
+    ))?;
+    assert_eq!(
+        contents(&files, "/rvloader/config.cfg"),
+        b"theme = \"main\"\nWiiLoadScreen = 1\n"
+    );
+    let files = usb(
+        "{rvloader: {config: {wii_load_screen: verbose}, games: {RHAP01: {bluetooth: true}}}}",
+    )?;
+    assert_eq!(
+        contents(&files, "/rvloader/config.cfg"),
+        b"WiiLoadScreen = 0\n"
+    );
+    assert_eq!(
+        contents(&files, "/rvloader/configs/RHAP01.cfg"),
+        b"Enable_Bluetooth = 1\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn rvloader_config_needs_its_theme_on_the_drive_and_a_valid_name() {
+    let refused = |device: &str| message(read_recipe(&format!("nand: {{menu: 4.3E}}\n{device}")));
+    assert!(refused("usb: {rvloader: {config: {theme: main}}}").contains("holds no files"));
+    assert!(
+        refused("usb: {rvloader: {config: {theme: \"../x\"}}}").contains("not a theme folder name")
+    );
+    assert!(refused("usb: {rvloader: {config: {}}}").contains("sets no key"));
+    assert!(refused("usb: {rvloader: {}}").contains("neither config nor games"));
+    assert!(refused("usb: {rvloader: {games: {}}}").contains("lists no games"));
 }

@@ -28,7 +28,7 @@ pub mod yaml;
 pub use self::{
     blob::Blob,
     defaults::Defaulted,
-    device::{Collisions, Device},
+    device::{Collisions, Device, Sd, Usb},
     files::{ResolvedPath, open_regular_file, read_bounded},
     nand::{
         Nand,
@@ -51,9 +51,11 @@ pub struct Recipe {
     /// The NAND image to build.
     pub nand: Nand,
     /// Files for the SD card, published in sd/ next to nand.bin and keys.bin.
-    pub sd: Option<Device>,
+    #[schemars(with = "Option<device::SdDevice>")]
+    pub sd: Option<Device<Sd>>,
     /// Files for a USB drive, published in usb/.
-    pub usb: Option<Device>,
+    #[schemars(with = "Option<device::UsbDevice>")]
+    pub usb: Option<Device<Usb>>,
     /// The keys the recipe left out that Wiiform filled in, sorted by key.
     #[serde(skip)]
     #[schemars(skip)]
@@ -93,32 +95,19 @@ impl Recipe {
     /// One notice per device file that more than one entry wrote, prefixed with
     /// the device it is on.
     pub fn collision_notices(&self) -> Vec<String> {
-        let notices = |name: &str, device: &Option<Device>| {
+        fn notices<K>(name: &str, device: Option<&Device<K>>) -> Vec<String> {
             (device.iter().flat_map(|device| device.notices()))
                 .map(|notice| format!("{name}: {notice}"))
-                .collect::<Vec<_>>()
-        };
-        let mut all = notices("sd", &self.sd);
-        all.extend(notices("usb", &self.usb));
+                .collect()
+        }
+        let mut all = notices("sd", self.sd.as_ref());
+        all.extend(notices("usb", self.usb.as_ref()));
         all
     }
 
     /// Checks what the types cannot express. Call it again after changing a field.
     pub fn validate(&self) -> Result<()> {
         self.nand.validate()?;
-        // BootMii runs from the SD card and RVLoader from the USB drive.
-        if let Some(usb) = &self.usb {
-            ensure!(
-                !usb.has_bootmii(),
-                "usb: bootmii writes /bootmii/bootmii.ini, which BootMii reads from the SD card; put it under sd"
-            );
-        }
-        if let Some(sd) = &self.sd {
-            ensure!(
-                !sd.has_rvloader(),
-                "sd: rvloader writes /rvloader/configs, which RVLoader reads from the USB drive; put it under usb"
-            );
-        }
         // The card's root also holds the NAND and its keys.
         for path in self.sd.iter().flat_map(|sd| sd.files().keys()) {
             ensure!(

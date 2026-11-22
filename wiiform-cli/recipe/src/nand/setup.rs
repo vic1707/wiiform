@@ -23,6 +23,19 @@ pub enum Language {
     Nl,
 }
 
+impl Language {
+    /// Every language, in the order of the enum.
+    pub(crate) const ALL: [Self; 7] = [
+        Self::Ja,
+        Self::En,
+        Self::De,
+        Self::Fr,
+        Self::Es,
+        Self::It,
+        Self::Nl,
+    ];
+}
+
 /// Serde defaults for the keys a recipe leaves out, noted for the build log.
 mod defaults {
     use super::{Nickname, SensorBar};

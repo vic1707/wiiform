@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! Editor help the derived JSON Schema cannot give on its own.
 use schemars::{JsonSchema, Schema};
-use serde_json::Value;
+use serde_json::{Value, json};
+
+use crate::nand::{
+    menu::Menu,
+    setup::{CountryCode, Language},
+};
 
 /// Appends to a list key's description every value `T` accepts, with the
 /// first sentence of each value's own description. Editors show a key's
@@ -30,6 +35,71 @@ pub(crate) fn list_values<T: JsonSchema>(schema: &mut Schema) {
         lines.join("\n")
     );
     schema.insert("description".into(), description.into());
+}
+
+/// The rules between `nand` keys that the schema states, for editors. The recipe
+/// checks the same rules when it is read: a schema is not run by the CLI.
+pub(crate) fn nand_rules(schema: &mut Schema) {
+    let mut rules = vec![
+        // bootmii_ios needs the bootmii key.
+        json!({
+            "if": {
+                "required": ["priiloader"],
+                "properties": {"priiloader": {"type": "object", "required": ["autoboot"], "properties": {"autoboot": {"const": "bootmii_ios"}}}}
+            },
+            "then": {"required": ["bootmii"]}
+        }),
+        // rvloader needs a priiloader section, and that section leaves out
+        // autoboot and return_to.
+        json!({"dependentRequired": {"rvloader": ["priiloader"]}}),
+        json!({
+            "if": {"required": ["rvloader"], "properties": {"rvloader": {"type": "object"}}},
+            "then": {"properties": {"priiloader": {"properties": {"autoboot": false, "return_to": false}}}}
+        }),
+    ];
+    // rvloader.vga needs setup.display.progressive, and pal60 on 4.3E.
+    let vga = json!({"required": ["rvloader"], "properties": {"rvloader": {"type": "object", "required": ["vga"], "properties": {"vga": {"const": true}}}}});
+    let vga_on_e43 = json!({
+        "required": ["rvloader", "menu"],
+        "properties": {"menu": {"const": Menu::E43.to_string()}, "rvloader": {"type": "object", "required": ["vga"], "properties": {"vga": {"const": true}}}}
+    });
+    rules.push(display_rule(vga, "progressive"));
+    rules.push(display_rule(vga_on_e43, "pal60"));
+    // Each menu takes its own languages and countries.
+    for menu in [Menu::E43, Menu::U43, Menu::J43] {
+        let languages: Vec<Value> = (Language::ALL.iter())
+            .filter(|language| menu.allows_language(**language))
+            .filter_map(|language| serde_json::to_value(language).ok())
+            .collect();
+        let countries: Vec<Value> = (CountryCode::ALL.iter())
+            .filter(|country| menu.allows_country(**country))
+            .map(|country| json!(country.as_alpha2()))
+            .collect();
+        rules.push(json!({
+            "if": {"required": ["menu"], "properties": {"menu": {"const": menu.to_string()}}},
+            "then": {"properties": {"setup": {"properties": {
+                "language": {"enum": languages},
+                "country": {"enum": countries}
+            }}}}
+        }));
+    }
+    schema.insert("allOf".into(), Value::Array(rules));
+}
+
+/// A rule that, when `condition` holds, needs `setup.display.<flag>` to be true.
+fn display_rule(condition: Value, flag: &str) -> Value {
+    json!({
+        "if": condition,
+        "then": {"required": ["setup"], "properties": {"setup": {
+            "type": "object",
+            "required": ["display"],
+            "properties": {"display": {
+                "type": "object",
+                "required": [flag],
+                "properties": {flag: {"const": true}}
+            }}
+        }}}
+    })
 }
 
 /// Up to the first full stop that ends a sentence, on one line.

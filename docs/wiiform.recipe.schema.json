@@ -11,7 +11,7 @@
       "description": "Files for the SD card, published in sd/ next to nand.bin and keys.bin.",
       "anyOf": [
         {
-          "$ref": "#/$defs/Device"
+          "$ref": "#/$defs/SdDevice"
         },
         {
           "type": "null"
@@ -22,7 +22,7 @@
       "description": "Files for a USB drive, published in usb/.",
       "anyOf": [
         {
-          "$ref": "#/$defs/Device"
+          "$ref": "#/$defs/UsbDevice"
         },
         {
           "type": "null"
@@ -147,6 +147,21 @@
         "bootmii_ios",
         "system_menu",
         "file"
+      ]
+    },
+    "BackgroundMusic": {
+      "description": "The System Menu's background music: at most one hack, and each includes or\nexcludes the other's effect.",
+      "oneOf": [
+        {
+          "description": "Disables the System Menu's background music.",
+          "type": "string",
+          "const": "no_background_music"
+        },
+        {
+          "description": "Disables the System Menu's sound effects and background music.",
+          "type": "string",
+          "const": "no_sfx_and_background_music"
+        }
       ]
     },
     "Base": {
@@ -578,48 +593,30 @@
         "GB"
       ]
     },
-    "Device": {
-      "description": "The files of an SD card or a USB drive.",
-      "type": "object",
-      "properties": {
-        "apps": {
-          "description": "Homebrew apps. Each key is the folder apps/<key>/ the app goes in.",
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/App"
-          }
+    "DiscIos": {
+      "description": "The IOS that runs disc games, which must hold a cIOS: at most one hack.",
+      "oneOf": [
+        {
+          "description": "Runs disc games under IOS248, for a cIOS installed there. Disc games without\none there stop working.",
+          "type": "string",
+          "const": "force_disc_ios248"
         },
-        "bootmii": {
-          "description": "BootMii's settings, written to /bootmii/bootmii.ini. BootMii reads that\nfile from the SD card only, so this goes under `sd`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BootmiiIni"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        {
+          "description": "Runs disc games under IOS249 (see force_disc_ios248).",
+          "type": "string",
+          "const": "force_disc_ios249"
         },
-        "bundles": {
-          "description": "Anything else, placed from the device's root: packages spanning several\nroot folders, single files, covers.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Bundle"
-          }
+        {
+          "description": "Runs disc games under IOS250 (see force_disc_ios248).",
+          "type": "string",
+          "const": "force_disc_ios250"
         },
-        "rvloader": {
-          "description": "RVLoader's settings for games, written to /rvloader/configs/<ID>.cfg.\nRVLoader reads them from the USB drive, so this goes under `usb`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RvloaderSettings"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        {
+          "description": "Runs disc games under IOS251 (see force_disc_ios248).",
+          "type": "string",
+          "const": "force_disc_ios251"
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "Display": {
       "description": "Display configuration applied during first-run setup.",
@@ -679,7 +676,7 @@
       ]
     },
     "Hack": {
-      "description": "A System Menu hack from the pinned Priiloader 0.10.0 definitions. Descriptions\nfollow Priiloader's docs/HACKSLIST.md.",
+      "description": "A System Menu hack from the pinned Priiloader 0.10.0 definitions that\ncombines with any other. Descriptions follow Priiloader's docs/HACKSLIST.md.\nThe hacks that exclude each other have their own fields: see\n[`BackgroundMusic`], [`UsbGecko`] and [`DiscIos`].",
       "oneOf": [
         {
           "description": "Fixes an image display issue of the System Menu in 480p (analog video only).\nIt fixes the System Menu, not games.",
@@ -727,11 +724,6 @@
           "const": "replace_health_screen"
         },
         {
-          "description": "Disables the System Menu's background music.",
-          "type": "string",
-          "const": "no_background_music"
-        },
-        {
           "description": "Patches disc games launched from the Disc Channel to use Wiimmfi (not WiiWare).",
           "type": "string",
           "const": "wiimmfi"
@@ -742,24 +734,9 @@
           "const": "region_free_everything"
         },
         {
-          "description": "Disables the System Menu's sound effects and background music.",
-          "type": "string",
-          "const": "no_sfx_and_background_music"
-        },
-        {
           "description": "Re-enables the Bannerbomb exploit on 4.3. Not needed with the Homebrew Channel.",
           "type": "string",
           "const": "re_enable_bannerbomb"
-        },
-        {
-          "description": "Sends the Wii Menu's logs to a USB Gecko in memory card slot B.",
-          "type": "string",
-          "const": "usb_gecko_report"
-        },
-        {
-          "description": "Sends the Wii Menu's logs to a USB Gecko in slot B when Gecko OS launched the menu.",
-          "type": "string",
-          "const": "usb_gecko_report_geckoos"
         },
         {
           "description": "Boots straight into Data Management. Can help with a banner brick by deleting\nthe channel data causing it.",
@@ -780,26 +757,6 @@
           "description": "Prevents the System Menu from deleting the Homebrew Channel, DVDX and others\n(HAXX, JODI, DVDX, DISC, DISK, RZDx).",
           "type": "string",
           "const": "no_delete_homebrew"
-        },
-        {
-          "description": "Runs disc games under IOS248, for a cIOS installed there. Disc games without\none there stop working.",
-          "type": "string",
-          "const": "force_disc_ios248"
-        },
-        {
-          "description": "Runs disc games under IOS249 (see force_disc_ios248).",
-          "type": "string",
-          "const": "force_disc_ios249"
-        },
-        {
-          "description": "Runs disc games under IOS250 (see force_disc_ios248).",
-          "type": "string",
-          "const": "force_disc_ios250"
-        },
-        {
-          "description": "Runs disc games under IOS251 (see force_disc_ios248).",
-          "type": "string",
-          "const": "force_disc_ios251"
         },
         {
           "description": "Unblocks service discs: the Wii Startup Disc and the Wii Backup Discs.",
@@ -1088,6 +1045,319 @@
         }
       },
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "priiloader": {
+                "type": "object",
+                "properties": {
+                  "autoboot": {
+                    "const": "bootmii_ios"
+                  }
+                },
+                "required": [
+                  "autoboot"
+                ]
+              }
+            },
+            "required": [
+              "priiloader"
+            ]
+          },
+          "then": {
+            "required": [
+              "bootmii"
+            ]
+          }
+        },
+        {
+          "dependentRequired": {
+            "rvloader": [
+              "priiloader"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "rvloader": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "rvloader"
+            ]
+          },
+          "then": {
+            "properties": {
+              "priiloader": {
+                "properties": {
+                  "autoboot": false,
+                  "return_to": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "rvloader": {
+                "type": "object",
+                "properties": {
+                  "vga": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "vga"
+                ]
+              }
+            },
+            "required": [
+              "rvloader"
+            ]
+          },
+          "then": {
+            "properties": {
+              "setup": {
+                "type": "object",
+                "properties": {
+                  "display": {
+                    "type": "object",
+                    "properties": {
+                      "progressive": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "progressive"
+                    ]
+                  }
+                },
+                "required": [
+                  "display"
+                ]
+              }
+            },
+            "required": [
+              "setup"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "menu": {
+                "const": "4.3E"
+              },
+              "rvloader": {
+                "type": "object",
+                "properties": {
+                  "vga": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "vga"
+                ]
+              }
+            },
+            "required": [
+              "rvloader",
+              "menu"
+            ]
+          },
+          "then": {
+            "properties": {
+              "setup": {
+                "type": "object",
+                "properties": {
+                  "display": {
+                    "type": "object",
+                    "properties": {
+                      "pal60": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "pal60"
+                    ]
+                  }
+                },
+                "required": [
+                  "display"
+                ]
+              }
+            },
+            "required": [
+              "setup"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "menu": {
+                "const": "4.3E"
+              }
+            },
+            "required": [
+              "menu"
+            ]
+          },
+          "then": {
+            "properties": {
+              "setup": {
+                "properties": {
+                  "country": {
+                    "enum": [
+                      "AU",
+                      "AT",
+                      "BE",
+                      "DK",
+                      "FI",
+                      "FR",
+                      "DE",
+                      "GR",
+                      "IE",
+                      "IT",
+                      "LU",
+                      "NL",
+                      "NZ",
+                      "NO",
+                      "PL",
+                      "PT",
+                      "RO",
+                      "ES",
+                      "SE",
+                      "CH",
+                      "GB"
+                    ]
+                  },
+                  "language": {
+                    "enum": [
+                      "en",
+                      "de",
+                      "fr",
+                      "es",
+                      "it",
+                      "nl"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "menu": {
+                "const": "4.3U"
+              }
+            },
+            "required": [
+              "menu"
+            ]
+          },
+          "then": {
+            "properties": {
+              "setup": {
+                "properties": {
+                  "country": {
+                    "enum": [
+                      "AI",
+                      "AG",
+                      "AR",
+                      "AW",
+                      "BS",
+                      "BB",
+                      "BZ",
+                      "BO",
+                      "BR",
+                      "VG",
+                      "CA",
+                      "KY",
+                      "CL",
+                      "CO",
+                      "CR",
+                      "DM",
+                      "DO",
+                      "EC",
+                      "SV",
+                      "GF",
+                      "GD",
+                      "GP",
+                      "GT",
+                      "GY",
+                      "HT",
+                      "HN",
+                      "JM",
+                      "MQ",
+                      "MX",
+                      "MS",
+                      "AN",
+                      "NI",
+                      "PA",
+                      "PY",
+                      "PE",
+                      "KN",
+                      "LC",
+                      "VC",
+                      "SR",
+                      "TT",
+                      "TC",
+                      "US",
+                      "UY",
+                      "VI",
+                      "VE"
+                    ]
+                  },
+                  "language": {
+                    "enum": [
+                      "en",
+                      "fr",
+                      "es"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "menu": {
+                "const": "4.3J"
+              }
+            },
+            "required": [
+              "menu"
+            ]
+          },
+          "then": {
+            "properties": {
+              "setup": {
+                "properties": {
+                  "country": {
+                    "enum": [
+                      "JP"
+                    ]
+                  },
+                  "language": {
+                    "enum": [
+                      "ja"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
       "required": [
         "menu"
       ]
@@ -1183,13 +1453,37 @@
           ],
           "default": null
         },
+        "background_music": {
+          "description": "The System Menu's background music hack, or none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackgroundMusic"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "dump_gecko_text": {
           "description": "Dump Gecko output.",
           "type": "boolean",
           "default": false
         },
+        "force_disc_ios": {
+          "description": "The IOS that runs disc games, or none. The IOS must hold a cIOS.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiscIos"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "hacks": {
-          "description": "Hacks to enable. Every other hack is disabled. The two music hacks, the\ntwo USB Gecko hacks, and the four force_disc_ios hacks exclude each other.\n\nValues:\n- fix_480p: Fixes an image display issue of the System Menu in 480p (analog video only).\n- block_online_updates: Makes System Menu updates fail (error 32007), to stay on this System Menu.\n- block_disc_updates: Skips the \"Wii System Update\" some game discs force before playing.\n- block_disc_autoboot: Stops discs whose ID starts with 0 or 1 (diagnostic discs) from booting automatically.\n- auto_press_a: Presses A automatically to get past the health and safety screen.\n- remove_deflicker: Disables the System Menu's blur filter; recommended with 480p.\n- move_disc_channel: Lets the Disc Channel be moved like any channel (hold A+B).\n- remove_nocopy_save_protection: Lets Data Management copy save files that are normally protected from copying to the SD card.\n- replace_health_screen: Skips the health warning screen and goes straight to the channels.\n- no_background_music: Disables the System Menu's background music.\n- wiimmfi: Patches disc games launched from the Disc Channel to use Wiimmfi (not WiiWare).\n- region_free_everything: Unblocks region-locked Wii and GameCube discs and channels (WiiWare, VC).\n- no_sfx_and_background_music: Disables the System Menu's sound effects and background music.\n- re_enable_bannerbomb: Re-enables the Bannerbomb exploit on 4.3.\n- usb_gecko_report: Sends the Wii Menu's logs to a USB Gecko in memory card slot B.\n- usb_gecko_report_geckoos: Sends the Wii Menu's logs to a USB Gecko in slot B when Gecko OS launched the menu.\n- force_data_management: Boots straight into Data Management.\n- force_recovery_mode: Starts the console in recovery mode, to launch recovery discs.\n- remove_diagnostic_disc_check: In recovery mode, lets any disc boot instead of waiting for the Wii Backup Disc.\n- no_delete_homebrew: Prevents the System Menu from deleting the Homebrew Channel, DVDX and others (HAXX, JODI, DVDX, DISC, DISK, RZDx).\n- force_disc_ios248: Runs disc games under IOS248, for a cIOS installed there.\n- force_disc_ios249: Runs disc games under IOS249 (see force_disc_ios248).\n- force_disc_ios250: Runs disc games under IOS250 (see force_disc_ios248).\n- force_disc_ios251: Runs disc games under IOS251 (see force_disc_ios248).\n- unblock_service_discs: Unblocks service discs: the Wii Startup Disc and the Wii Backup Discs.\n- remove_ios16_disc_error: Stops the System Menu from blocking discs that use IOS16 (the Wii Backup Disc).\n- mark_network_tested: Marks the network connection as tested, so \"Use this connection\" works without running the test.",
+          "description": "Hacks to enable, each combining with any other. Every hack not listed is\ndisabled. The background music, USB Gecko and force_disc_ios hacks have\ntheir own keys, since each group takes at most one hack.\n\nValues:\n- fix_480p: Fixes an image display issue of the System Menu in 480p (analog video only).\n- block_online_updates: Makes System Menu updates fail (error 32007), to stay on this System Menu.\n- block_disc_updates: Skips the \"Wii System Update\" some game discs force before playing.\n- block_disc_autoboot: Stops discs whose ID starts with 0 or 1 (diagnostic discs) from booting automatically.\n- auto_press_a: Presses A automatically to get past the health and safety screen.\n- remove_deflicker: Disables the System Menu's blur filter; recommended with 480p.\n- move_disc_channel: Lets the Disc Channel be moved like any channel (hold A+B).\n- remove_nocopy_save_protection: Lets Data Management copy save files that are normally protected from copying to the SD card.\n- replace_health_screen: Skips the health warning screen and goes straight to the channels.\n- wiimmfi: Patches disc games launched from the Disc Channel to use Wiimmfi (not WiiWare).\n- region_free_everything: Unblocks region-locked Wii and GameCube discs and channels (WiiWare, VC).\n- re_enable_bannerbomb: Re-enables the Bannerbomb exploit on 4.3.\n- force_data_management: Boots straight into Data Management.\n- force_recovery_mode: Starts the console in recovery mode, to launch recovery discs.\n- remove_diagnostic_disc_check: In recovery mode, lets any disc boot instead of waiting for the Wii Backup Disc.\n- no_delete_homebrew: Prevents the System Menu from deleting the Homebrew Channel, DVDX and others (HAXX, JODI, DVDX, DISC, DISK, RZDx).\n- unblock_service_discs: Unblocks service discs: the Wii Startup Disc and the Wii Backup Discs.\n- remove_ios16_disc_error: Stops the System Menu from blocking discs that use IOS16 (the Wii Backup Disc).\n- mark_network_tested: Marks the network connection as tested, so \"Use this connection\" works without running the test.",
           "type": "array",
           "default": [],
           "items": {
@@ -1238,6 +1532,18 @@
           "description": "Stop the disc drive at startup.",
           "type": "boolean",
           "default": false
+        },
+        "usb_gecko": {
+          "description": "Where the Wii Menu's logs go to a USB Gecko, or none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UsbGecko"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "white_background": {
           "description": "Use a white background instead of the default black one.",
@@ -1315,6 +1621,36 @@
         "patch_out_wifi",
         "vga"
       ]
+    },
+    "RvloaderConfig": {
+      "description": "RVLoader's own settings, written to `/rvloader/config.cfg`. A key left out\nkeeps RVLoader's default.",
+      "type": "object",
+      "properties": {
+        "theme": {
+          "description": "Theme folder under /rvloader/themes, such as main. The theme's files must\nbe on the drive: put them there with a bundle.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThemeName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wii_load_screen": {
+          "description": "The load screen while a Wii game starts. Defaults to verbose.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WiiLoadScreen"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
     },
     "RvloaderDeflicker": {
       "description": "Deflicker filter (`Deflicker Mode`).",
@@ -1489,7 +1825,8 @@
           ]
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "minProperties": 1
     },
     "RvloaderGcVideo": {
       "description": "GameCube video mode (`Video mode`), as Nintendont's force flags encode it.",
@@ -1538,13 +1875,28 @@
       ]
     },
     "RvloaderSettings": {
-      "description": "RVLoader's settings for games, written to `/rvloader/configs/<ID>.cfg`.",
+      "description": "RVLoader's settings: its own config, and each game's.",
       "type": "object",
       "properties": {
+        "config": {
+          "description": "RVLoader's own settings, written to /rvloader/config.cfg.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "games": {
-          "description": "Each game's settings, keyed by the game's ID.",
-          "type": "object",
+          "description": "Each game's settings, keyed by the game's ID, written to\n/rvloader/configs/<ID>.cfg.",
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
+          "minProperties": 1,
           "patternProperties": {
             "^[A-Z0-9]{4,6}$": {
               "$ref": "#/$defs/RvloaderGame"
@@ -1553,8 +1905,27 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "games"
+      "anyOf": [
+        {
+          "properties": {
+            "config": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "config"
+          ]
+        },
+        {
+          "properties": {
+            "games": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "games"
+          ]
+        }
       ]
     },
     "RvloaderVersion": {
@@ -1570,6 +1941,38 @@
         "on",
         "auto"
       ]
+    },
+    "SdDevice": {
+      "description": "The `sd` mapping as the schema shows it. The parser reads the same keys.",
+      "type": "object",
+      "properties": {
+        "apps": {
+          "description": "Homebrew apps. Each key is the folder apps/<key>/ the app goes in.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/App"
+          }
+        },
+        "bootmii": {
+          "description": "BootMii's settings, written to /bootmii/bootmii.ini. BootMii reads that\nfile from the SD card only, so this key belongs under `sd`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BootmiiIni"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bundles": {
+          "description": "Anything else, placed from the card's root: packages spanning several\nroot folders, single files, covers.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bundle"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "SensorBar": {
       "description": "Sensor bar position relative to the display.",
@@ -1678,6 +2081,11 @@
         "revision"
       ]
     },
+    "ThemeName": {
+      "description": "A theme's folder name under `/rvloader/themes`.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,32}$"
+    },
     "Titles": {
       "description": "Titles to install on top of the stock menu.",
       "type": "object",
@@ -1705,6 +2113,53 @@
         }
       },
       "additionalProperties": false
+    },
+    "UsbDevice": {
+      "description": "The `usb` mapping as the schema shows it. The parser reads the same keys.",
+      "type": "object",
+      "properties": {
+        "apps": {
+          "description": "Homebrew apps. Each key is the folder apps/<key>/ the app goes in.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/App"
+          }
+        },
+        "bundles": {
+          "description": "Anything else, placed from the drive's root: packages spanning several\nroot folders, single files, covers, RVLoader themes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bundle"
+          }
+        },
+        "rvloader": {
+          "description": "RVLoader's settings: its own config and each game's. RVLoader reads them\nfrom the USB drive only, so this key belongs under `usb`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RvloaderSettings"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "UsbGecko": {
+      "description": "Where the Wii Menu's logs go to a USB Gecko: at most one hack.",
+      "oneOf": [
+        {
+          "description": "Sends the Wii Menu's logs to a USB Gecko in memory card slot B.",
+          "type": "string",
+          "const": "usb_gecko_report"
+        },
+        {
+          "description": "Sends the Wii Menu's logs to a USB Gecko in slot B when Gecko OS launched the menu.",
+          "type": "string",
+          "const": "usb_gecko_report_geckoos"
+        }
+      ]
     },
     "Wad": {
       "description": "A WAD from one source, with the SHA-256 of its exact bytes.",
@@ -1770,6 +2225,14 @@
         "sha256"
       ],
       "unevaluatedProperties": false
+    },
+    "WiiLoadScreen": {
+      "description": "The screen shown while a Wii game loads (`WiiLoadScreen`).",
+      "type": "string",
+      "enum": [
+        "verbose",
+        "spinning_disc"
+      ]
     }
   }
 }

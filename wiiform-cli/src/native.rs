@@ -49,11 +49,14 @@ same_variants! {
     Hack => ffi::Hack {
         Fix480p, BlockOnlineUpdates, BlockDiscUpdates, BlockDiscAutoboot, AutoPressA,
         RemoveDeflicker, MoveDiscChannel, RemoveNocopySaveProtection, ReplaceHealthScreen,
-        NoBackgroundMusic, Wiimmfi, RegionFreeEverything, NoSfxAndBackgroundMusic,
-        ReEnableBannerbomb, UsbGeckoReport, UsbGeckoReportGeckoOs, ForceDataManagement,
-        ForceRecoveryMode, RemoveDiagnosticDiscCheck, NoDeleteHomebrew, ForceDiscIos248,
-        ForceDiscIos249, ForceDiscIos250, ForceDiscIos251, UnblockServiceDiscs,
+        Wiimmfi, RegionFreeEverything, ReEnableBannerbomb, ForceDataManagement,
+        ForceRecoveryMode, RemoveDiagnosticDiscCheck, NoDeleteHomebrew, UnblockServiceDiscs,
         RemoveIos16DiscError, MarkNetworkTested,
+    }
+    priiloader::BackgroundMusic => ffi::Hack { NoBackgroundMusic, NoSfxAndBackgroundMusic }
+    priiloader::UsbGecko => ffi::Hack { UsbGeckoReport, UsbGeckoReportGeckoOs }
+    priiloader::DiscIos => ffi::Hack {
+        ForceDiscIos248, ForceDiscIos249, ForceDiscIos250, ForceDiscIos251,
     }
 }
 
@@ -384,9 +387,13 @@ impl Nand {
         Ok(ffi::configure_priiloader(&mut self.0[..], &settings)?)
     }
 
-    pub fn set_priiloader_hacks(&mut self, definitions: &[u8], enabled: &[Hack]) -> Result<()> {
-        let enabled: BTreeSet<Hack> = enabled.iter().copied().collect();
-        let enabled: Vec<ffi::Hack> = enabled.into_iter().map(Into::into).collect();
+    /// Enables the hacks the settings list, and no others.
+    pub fn set_priiloader_hacks(&mut self, definitions: &[u8], config: &Priiloader) -> Result<()> {
+        let standalone: BTreeSet<Hack> = config.hacks.iter().copied().collect();
+        let mut enabled: Vec<ffi::Hack> = standalone.into_iter().map(ffi::Hack::from).collect();
+        enabled.extend(config.background_music.map(ffi::Hack::from));
+        enabled.extend(config.usb_gecko.map(ffi::Hack::from));
+        enabled.extend(config.force_disc_ios.map(ffi::Hack::from));
         Ok(ffi::set_priiloader_hacks(
             &mut self.0[..],
             definitions,

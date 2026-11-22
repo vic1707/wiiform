@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//! RVLoader's per-game settings, `/rvloader/configs/<ID>.cfg`: one `Key = value`
-//! line per setting. RVLoader reads a missing key as its default for the game's
-//! type, so only the keys given are written.
+//! RVLoader's settings: its own `/rvloader/config.cfg`, and each game's
+//! `/rvloader/configs/<ID>.cfg`. Both hold one `Key = value` line per setting.
+//! RVLoader reads a missing key as its default, so only the keys given are
+//! written.
 //!
 //! The keys and values come from RVLoader 2.1 (commit 3d950f3): the menus in
 //! `gamesview.lua`, the defaults in `guigamesview.cpp`, and the enums in
@@ -196,6 +197,7 @@ fn flag(on: bool) -> i64 {
 /// disc option only; the GameCube keys apply to GameCube games.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("minProperties" = 1))]
 pub(super) struct RvloaderGame {
     /// Wi-Fi: auto, on or off. Wii discs, VC and channels.
     wifi: Option<RvloaderWifi>,
@@ -324,31 +326,150 @@ fn put(settings: &mut Vec<(&'static str, i64)>, key: &'static str, value: Option
     }
 }
 
-/// RVLoader's settings for games, written to `/rvloader/configs/<ID>.cfg`.
+/// A theme's folder name under `/rvloader/themes`.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, JsonSchema)]
+#[serde(try_from = "String")]
+#[schemars(with = "String", extend("pattern" = "^[A-Za-z0-9_-]{1,32}$"))]
+pub(super) struct ThemeName(String);
+
+impl TryFrom<String> for ThemeName {
+    type Error = anyhow::Error;
+
+    fn try_from(text: String) -> Result<Self> {
+        ensure!(
+            (1..=32).contains(&text.len())
+                && text
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'),
+            "{text} is not a theme folder name: use letters, digits, - and _"
+        );
+        Ok(Self(text))
+    }
+}
+
+impl fmt::Display for ThemeName {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// The screen shown while a Wii game loads (`WiiLoadScreen`).
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum WiiLoadScreen {
+    Verbose,
+    SpinningDisc,
+}
+
+impl WiiLoadScreen {
+    fn value(self) -> i64 {
+        match self {
+            Self::Verbose => 0,
+            Self::SpinningDisc => 1,
+        }
+    }
+}
+
+/// RVLoader's own settings, written to `/rvloader/config.cfg`. A key left out
+/// keeps RVLoader's default.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("minProperties" = 1))]
+pub(super) struct RvloaderConfig {
+    /// Theme folder under /rvloader/themes, such as main. The theme's files must
+    /// be on the drive: put them there with a bundle.
+    theme: Option<ThemeName>,
+    /// The load screen while a Wii game starts. Defaults to verbose.
+    wii_load_screen: Option<WiiLoadScreen>,
+}
+
+impl RvloaderConfig {
+    /// The file's lines, in RVLoader's `Key = value` form.
+    fn lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        if let Some(theme) = &self.theme {
+            lines.push(format!("theme = \"{theme}\""));
+        }
+        if let Some(screen) = self.wii_load_screen {
+            lines.push(format!("WiiLoadScreen = {}", screen.value()));
+        }
+        lines
+    }
+}
+
+/// Lines of an RVLoader config file, each ending in a newline.
+fn file_text(lines: &[String]) -> Vec<u8> {
+    lines
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .collect::<String>()
+        .into_bytes()
+}
+
+/// RVLoader's settings: its own config, and each game's.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = settings_rules)]
 pub(super) struct RvloaderSettings {
-    /// Each game's settings, keyed by the game's ID.
-    games: BTreeMap<RvloaderGameId, RvloaderGame>,
+    /// RVLoader's own settings, written to /rvloader/config.cfg.
+    #[serde(default)]
+    config: Option<RvloaderConfig>,
+    /// Each game's settings, keyed by the game's ID, written to
+    /// /rvloader/configs/<ID>.cfg.
+    #[serde(default)]
+    #[schemars(extend("minProperties" = 1))]
+    games: Option<BTreeMap<RvloaderGameId, RvloaderGame>>,
+}
+
+/// The config, the games, or both: the settings need one of them.
+fn settings_rules(schema: &mut schemars::Schema) {
+    schema.insert(
+        "anyOf".into(),
+        serde_json::json!([{"required": ["config"], "properties": {"config": {"type": "object"}}}, {"required": ["games"], "properties": {"games": {"type": "object"}}}]),
+    );
 }
 
 impl RvloaderSettings {
-    /// One config file per game, with the path and contents.
+    /// The files the settings write: the config, then one file per game.
     pub(super) fn files(&self) -> Result<Vec<(CardPath, Vec<u8>)>> {
-        ensure!(!self.games.is_empty(), "rvloader lists no games");
+        ensure!(
+            self.config.is_some() || self.games.is_some(),
+            "rvloader sets neither config nor games"
+        );
         let mut files = Vec::new();
-        for (id, game) in &self.games {
-            let settings = game
-                .settings()
-                .with_context(|| format!("rvloader game {id}"))?;
-            ensure!(!settings.is_empty(), "rvloader game {id} sets no key");
-            let text: String = settings
-                .iter()
-                .map(|(key, value)| format!("{key} = {value}\n"))
-                .collect();
-            let path = CardPath::try_from(format!("/rvloader/configs/{id}.cfg"))?;
-            files.push((path, text.into_bytes()));
+        if let Some(config) = &self.config {
+            let lines = config.lines();
+            ensure!(!lines.is_empty(), "rvloader config sets no key");
+            let path = CardPath::try_from("/rvloader/config.cfg".to_owned())?;
+            files.push((path, file_text(&lines)));
+        }
+        if let Some(games) = &self.games {
+            ensure!(!games.is_empty(), "rvloader lists no games");
+            for (id, game) in games {
+                let settings = game
+                    .settings()
+                    .with_context(|| format!("rvloader game {id}"))?;
+                ensure!(!settings.is_empty(), "rvloader game {id} sets no key");
+                let lines: Vec<String> = settings
+                    .iter()
+                    .map(|(key, value)| format!("{key} = {value}"))
+                    .collect();
+                let path = CardPath::try_from(format!("/rvloader/configs/{id}.cfg"))?;
+                files.push((path, file_text(&lines)));
+            }
         }
         Ok(files)
+    }
+
+    /// The folder the config's theme needs on the drive, if it names one.
+    pub(super) fn folders(&self) -> Result<Vec<CardPath>> {
+        let theme = self
+            .config
+            .as_ref()
+            .and_then(|config| config.theme.as_ref());
+        Ok(match theme {
+            Some(theme) => vec![CardPath::try_from(format!("/rvloader/themes/{theme}"))?],
+            None => Vec::new(),
+        })
     }
 }

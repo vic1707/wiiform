@@ -16,7 +16,7 @@ use crate::{
     native::{self, InstalledWad, Nand, StockIdentity},
     priiloader_payload,
     recipe::{
-        Blob, Collisions, Device, Menu, Priiloader, Recipe, Region, Rvloader, TitleId,
+        Blob, Collisions, Device, Menu, Priiloader, Recipe, Region, Rvloader, Sd, TitleId, Usb,
         nand::titles::cios,
     },
     seed::{self, StockSeed},
@@ -321,7 +321,7 @@ pub fn install_priiloader(
     };
     nand.configure_priiloader(&config)
         .context("cannot configure Priiloader")?;
-    nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config.hacks)
+    nand.set_priiloader_hacks(priiloader_payload::DEFINITIONS, &config)
         .context("cannot set Priiloader hacks")
 }
 
@@ -420,8 +420,8 @@ pub fn publish_edit(nand: &Nand, output: &Path) -> Result<()> {
 /// the recipe's `sd` files), and usb/ when the recipe has `usb`.
 fn publish_bundle(
     nand: &Nand,
-    sd: Option<&Device>,
-    usb: Option<&Device>,
+    sd: Option<&Device<Sd>>,
+    usb: Option<&Device<Usb>>,
     output: &Path,
 ) -> Result<()> {
     let staging = Builder::new()
@@ -448,7 +448,7 @@ fn publish_bundle(
     publish(&bundle, output).context("cannot publish NAND restore bundle")
 }
 
-fn write_tree(root: &Path, device: &Device) -> Result<()> {
+fn write_tree<K>(root: &Path, device: &Device<K>) -> Result<()> {
     for (path, blob) in device.files() {
         let target = path.under(root);
         let parent = target.parent().context("file has no parent directory")?;

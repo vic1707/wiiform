@@ -103,24 +103,21 @@ nand:
       # - move_disc_channel
       # - remove_nocopy_save_protection
       # - replace_health_screen
-      # - no_background_music
       # - wiimmfi
       # - region_free_everything # Japanese menus use the pinned JP definition.
-      # - no_sfx_and_background_music # Excludes no_background_music.
       # - re_enable_bannerbomb
-      # - usb_gecko_report
-      # - usb_gecko_report_geckoos # Excludes usb_gecko_report.
       # - force_data_management
       # - force_recovery_mode
       # - remove_diagnostic_disc_check
       # - no_delete_homebrew
-      # - force_disc_ios248 # The four force_disc_ios hacks exclude each other.
-      # - force_disc_ios249
-      # - force_disc_ios250
-      # - force_disc_ios251
       # - unblock_service_discs
       # - remove_ios16_disc_error
       # - mark_network_tested
+    # Three groups take one value each, and that value excludes the other hacks in
+    # its group. Each is a key of its own:
+    # background_music: no_background_music # Or no_sfx_and_background_music, which also silences sound effects.
+    # usb_gecko: usb_gecko_report # Or usb_gecko_report_geckoos.
+    # force_disc_ios: force_disc_ios249 # One of force_disc_ios248 to force_disc_ios251; that IOS must hold a cIOS.
 
 # Files for the SD card, published in sd/ next to nand.bin and keys.bin. Every
 # file takes one source (path, url, inline, or github: {repo, tag, asset}) and a
@@ -149,7 +146,8 @@ sd:
 
 # Files for a USB drive, published in usb/. Same shape as sd.
 # usb:
-#   rvloader: # Writes /rvloader/configs/<ID>.cfg per game; keys optional.
+#   rvloader: # Writes /rvloader/config.cfg and /rvloader/configs/<ID>.cfg per game; keys optional.
+#     config: {theme: main, wii_load_screen: verbose} # The theme's files come from the bundle below.
 #     games:
 #       RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}
 #   bundles:

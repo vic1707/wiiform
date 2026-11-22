@@ -10,13 +10,14 @@ mod rvloader;
 use std::{
     collections::{BTreeMap, HashSet, btree_map::Entry},
     fmt,
+    marker::PhantomData,
 };
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::{
     Deserialize, Deserializer,
-    de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
+    de::{self, DeserializeOwned, DeserializeSeed, MapAccess, SeqAccess, Visitor},
 };
 
 pub use self::card_path::CardPath;
@@ -37,43 +38,105 @@ pub enum Collisions {
     Error,
 }
 
-/// The files of an SD card or a USB drive.
+/// A kind of device: the one settings key it takes beyond `apps` and `bundles`,
+/// and the files that key writes.
+trait Kind: 'static {
+    /// The settings key.
+    const KEY: &'static str;
+    /// Names the settings' files in collision notices.
+    const SOURCE: &'static str;
+    /// The settings' value.
+    type Settings: DeserializeOwned;
+    /// The files the settings write, by path.
+    fn files(settings: &Self::Settings) -> Result<Vec<(CardPath, Vec<u8>)>>;
+    /// Folders the settings name, which the device must hold files in.
+    fn folders(settings: &Self::Settings) -> Result<Vec<CardPath>>;
+}
+
+/// The SD card. BootMii reads its settings from the card, so `bootmii` goes here.
+#[derive(Debug)]
+pub struct Sd;
+
+/// A USB drive. RVLoader reads its settings from the drive, so `rvloader` goes here.
+#[derive(Debug)]
+pub struct Usb;
+
+impl Kind for Sd {
+    const KEY: &'static str = "bootmii";
+    const SOURCE: &'static str = "bootmii settings";
+    type Settings = BootmiiIni;
+
+    fn files(settings: &BootmiiIni) -> Result<Vec<(CardPath, Vec<u8>)>> {
+        Ok(vec![settings.file()?])
+    }
+
+    fn folders(_: &BootmiiIni) -> Result<Vec<CardPath>> {
+        Ok(Vec::new())
+    }
+}
+
+impl Kind for Usb {
+    const KEY: &'static str = "rvloader";
+    const SOURCE: &'static str = "rvloader settings";
+    type Settings = RvloaderSettings;
+
+    fn files(settings: &RvloaderSettings) -> Result<Vec<(CardPath, Vec<u8>)>> {
+        settings.files()
+    }
+
+    fn folders(settings: &RvloaderSettings) -> Result<Vec<CardPath>> {
+        settings.folders()
+    }
+}
+
+/// The `sd` mapping as the schema shows it. The parser reads the same keys.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(rename = "Device", deny_unknown_fields)]
+#[schemars(rename = "SdDevice", deny_unknown_fields)]
 #[allow(dead_code)] // Only the schema uses it.
-struct DeviceFiles {
+pub(crate) struct SdDevice {
     /// Homebrew apps. Each key is the folder apps/<key>/ the app goes in.
     #[serde(default)]
     apps: BTreeMap<String, App>,
-    /// Anything else, placed from the device's root: packages spanning several
+    /// Anything else, placed from the card's root: packages spanning several
     /// root folders, single files, covers.
     #[serde(default)]
     bundles: Vec<Bundle>,
     /// BootMii's settings, written to /bootmii/bootmii.ini. BootMii reads that
-    /// file from the SD card only, so this goes under `sd`.
+    /// file from the SD card only, so this key belongs under `sd`.
     #[serde(default)]
     bootmii: Option<BootmiiIni>,
-    /// RVLoader's settings for games, written to /rvloader/configs/<ID>.cfg.
-    /// RVLoader reads them from the USB drive, so this goes under `usb`.
+}
+
+/// The `usb` mapping as the schema shows it. The parser reads the same keys.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "UsbDevice", deny_unknown_fields)]
+#[allow(dead_code)] // Only the schema uses it.
+pub(crate) struct UsbDevice {
+    /// Homebrew apps. Each key is the folder apps/<key>/ the app goes in.
+    #[serde(default)]
+    apps: BTreeMap<String, App>,
+    /// Anything else, placed from the drive's root: packages spanning several
+    /// root folders, single files, covers, RVLoader themes.
+    #[serde(default)]
+    bundles: Vec<Bundle>,
+    /// RVLoader's settings: its own config and each game's. RVLoader reads them
+    /// from the USB drive only, so this key belongs under `usb`.
     #[serde(default)]
     rvloader: Option<RvloaderSettings>,
 }
 
-// Every file the entries put on the device, read and checked. Each app and
-// bundle is read as the recipe reaches it, so downloads and extraction follow
-// the recipe's order, and collisions are settled in that order too. No doc
-// comment: the schema describes `DeviceFiles`.
-#[derive(Debug, JsonSchema)]
-#[schemars(with = "DeviceFiles", rename = "Device")]
-pub struct Device {
+/// The files of a device of kind `K`, read and checked.
+// No doc comment: the schema describes `SdDevice` and `UsbDevice`.
+#[derive(Debug)]
+pub struct Device<K> {
     files: BTreeMap<CardPath, Blob>,
     notices: Vec<String>,
-    bootmii: bool,
-    rvloader: bool,
+    kind: PhantomData<K>,
 }
 
-impl Device {
+impl<K> Device<K> {
     /// Every file, by path from the device's root.
     pub fn files(&self) -> &BTreeMap<CardPath, Blob> {
         &self.files
@@ -84,37 +147,27 @@ impl Device {
     pub fn notices(&self) -> &[String] {
         &self.notices
     }
-
-    /// Whether the recipe sets BootMii's `bootmii.ini` on this device.
-    pub fn has_bootmii(&self) -> bool {
-        self.bootmii
-    }
-
-    /// Whether the recipe sets RVLoader's game settings on this device.
-    pub fn has_rvloader(&self) -> bool {
-        self.rvloader
-    }
 }
 
-impl<'de> Deserialize<'de> for Device {
+impl<'de, K: Kind> Deserialize<'de> for Device<K> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(DeviceVisitor)
+        deserializer.deserialize_map(DeviceVisitor(PhantomData))
     }
 }
 
-struct DeviceVisitor;
+struct DeviceVisitor<K>(PhantomData<K>);
 
-impl<'de> Visitor<'de> for DeviceVisitor {
-    type Value = Device;
+impl<'de, K: Kind> Visitor<'de> for DeviceVisitor<K> {
+    type Value = Device<K>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a device with apps and bundles")
+        formatter.write_str(&format!("a device with apps, bundles and {}", K::KEY))
     }
 
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Device, A::Error> {
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Device<K>, A::Error> {
         let mut entries = Vec::new();
         let mut keys = HashSet::new();
-        let (mut bootmii, mut rvloader) = (false, false);
+        let mut folders = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
             ensure_custom::<A::Error>(keys.insert(key.clone()), || {
                 format!("{key} is listed twice")
@@ -122,40 +175,34 @@ impl<'de> Visitor<'de> for DeviceVisitor {
             match key.as_str() {
                 "apps" => map.next_value_seed(Apps(&mut entries))?,
                 "bundles" => map.next_value_seed(Bundles(&mut entries))?,
-                "bootmii" => {
-                    let settings: BootmiiIni = map.next_value()?;
-                    let file = settings.file().map_err(fail)?;
-                    push(
-                        &mut entries,
-                        "bootmii settings",
-                        generated(vec![file]).map_err(fail)?,
-                    );
-                    bootmii = true;
-                }
-                "rvloader" => {
-                    let settings: RvloaderSettings = map.next_value()?;
-                    let files = settings.files().map_err(fail)?;
-                    push(
-                        &mut entries,
-                        "rvloader settings",
-                        generated(files).map_err(fail)?,
-                    );
-                    rvloader = true;
+                other if other == K::KEY => {
+                    let settings: K::Settings = map.next_value()?;
+                    let files = K::files(&settings).map_err(fail)?;
+                    folders.extend(K::folders(&settings).map_err(fail)?);
+                    push(&mut entries, K::SOURCE, generated(files).map_err(fail)?);
                 }
                 _ => {
-                    return Err(de::Error::unknown_field(
-                        &key,
-                        &["apps", "bundles", "bootmii", "rvloader"],
-                    ));
+                    return Err(de::Error::unknown_field(&key, &["apps", "bundles", K::KEY]));
                 }
             }
         }
         let (files, notices) = resolve(entries, source::collisions()).map_err(fail)?;
+        // A setting that names a folder, such as a theme, needs the folder's files.
+        for folder in folders {
+            let prefix = format!("{}/", folder.folded());
+            ensure_custom::<A::Error>(
+                files.keys().any(|path| path.folded().starts_with(&prefix)),
+                || {
+                    format!(
+                        "{folder} holds no files, but the settings name it: add its files with bundles"
+                    )
+                },
+            )?;
+        }
         Ok(Device {
             files,
             notices,
-            bootmii,
-            rvloader,
+            kind: PhantomData,
         })
     }
 }

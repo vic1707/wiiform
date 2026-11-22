@@ -136,8 +136,10 @@ Priiloader's
 does the schema: an editor shows every hack with what it does when hovering
 `hacks` (and every channel when hovering `remove`).
 `wii-nand install-priiloader --help` describes them too.
-Hacks that cancel each other (the two music hacks, the two USB Gecko ones, the
-four "run disc games under IOS" ones) cannot be combined.
+Three groups of hacks exclude each other, so each is its own key taking one
+value: `background_music` (the two music hacks), `usb_gecko` (the two USB Gecko
+hacks) and `force_disc_ios` (the four "run disc games under IOS" hacks). Every
+other hack goes in `hacks`, and combines with any of them.
 
 ### Homebrew Channel
 
@@ -314,9 +316,17 @@ rest keep RVLoader's default for the game's type. The schema lists the keys.
 ```yaml
 usb:
   rvloader:
+    config: {theme: main, wii_load_screen: spinning_disc}
     games:
       RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}
 ```
+
+`config` writes RVLoader's own `/rvloader/config.cfg`: `theme` names a folder
+under `/rvloader/themes` (the theme's files must be on the drive, from a bundle,
+or the recipe refuses it), and `wii_load_screen` is `verbose` (the default) or
+`spinning_disc`. Either `config` or `games` is needed.
+
+Only `sd` takes `bootmii`, and only `usb` takes `rvloader`.
 
 A file from `bootmii` or `rvloader` collides with others like any device file,
 so a bundle writing the same path gets the usual warning.

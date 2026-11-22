@@ -13,8 +13,8 @@ macro_rules! country_codes {
         }
 
         impl CountryCode {
-            #[cfg(test)]
-            const ALL: &[Self] = &[$(Self::$name),+];
+            /// Every supported country, in the order of the table.
+            pub(crate) const ALL: &[Self] = &[$(Self::$name),+];
 
             pub const fn as_alpha2(self) -> &'static str {
                 match self {
