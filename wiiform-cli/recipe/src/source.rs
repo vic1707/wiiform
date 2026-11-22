@@ -122,7 +122,7 @@ impl Source {
     /// Reads the file into memory and checks it.
     pub(crate) fn read_pinned(self, sha256: Option<Sha256>) -> Result<Vec<u8>> {
         let fetched = self.read(MEMORY_BOUNDS)?;
-        let expected = sha256.or(fetched.published_sha256).context(NEEDS_SHA256)?;
+        let expected = expected_sha256(sha256, fetched.published_sha256)?;
         ensure!(Sha256::of(&fetched.bytes) == expected, MISMATCH);
         Ok(fetched.bytes)
     }
@@ -184,11 +184,27 @@ impl Source {
             }
             Self::Github(asset) => {
                 let release = asset.find()?;
-                let expected = sha256.or(release.sha256).context(NEEDS_SHA256)?;
+                let expected = expected_sha256(sha256, release.sha256)?;
                 store(expected, |out| download(&release.url, out))
                     .with_context(|| format!("cannot download {}", release.url))
             }
         }
+    }
+}
+
+/// The SHA-256 a file must have: the recipe's, which must agree with the one its
+/// release states, if the release states one. A cached copy is only checked
+/// against this, so a disagreement is refused before any copy is looked up.
+fn expected_sha256(given: Option<Sha256>, published: Option<Sha256>) -> Result<Sha256> {
+    match (given, published) {
+        (Some(given), Some(published)) => {
+            ensure!(
+                given == published,
+                "the recipe's SHA-256 differs from the one the release states"
+            );
+            Ok(given)
+        }
+        (given, published) => given.or(published).context(NEEDS_SHA256),
     }
 }
 

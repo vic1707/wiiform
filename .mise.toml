@@ -1,6 +1,6 @@
 [tools]
 cmake = "3.31.8"
-rust = "1.99.0"
+rust = { version = "1.99.0", components = "clippy,rustfmt" }
 
 [tools."github:xmake-io/xmake"]
 # 3.1.2's macOS ARM bundle fails at startup with a missing core script.
