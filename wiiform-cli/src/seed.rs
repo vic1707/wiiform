@@ -21,7 +21,14 @@ pub struct StockSeed {
     settings: ConsoleSettings,
     settings_sha256: [u8; 32],
     bootmii: Bootmii,
+    wifi_config: Option<Vec<u8>>,
+    wiimotes: Option<Vec<u8>>,
 }
+
+/// Length of the Wi-Fi profile file in a seed.
+const WIFI_CONFIG_BYTES: usize = 7004;
+/// Length of the BT.DINF registrations in a seed: a count, then the Wiimotes.
+const REGISTRATION_BYTES: usize = 0x461;
 
 /// What the seed knows about BootMii on its console.
 #[derive(Clone, Debug)]
@@ -115,11 +122,29 @@ impl StockSeed {
             settings: manifest.settings.fields,
             settings_sha256: manifest.settings.sha256.0,
             bootmii: manifest.bootmii.try_into()?,
+            wifi_config: manifest
+                .wifi
+                .map(|blob| blob.open("wifi", WIFI_CONFIG_BYTES))
+                .transpose()?,
+            wiimotes: manifest
+                .wiimotes
+                .map(|blob| blob.open("wiimotes", REGISTRATION_BYTES))
+                .transpose()?,
         })
     }
 
     pub fn bootmii(&self) -> &Bootmii {
         &self.bootmii
+    }
+
+    /// The Wi-Fi profile file the console had, if the seed holds one.
+    pub fn wifi_config(&self) -> Option<&[u8]> {
+        self.wifi_config.as_deref()
+    }
+
+    /// The BT.DINF registrations the console had, if the seed holds them.
+    pub fn wiimotes(&self) -> Option<&[u8]> {
+        self.wiimotes.as_deref()
     }
 
     pub(crate) fn as_native(&self) -> ffi::StockSeed<'_> {
@@ -141,6 +166,45 @@ struct SeedManifest {
     boot_blocks: BootBlocks,
     settings: Settings,
     bootmii: BootmiiSection,
+    /// The console's Wi-Fi profile file, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wifi: Option<Blob>,
+    /// The BT.DINF registrations of the console's Wiimotes, when it has any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wiimotes: Option<Blob>,
+}
+
+/// Bytes stored as they are, with their own digest so a changed blob is named.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Blob {
+    #[serde(rename = "_sha256")]
+    sha256: Sha256,
+    blob: Binary,
+}
+
+impl Blob {
+    fn of(bytes: Vec<u8>) -> Self {
+        Self {
+            sha256: digest(&bytes),
+            blob: Binary(bytes),
+        }
+    }
+
+    /// The bytes, checked to be `length` long and to match their digest.
+    fn open(self, name: &str, length: usize) -> Result<Vec<u8>> {
+        let bytes = self.blob.0;
+        ensure!(
+            bytes.len() == length,
+            "{name} blob has {} bytes, not {length}",
+            bytes.len()
+        );
+        ensure!(
+            digest(&bytes) == self.sha256,
+            "{name} blob does not match its SHA-256"
+        );
+        Ok(bytes)
+    }
 }
 
 /// The key footer, split into groups that each change for one reason. Each
@@ -509,6 +573,9 @@ fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
             }),
         }
         .into(),
+        wifi: (!parts.wifi_config.is_empty()).then(|| Blob::of(parts.wifi_config)),
+        wiimotes: (!parts.wiimote_registrations.is_empty())
+            .then(|| Blob::of(parts.wiimote_registrations)),
     };
     serde_saphyr::to_io_writer(&mut writer, &manifest).context("cannot serialize Wii seed YAML")?;
     writer.flush().context("cannot write Wii seed YAML")
@@ -557,6 +624,8 @@ mod tests {
                 },
             },
             bootmii: bootmii.into(),
+            wifi: None,
+            wiimotes: None,
         })
     }
 
@@ -656,6 +725,57 @@ mod tests {
             yaml(&manifest(stock_bootmii())?)?.replace("  console:", "  footer: AAAA\n  console:");
         let error = read(&old).err().context("expected a refusal")?;
         assert!(format!("{error:#}").contains("must be regenerated"));
+        Ok(())
+    }
+
+    #[test]
+    fn keeps_the_wifi_profile_and_registrations_when_given() -> Result<()> {
+        let mut seed = manifest(stock_bootmii())?;
+        seed.wifi = Some(Blob::of(vec![7; WIFI_CONFIG_BYTES]));
+        seed.wiimotes = Some(Blob::of(vec![3; REGISTRATION_BYTES]));
+        let written = yaml(&seed)?;
+        assert!(
+            written.contains("wifi:") && written.contains("wiimotes:"),
+            "{written}"
+        );
+        let read_back = read(&written)?;
+        assert_eq!(
+            read_back.wifi_config(),
+            Some(&vec![7; WIFI_CONFIG_BYTES][..])
+        );
+        assert_eq!(read_back.wiimotes(), Some(&vec![3; REGISTRATION_BYTES][..]));
+        Ok(())
+    }
+
+    #[test]
+    fn seeds_without_them_have_neither() -> Result<()> {
+        let written = yaml(&manifest(stock_bootmii())?)?;
+        assert!(!written.contains("wifi:") && !written.contains("wiimotes:"));
+        let seed = read(&written)?;
+        assert!(seed.wifi_config().is_none() && seed.wiimotes().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn refuses_a_wifi_or_registration_blob_that_is_wrong() -> Result<()> {
+        let refusal = |edit: fn(&mut SeedManifest)| -> Result<String> {
+            let mut seed = manifest(stock_bootmii())?;
+            edit(&mut seed);
+            let error = read(&yaml(&seed)?).err().context("expected a refusal")?;
+            Ok(format!("{error:#}"))
+        };
+        let wrong_digest = refusal(|seed| {
+            seed.wifi = Some(Blob {
+                sha256: digest(b"other"),
+                blob: Binary(vec![7; WIFI_CONFIG_BYTES]),
+            });
+        })?;
+        assert_eq!(wrong_digest, "wifi blob does not match its SHA-256");
+        let short = refusal(|seed| seed.wiimotes = Some(Blob::of(vec![3; 10])))?;
+        assert_eq!(
+            short,
+            format!("wiimotes blob has 10 bytes, not {REGISTRATION_BYTES}")
+        );
         Ok(())
     }
 

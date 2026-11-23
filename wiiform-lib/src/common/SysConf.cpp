@@ -90,8 +90,15 @@ namespace {
     return result;
   }
 
-  auto generated_entries(const wiiform::SystemSettings& settings,
-                         const QString& menu_region) -> std::vector<EntryToWrite> {
+  auto registration_bytes(std::span<const std::uint8_t> registrations) -> QByteArray {
+    if (registrations.empty()) return QByteArray(wii_sysconf::registrations_size, '\0');
+    require(registrations.size() == std::size_t(wii_sysconf::registrations_size),
+            "Wiimote registrations must be 0x461 bytes");
+    return QByteArray(reinterpret_cast<const char*>(registrations.data()), int(registrations.size()));
+  }
+
+  auto generated_entries(const wiiform::SystemSettings& settings, const QString& menu_region,
+                         std::span<const std::uint8_t> registrations) -> std::vector<EntryToWrite> {
     require(menu_region == "EUR" || menu_region == "USA" || menu_region == "JPN",
             "Unsupported menu region for SYSCONF generation");
     const auto country = settings.country;
@@ -123,7 +130,7 @@ namespace {
     const QByteArray idle("\0\1", 2);
 
     return {
-      {"BT.DINF", Type::BigArray, QByteArray(0x461, '\0')},
+      {"BT.DINF", Type::BigArray, registration_bytes(registrations)},
       {"BT.CDIF", Type::BigArray, QByteArray(0x205, '\0')},
       {"BT.SENS", Type::Long, u32_bytes(3)},
       {"BT.BAR", Type::Byte, QByteArray(1, settings.sensor_bar_above ? char(1) : char(0))},
@@ -181,8 +188,44 @@ namespace {
 } // namespace
 
 namespace wii_sysconf {
-  auto create(const wiiform::SystemSettings& requested, const QString& menu_region) -> QByteArray {
-    return encode_new_sysconf(generated_entries(requested, menu_region));
+  auto create(const wiiform::SystemSettings& requested, const QString& menu_region,
+              std::span<const std::uint8_t> registrations) -> QByteArray {
+    return encode_new_sysconf(generated_entries(requested, menu_region, registrations));
+  }
+
+  auto find_entry(const QByteArray& sysconf, const QString& name) -> std::optional<QByteArray> {
+    require(sysconf.size() == size && sysconf.left(4) == "SCv0", "SYSCONF image is malformed");
+    const int count = int(qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(sysconf.constData() + 4)));
+    for (int index = 0; index < count; ++index) {
+      const int offset = int(qFromBigEndian<quint16>(
+          reinterpret_cast<const uchar*>(sysconf.constData() + table_slot(index))));
+      const auto header = quint8(sysconf.at(offset));
+      const int name_size = (header & 0x1f) + 1;
+      const auto entry_name = sysconf.mid(offset + 1, name_size);
+      int cursor = offset + 1 + name_size;
+      int length = 0;
+      switch (static_cast<Type>(header >> 5)) {
+        case Type::BigArray:
+          length = int(qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(sysconf.constData() + cursor))) + 1;
+          cursor += 2;
+          break;
+        case Type::SmallArray:
+          length = int(quint8(sysconf.at(cursor))) + 1;
+          cursor += 1;
+          break;
+        case Type::Byte:
+        case Type::ByteBool:
+          length = 1;
+          break;
+        case Type::Long:
+          length = 4;
+          break;
+        default:
+          throw std::runtime_error("SYSCONF has an entry of unknown type");
+      }
+      if (entry_name == name.toLatin1()) return sysconf.mid(cursor, length);
+    }
+    return std::nullopt;
   }
 
 } // namespace wii_sysconf

@@ -2,6 +2,8 @@
 #include <Seed.hpp>
 #include <Support.hpp>
 #include <Layout.hpp>
+#include <SysConf.hpp>
+#include <WifiConfig.hpp>
 #include <NandBuffer.hpp>
 #include <WorkingImage.hpp>
 #include <BootFlags.hpp>
@@ -145,6 +147,21 @@ namespace seed {
         working_image::read_authenticated_file(nand, "/title/00000001/00000002/data/setting.txt", 4096);
     result.settings = decode_settings(setting);
     result.settings_sha256 = sha256(setting);
+
+    // Wi-Fi and Wiimote state, when the console has any. The Wiimote registrations are
+    // one entry of SYSCONF, which a console without setup does not have.
+    if (const auto profile = working_image::find_path(nand, wifi_config::path)) {
+      const auto config = working_image::read_authenticated_file(nand, profile, wifi_config::size);
+      require(config.size() == wifi_config::size, "Wi-Fi profile file has the wrong size");
+      result.wifi_config = bytes_of(config);
+    }
+    if (const auto sysconf = working_image::find_path(nand, wii_sysconf::path)) {
+      const auto image = working_image::read_authenticated_file(nand, sysconf, wii_sysconf::size);
+      if (const auto registrations = wii_sysconf::find_entry(image, "BT.DINF")) {
+        require(registrations->size() == wii_sysconf::registrations_size, "Wiimote registrations have the wrong size");
+        result.wiimote_registrations = bytes_of(*registrations);
+      }
+    }
 
     bool detected_bootmii = false;
     bool all_copies_stock = true;

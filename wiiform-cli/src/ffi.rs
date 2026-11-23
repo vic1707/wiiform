@@ -221,6 +221,8 @@ pub mod bridge {
         bootmii_ios_tmd: Vec<u8>,
         bootmii_ios_ticket: Vec<u8>,
         bootmii_ios_content: Vec<u8>,
+        wifi_config: Vec<u8>,
+        wiimote_registrations: Vec<u8>,
     }
 
     struct CiosOptions {

@@ -40,6 +40,10 @@ namespace wiiform {
     std::vector<std::uint8_t> bootmii_ios_tmd;
     std::vector<std::uint8_t> bootmii_ios_ticket;
     std::vector<std::uint8_t> bootmii_ios_content;
+    // The Wi-Fi profile file (7004 bytes) and the BT.DINF registrations (0x461 bytes);
+    // empty when the backup has none.
+    std::vector<std::uint8_t> wifi_config;
+    std::vector<std::uint8_t> wiimote_registrations;
   };
   struct StockSeed {
     std::span<const std::uint8_t> keys;

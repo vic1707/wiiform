@@ -50,7 +50,8 @@ auto extract_seed(Bytes nand, Bytes sidecar_keys) -> SeedParts {
           ConsoleSettings{settings.area, settings.model, settings.dvd, settings.mpch,
                           settings.code, settings.serial, settings.video, settings.game},
           source.settings_sha256, source.bootmii, source.bootmii_boot2_version, rust_vec(source.bootmii_ios_tmd),
-          rust_vec(source.bootmii_ios_ticket), rust_vec(source.bootmii_ios_content)};
+          rust_vec(source.bootmii_ios_ticket), rust_vec(source.bootmii_ios_content),
+          rust_vec(source.wifi_config), rust_vec(source.wiimote_registrations)};
 }
 
 auto stock_titles(Menu menu) -> rust::Vec<TitleVersion> {

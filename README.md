@@ -448,6 +448,8 @@ The key footer is stored as three groups, each with its own SHA-256: `console`
 (identifiers, fixed for a console), `counters` (they move with use) and `secret`
 (key material, fixed). Comparing two seeds of one console therefore shows what
 changed. The text header is not stored; each build writes a BackupMii header.
+When the console has them, the seed also keeps its Wi-Fi profile (`wifi`) and
+registered Wiimotes (`wiimotes`), each with its own SHA-256.
 
 Use `--seed -` to pipe plaintext YAML directly into the builder.
 

@@ -4,11 +4,14 @@
 #include <QCoreApplication>
 #include <QtEndian>
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
   void check(bool condition, const char* message) {
@@ -128,6 +131,27 @@ int main(int argc, char** argv) {
     check_region(QStringLiteral("EUR"), 110);
     check_region(QStringLiteral("USA"), 49);
     check_region(QStringLiteral("JPN"), 1);
+
+    // A registered Wiimote is the BT.DINF value: one count, then address and name. The
+    // value comes back exactly through find_entry; without one it is zeros.
+    std::vector<std::uint8_t> registrations(std::size_t(wii_sysconf::registrations_size), 0);
+    registrations[0] = 1;
+    const std::uint8_t address[] = {0xa4, 0x5c, 0x27, 0x09, 0xf9, 0x8a};
+    std::copy(std::begin(address), std::end(address), registrations.begin() + 1);
+    const std::string_view wiimote_name = "Nintendo RVL-CNT-01";
+    std::copy(wiimote_name.begin(), wiimote_name.end(), registrations.begin() + 7);
+    const wiiform::SystemSettings paired_settings{"Wii", wiiform::Language::en, 110, false, true, true, true};
+    const auto paired = wii_sysconf::create(paired_settings, QStringLiteral("EUR"), registrations);
+    const auto found = wii_sysconf::find_entry(paired, QStringLiteral("BT.DINF"));
+    check(found.has_value(), "SYSCONF with a registration has no BT.DINF entry");
+    check(*found == QByteArray(reinterpret_cast<const char*>(registrations.data()), int(registrations.size())),
+          "BT.DINF does not hold the registrations it was given");
+    const auto unpaired = wii_sysconf::create(paired_settings, QStringLiteral("EUR"));
+    const auto zeros = wii_sysconf::find_entry(unpaired, QStringLiteral("BT.DINF"));
+    check(zeros.has_value() && *zeros == QByteArray(wii_sysconf::registrations_size, '\0'),
+          "A console without registrations must have zeroed BT.DINF");
+    check(!wii_sysconf::find_entry(unpaired, QStringLiteral("NO.SUCH")).has_value(),
+          "find_entry must report an absent entry");
 
     const wiiform::SystemSettings invalid{"Wii", wiiform::Language::en, 1, true, false, false, false};
     try {
