@@ -542,7 +542,13 @@ podman run --rm -v "$PWD/backups:/in:ro" wii-seed /in/nand.bin |
 ```
 
 CI builds the images for amd64 and arm64 and publishes them to the GitHub
-container registry from `main` and from tags.
+container registry from `main` and from release tags. Publishing waits for the
+tests to pass on the same commit.
+
+- `main` publishes `ghcr.io/vic1707/<image>:main`.
+- A release tag `vX.Y.Z` publishes `:vX.Y.Z` and `:latest`. The tag must match
+  `version` in `wiiform-cli/Cargo.toml`, because the images report that version
+  with `--version`; CI refuses the tag otherwise.
 
 ## License and attribution
 

@@ -1,7 +1,10 @@
 name: Wiiform checks
+
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
@@ -19,7 +22,16 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@v3
+      # A release tag must be v<version> of wiiform-cli, the version the binaries report.
+      - name: Check a release tag against the crate version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' wiiform-cli/Cargo.toml | head -n 1)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match wiiform-cli/Cargo.toml version $version"
+            exit 1
+          fi
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.11.4
       - name: Install Qt on Linux
@@ -34,7 +46,9 @@ jobs:
       - run: mise run test
 
   # Each image runs its command's --version while it builds, which is the smoke test.
+  # Runs only when every test leg passed, so a failing test publishes nothing.
   images:
+    needs: test
     strategy:
       fail-fast: false
       matrix:
@@ -48,26 +62,27 @@ jobs:
       packages: write
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
-      # Branch and pull request names are not valid tags; only published builds use the ref name.
+      # Pull request names are not valid tags; only published builds use the ref name.
       TAG: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) && github.ref_name || 'ci' }}-${{ matrix.arch }}
       PUBLISH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         if: env.PUBLISH == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/bake-action@v6
+      - uses: docker/bake-action@v7
         with:
           source: .
           push: ${{ env.PUBLISH == 'true' }}
 
-  # Joins the two architectures of each image under one tag.
+  # Joins the two architectures of each image under one tag: the branch or
+  # release tag name, and for a release also `latest`.
   manifests:
     needs: images
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
@@ -77,15 +92,20 @@ jobs:
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
       TAG: ${{ github.ref_name }}
+      RELEASE: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: |
           for image in wiiform wii-seed wii-nand; do
-            docker buildx imagetools create -t "$REGISTRY/$image:$TAG" \
+            tags=(-t "$REGISTRY/$image:$TAG")
+            if [ "$RELEASE" = true ]; then
+              tags+=(-t "$REGISTRY/$image:latest")
+            fi
+            docker buildx imagetools create "${tags[@]}" \
               "$REGISTRY/$image:$TAG-amd64" "$REGISTRY/$image:$TAG-arm64"
           done
