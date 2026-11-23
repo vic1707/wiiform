@@ -475,7 +475,10 @@ The key footer is stored as three groups, each with its own SHA-256: `console`
 (key material, fixed). Comparing two seeds of one console therefore shows what
 changed. The text header is not stored; each build writes a BackupMii header.
 When the console has them, the seed also keeps its Wi-Fi profile (`wifi`) and
-registered Wiimotes (`wiimotes`), each with its own SHA-256.
+registered Wiimotes (`wiimotes`). Each is written as plain text (the network
+name, passphrase and addresses) when that text rebuilds the stored file exactly,
+and as bytes otherwise. Either way a SHA-256 is kept, so an edited field is
+refused rather than built; change a Wi-Fi profile with `wifi: {set: ...}`.
 
 Use `--seed -` to pipe plaintext YAML directly into the builder.
 

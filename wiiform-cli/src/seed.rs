@@ -3,10 +3,17 @@
 
 use std::io::{Read, Write};
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use lzma_rust2::XzReader;
 use serde::{Deserialize, Serialize};
-use wiiform_recipe::{Sha256, yaml::Binary};
+use wiiform_recipe::{
+    Sha256,
+    nand::{
+        wifi::{self, Security},
+        wiimotes::{self, Registration},
+    },
+    yaml::Binary,
+};
 
 use crate::ffi::bridge::{self as ffi, ConsoleSettings};
 use crate::native::{self, BOOT_BYTES, KEYS_BYTES};
@@ -27,8 +34,6 @@ pub struct StockSeed {
 
 /// Length of the Wi-Fi profile file in a seed.
 const WIFI_CONFIG_BYTES: usize = 7004;
-/// Length of the BT.DINF registrations in a seed: a count, then the Wiimotes.
-const REGISTRATION_BYTES: usize = 0x461;
 
 /// What the seed knows about BootMii on its console.
 #[derive(Clone, Debug)]
@@ -124,11 +129,17 @@ impl StockSeed {
             bootmii: manifest.bootmii.try_into()?,
             wifi_config: manifest
                 .wifi
-                .map(|blob| blob.open("wifi", WIFI_CONFIG_BYTES))
+                .map(|stored| stored.open("wifi", WIFI_CONFIG_BYTES, WifiFields::into_file))
                 .transpose()?,
             wiimotes: manifest
                 .wiimotes
-                .map(|blob| blob.open("wiimotes", REGISTRATION_BYTES))
+                .map(|stored| {
+                    stored.open(
+                        "wiimotes",
+                        wiimotes::REGISTRATION_BYTES,
+                        RegistrationFields::list_to_file,
+                    )
+                })
                 .transpose()?,
         })
     }
@@ -167,44 +178,177 @@ struct SeedManifest {
     settings: Settings,
     bootmii: BootmiiSection,
     /// The console's Wi-Fi profile file, when it has one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    wifi: Option<Blob>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wifi: Option<Stored<WifiFields>>,
     /// The BT.DINF registrations of the console's Wiimotes, when it has any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    wiimotes: Option<Blob>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wiimotes: Option<Stored<Vec<RegistrationFields>>>,
 }
 
-/// Bytes stored as they are, with their own digest so a changed blob is named.
+/// A file kept as its fields, written as text, when those rebuild it exactly; kept
+/// as its bytes otherwise. Either way its SHA-256 is stored, so an edited field is
+/// refused on read rather than written to a card.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Blob {
+struct Stored<T> {
     #[serde(rename = "_sha256")]
     sha256: Sha256,
-    blob: Binary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fields: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blob: Option<Binary>,
 }
 
-impl Blob {
-    fn of(bytes: Vec<u8>) -> Self {
-        Self {
-            sha256: digest(&bytes),
-            blob: Binary(bytes),
+impl<T> Stored<T> {
+    fn of(bytes: Vec<u8>, fields: Option<T>) -> Self {
+        let sha256 = digest(&bytes);
+        match fields {
+            Some(fields) => Self {
+                sha256,
+                fields: Some(fields),
+                blob: None,
+            },
+            None => Self {
+                sha256,
+                fields: None,
+                blob: Some(Binary(bytes)),
+            },
         }
     }
 
-    /// The bytes, checked to be `length` long and to match their digest.
-    fn open(self, name: &str, length: usize) -> Result<Vec<u8>> {
-        let bytes = self.blob.0;
+    /// The file's bytes: rebuilt from the fields, or the blob. They must be `length`
+    /// long and match their digest.
+    fn open(
+        self,
+        name: &str,
+        length: usize,
+        rebuild: impl FnOnce(T) -> Result<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
+        let bytes = match (self.fields, self.blob) {
+            (Some(fields), None) => {
+                rebuild(fields).with_context(|| format!("{name} fields do not make a file"))?
+            }
+            (None, Some(blob)) => blob.0,
+            _ => bail!("{name} needs exactly one of fields and blob"),
+        };
         ensure!(
             bytes.len() == length,
-            "{name} blob has {} bytes, not {length}",
+            "{name} has {} bytes, not {length}",
             bytes.len()
         );
         ensure!(
             digest(&bytes) == self.sha256,
-            "{name} blob does not match its SHA-256"
+            "{name} does not match its SHA-256"
         );
         Ok(bytes)
     }
+}
+
+/// The first Wi-Fi profile as text: the network name, its security and passphrase.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct WifiFields {
+    ssid: String,
+    security: Security,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    passphrase: Option<String>,
+}
+
+impl WifiFields {
+    fn into_file(self) -> Result<Vec<u8>> {
+        wifi::encode_file(&wifi::Fields {
+            ssid: self.ssid.into_bytes(),
+            security: self.security,
+            passphrase: self.passphrase.map(String::into_bytes),
+        })
+    }
+
+    /// The fields of a profile file, when the file is exactly what they rebuild.
+    fn of(file: &[u8]) -> Option<Self> {
+        let fields = wifi::decode_file(file)?;
+        if wifi::encode_file(&fields).ok()?.as_slice() != file {
+            return None;
+        }
+        Some(Self {
+            ssid: String::from_utf8(fields.ssid).ok()?,
+            security: fields.security,
+            passphrase: fields.passphrase.map(String::from_utf8).transpose().ok()?,
+        })
+    }
+}
+
+/// A registered Wiimote as text: its Bluetooth address, like `a4:5c:27:09:f9:8a`,
+/// and the name it reports.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationFields {
+    address: String,
+    name: String,
+}
+
+impl RegistrationFields {
+    fn list_to_file(list: Vec<Self>) -> Result<Vec<u8>> {
+        let registrations = list
+            .into_iter()
+            .map(|item| {
+                Ok(Registration {
+                    address: parse_address(&item.address)?,
+                    name: item.name.into_bytes(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        wiimotes::encode_registrations(&registrations)
+    }
+
+    /// The registrations of a BT.DINF value, when the list is exactly what they rebuild.
+    fn list_of(value: &[u8]) -> Option<Vec<Self>> {
+        let registrations = wiimotes::decode_registrations(value)?;
+        if wiimotes::encode_registrations(&registrations)
+            .ok()?
+            .as_slice()
+            != value
+        {
+            return None;
+        }
+        registrations
+            .into_iter()
+            .map(|registration| {
+                Some(Self {
+                    address: format_address(registration.address),
+                    name: String::from_utf8(registration.name).ok()?,
+                })
+            })
+            .collect()
+    }
+}
+
+fn parse_address(text: &str) -> Result<[u8; 6]> {
+    let parts: Vec<&str> = text.split(':').collect();
+    ensure!(
+        parts.len() == 6 && parts.iter().all(|part| part.len() == 2),
+        "a Bluetooth address is six pairs of hex digits, like a4:5c:27:09:f9:8a"
+    );
+    let mut address = [0u8; 6];
+    for (byte, part) in address.iter_mut().zip(parts) {
+        *byte = u8::from_str_radix(part, 16).context("a Bluetooth address is hex")?;
+    }
+    Ok(address)
+}
+
+fn format_address(address: [u8; 6]) -> String {
+    address.map(|byte| format!("{byte:02x}")).join(":")
+}
+
+/// The stored form of a Wi-Fi profile file, as its fields when they rebuild it.
+fn stored_wifi(file: Vec<u8>) -> Stored<WifiFields> {
+    let fields = WifiFields::of(&file);
+    Stored::of(file, fields)
+}
+
+/// The stored form of a BT.DINF value, as its registrations when they rebuild it.
+fn stored_wiimotes(value: Vec<u8>) -> Stored<Vec<RegistrationFields>> {
+    let fields = RegistrationFields::list_of(&value);
+    Stored::of(value, fields)
 }
 
 /// The key footer, split into groups that each change for one reason. Each
@@ -573,9 +717,9 @@ fn write_seed<W: Write>(mut writer: W, parts: ffi::SeedParts) -> Result<()> {
             }),
         }
         .into(),
-        wifi: (!parts.wifi_config.is_empty()).then(|| Blob::of(parts.wifi_config)),
+        wifi: (!parts.wifi_config.is_empty()).then(|| stored_wifi(parts.wifi_config)),
         wiimotes: (!parts.wiimote_registrations.is_empty())
-            .then(|| Blob::of(parts.wiimote_registrations)),
+            .then(|| stored_wiimotes(parts.wiimote_registrations)),
     };
     serde_saphyr::to_io_writer(&mut writer, &manifest).context("cannot serialize Wii seed YAML")?;
     writer.flush().context("cannot write Wii seed YAML")
@@ -731,8 +875,8 @@ mod tests {
     #[test]
     fn keeps_the_wifi_profile_and_registrations_when_given() -> Result<()> {
         let mut seed = manifest(stock_bootmii())?;
-        seed.wifi = Some(Blob::of(vec![7; WIFI_CONFIG_BYTES]));
-        seed.wiimotes = Some(Blob::of(vec![3; REGISTRATION_BYTES]));
+        seed.wifi = Some(Stored::of(vec![7; WIFI_CONFIG_BYTES], None));
+        seed.wiimotes = Some(Stored::of(vec![3; wiimotes::REGISTRATION_BYTES], None));
         let written = yaml(&seed)?;
         assert!(
             written.contains("wifi:") && written.contains("wiimotes:"),
@@ -743,7 +887,76 @@ mod tests {
             read_back.wifi_config(),
             Some(&vec![7; WIFI_CONFIG_BYTES][..])
         );
-        assert_eq!(read_back.wiimotes(), Some(&vec![3; REGISTRATION_BYTES][..]));
+        assert_eq!(
+            read_back.wiimotes(),
+            Some(&vec![3; wiimotes::REGISTRATION_BYTES][..])
+        );
+        Ok(())
+    }
+
+    /// A profile file as the console writes one: wireless, WPA2, and a name and passphrase.
+    fn profile_file() -> Result<Vec<u8>> {
+        wifi::encode_file(&wifi::Fields {
+            ssid: b"HomeNet".to_vec(),
+            security: Security::Wpa2Aes,
+            passphrase: Some(b"correct horse".to_vec()),
+        })
+    }
+
+    #[test]
+    fn a_profile_that_its_fields_rebuild_is_written_as_fields() -> Result<()> {
+        let file = profile_file()?;
+        let mut seed = manifest(stock_bootmii())?;
+        seed.wifi = Some(stored_wifi(file.clone()));
+        let written = yaml(&seed)?;
+        assert!(written.contains("ssid: HomeNet"), "{written}");
+        assert!(written.contains("passphrase: correct horse"), "{written}");
+        assert!(
+            !written.contains("\n  blob:"),
+            "the fields replace the bytes"
+        );
+        assert_eq!(read(&written)?.wifi_config(), Some(&file[..]));
+        Ok(())
+    }
+
+    #[test]
+    fn a_profile_the_fields_do_not_describe_stays_bytes() -> Result<()> {
+        // Something in profile 2, which the fields do not hold.
+        let mut file = profile_file()?;
+        file[3000] = 0x44;
+        let mut seed = manifest(stock_bootmii())?;
+        seed.wifi = Some(stored_wifi(file.clone()));
+        let written = yaml(&seed)?;
+        assert!(
+            written.contains("\n  blob:") && !written.contains("ssid:"),
+            "{written}"
+        );
+        assert_eq!(read(&written)?.wifi_config(), Some(&file[..]));
+        Ok(())
+    }
+
+    #[test]
+    fn an_edited_field_is_refused_rather_than_written() -> Result<()> {
+        let mut seed = manifest(stock_bootmii())?;
+        seed.wifi = Some(stored_wifi(profile_file()?));
+        let edited = yaml(&seed)?.replace("ssid: HomeNet", "ssid: OtherNet");
+        let error = read(&edited).err().context("expected a refusal")?;
+        assert_eq!(format!("{error:#}"), "wifi does not match its SHA-256");
+        Ok(())
+    }
+
+    #[test]
+    fn registrations_are_written_as_addresses_and_names() -> Result<()> {
+        let value = wiimotes::encode_registrations(&[Registration {
+            address: [0xa4, 0x5c, 0x27, 0x09, 0xf9, 0x8a],
+            name: b"Nintendo RVL-CNT-01".to_vec(),
+        }])?;
+        let mut seed = manifest(stock_bootmii())?;
+        seed.wiimotes = Some(stored_wiimotes(value.clone()));
+        let written = yaml(&seed)?;
+        assert!(written.contains("a4:5c:27:09:f9:8a"), "{written}");
+        assert!(written.contains("name: Nintendo RVL-CNT-01"), "{written}");
+        assert_eq!(read(&written)?.wiimotes(), Some(&value[..]));
         Ok(())
     }
 
@@ -765,16 +978,20 @@ mod tests {
             Ok(format!("{error:#}"))
         };
         let wrong_digest = refusal(|seed| {
-            seed.wifi = Some(Blob {
+            seed.wifi = Some(Stored {
                 sha256: digest(b"other"),
-                blob: Binary(vec![7; WIFI_CONFIG_BYTES]),
+                fields: None,
+                blob: Some(Binary(vec![7; WIFI_CONFIG_BYTES])),
             });
         })?;
-        assert_eq!(wrong_digest, "wifi blob does not match its SHA-256");
-        let short = refusal(|seed| seed.wiimotes = Some(Blob::of(vec![3; 10])))?;
+        assert_eq!(wrong_digest, "wifi does not match its SHA-256");
+        let short = refusal(|seed| seed.wiimotes = Some(Stored::of(vec![3; 10], None)))?;
         assert_eq!(
             short,
-            format!("wiimotes blob has 10 bytes, not {REGISTRATION_BYTES}")
+            format!(
+                "wiimotes has 10 bytes, not {}",
+                wiimotes::REGISTRATION_BYTES
+            )
         );
         Ok(())
     }

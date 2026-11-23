@@ -6,7 +6,7 @@ use std::{fmt, path::PathBuf};
 
 use anyhow::{Result, bail, ensure};
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, de::Error as _};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 
 use crate::source::Source;
 
@@ -83,28 +83,78 @@ impl Profile {
         }
     }
 
-    /// The whole profile file the console reads. Everything not set here is zero, as
-    /// on a console whose profile was only ever this one.
+    /// The whole profile file the console reads.
     pub fn config(&self) -> Result<Vec<u8>> {
         self.check()?;
-        let mut file = vec![0u8; CONFIG_BYTES];
-        file[NETWORK_TYPE_AT] = WIRELESS;
-        file[SELECTED_AT] = PROFILE_SELECTED;
-        let ssid = self.ssid.as_bytes();
-        file[SSID_LENGTH_AT] = ssid.len() as u8;
-        file[SSID_AT..SSID_AT + ssid.len()].copy_from_slice(ssid);
-        file[SECURITY_AT] = self.security.code();
-        if let Some(passphrase) = &self.passphrase {
-            let bytes = &passphrase.0;
-            file[PASSPHRASE_LENGTH_AT] = bytes.len() as u8;
-            file[PASSPHRASE_AT..PASSPHRASE_AT + bytes.len()].copy_from_slice(bytes);
-        }
-        Ok(file)
+        encode_file(&Fields {
+            ssid: self.ssid.as_bytes().to_vec(),
+            security: self.security,
+            passphrase: self
+                .passphrase
+                .as_ref()
+                .map(|passphrase| passphrase.0.clone()),
+        })
     }
 }
 
+/// The fields of the first profile, as the file holds them: bytes, since a file the
+/// console wrote may hold anything the layout allows.
+pub struct Fields {
+    pub ssid: Vec<u8>,
+    pub security: Security,
+    pub passphrase: Option<Vec<u8>>,
+}
+
+/// The profile file for `fields`, with everything else zero. Only the sizes are
+/// checked here; the recipe's own rules for a passphrase apply before this.
+pub fn encode_file(fields: &Fields) -> Result<Vec<u8>> {
+    let ssid = &fields.ssid;
+    ensure!(
+        ssid.len() <= SSID_MAX && !ssid.contains(&0),
+        "a network name is at most 32 bytes with no NUL"
+    );
+    let passphrase = fields.passphrase.as_deref().unwrap_or_default();
+    ensure!(
+        passphrase.len() <= PASSPHRASE_MAX,
+        "a passphrase is at most 63 bytes"
+    );
+    let mut file = vec![0u8; CONFIG_BYTES];
+    file[NETWORK_TYPE_AT] = WIRELESS;
+    file[SELECTED_AT] = PROFILE_SELECTED;
+    file[SSID_LENGTH_AT] = ssid.len() as u8;
+    file[SSID_AT..SSID_AT + ssid.len()].copy_from_slice(ssid);
+    file[SECURITY_AT] = fields.security.code();
+    file[PASSPHRASE_LENGTH_AT] = passphrase.len() as u8;
+    file[PASSPHRASE_AT..PASSPHRASE_AT + passphrase.len()].copy_from_slice(passphrase);
+    Ok(file)
+}
+
+/// The fields a profile file holds, when they have this layout's security and sizes.
+/// The caller checks that `encode_file` gives back the same file.
+pub fn decode_file(file: &[u8]) -> Option<Fields> {
+    if file.len() != CONFIG_BYTES {
+        return None;
+    }
+    let ssid_length = usize::from(file[SSID_LENGTH_AT]);
+    let passphrase_length = usize::from(file[PASSPHRASE_LENGTH_AT]);
+    if ssid_length > SSID_MAX || passphrase_length > PASSPHRASE_MAX {
+        return None;
+    }
+    let security = match file[SECURITY_AT] {
+        0x00 => Security::Open,
+        0x05 => Security::Wpa2Aes,
+        _ => return None,
+    };
+    Some(Fields {
+        ssid: file[SSID_AT..SSID_AT + ssid_length].to_vec(),
+        security,
+        passphrase: (passphrase_length > 0)
+            .then(|| file[PASSPHRASE_AT..PASSPHRASE_AT + passphrase_length].to_vec()),
+    })
+}
+
 /// The security of a Wi-Fi network. Only these two are written.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Security {
     /// No security.
@@ -185,6 +235,8 @@ fn without_final_newline(mut bytes: Vec<u8>) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
+
     use super::*;
 
     fn profile(security: Security, passphrase: Option<&str>) -> Profile {
@@ -250,6 +302,32 @@ mod tests {
         assert_eq!(without_final_newline(b"abc\r\n".to_vec()), b"abc");
         assert_eq!(without_final_newline(b"abc\n\n".to_vec()), b"abc\n");
         assert_eq!(without_final_newline(b"abc".to_vec()), b"abc");
+    }
+
+    #[test]
+    fn decoding_gives_back_the_fields_it_was_encoded_from() -> Result<()> {
+        for security in [Security::Open, Security::Wpa2Aes] {
+            let fields = Fields {
+                ssid: b"HomeNet".to_vec(),
+                security,
+                passphrase: (security == Security::Wpa2Aes).then(|| b"correct horse".to_vec()),
+            };
+            let file = encode_file(&fields)?;
+            let decoded = decode_file(&file).context("the layout describes its own file")?;
+            assert_eq!(decoded.ssid, fields.ssid);
+            assert_eq!(decoded.security, fields.security);
+            assert_eq!(decoded.passphrase, fields.passphrase);
+        }
+        // Another security, or a file of another size, is not described.
+        let mut wep = encode_file(&Fields {
+            ssid: b"HomeNet".to_vec(),
+            security: Security::Open,
+            passphrase: None,
+        })?;
+        wep[SECURITY_AT] = 0x01;
+        assert!(decode_file(&wep).is_none());
+        assert!(decode_file(&wep[..10]).is_none());
+        Ok(())
     }
 
     #[test]
