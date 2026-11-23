@@ -9,6 +9,8 @@ pub mod remove;
 pub mod rvloader;
 pub mod setup;
 pub mod titles;
+pub mod wifi;
+pub mod wiimotes;
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -18,7 +20,7 @@ use serde::Deserialize;
 
 use self::{
     bootmii::Bootmii, hbc::Hbc, menu::Menu, priiloader::Priiloader, remove::RemovableChannel,
-    rvloader::Rvloader, setup::Setup, titles::Titles,
+    rvloader::Rvloader, setup::Setup, titles::Titles, wifi::Wifi, wiimotes::Wiimotes,
 };
 
 /// The NAND image: stock menu, then everything installed on top of it.
@@ -51,6 +53,12 @@ pub struct Nand {
     /// Optional RVLoader boot hook. Requires `priiloader`.
     #[serde(default)]
     pub rvloader: Option<Rvloader>,
+    /// Optional Wi-Fi profile: `keep` copies the seed's, `set` writes the first profile.
+    #[serde(default)]
+    pub wifi: Option<Wifi>,
+    /// Optional registered Wiimotes, copied from the seed. Requires `setup`.
+    #[serde(default)]
+    pub wiimotes: Option<Wiimotes>,
 }
 
 impl Nand {
@@ -94,6 +102,13 @@ impl Nand {
                 );
             }
         }
+        if let Some(wifi) = &self.wifi {
+            wifi.check()?;
+        }
+        ensure!(
+            self.wiimotes.is_none() || self.setup.is_some(),
+            "wiimotes requires setup: the registrations are written into SYSCONF with the settings"
+        );
         // One title per IOS slot: an IOS and a cIOS, or two of either, cannot share one.
         let mut slots = HashSet::new();
         let ios = self.titles.ios.iter().map(|ios| ios.title_id());

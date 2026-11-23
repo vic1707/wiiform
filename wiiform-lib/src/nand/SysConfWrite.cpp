@@ -7,23 +7,15 @@
 
 #include <stdexcept>
 
-namespace {
-  void check_ecc(NandBin& nand, quint16 entry) {
-    const auto clusters = nand.GetFatsForFile(entry);
-    require(clusters.size() == 1, "SYSCONF must occupy one NAND cluster");
-    for (quint32 page = quint32(clusters.first()) * 8; page < quint32(clusters.first()) * 8 + 8; ++page)
-      require(nand.CheckEcc(page), "SYSCONF page ECC is invalid");
-  }
-}
-
 namespace wii_sysconf {
-  void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings) {
+  void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings,
+                  std::span<const std::uint8_t> registrations) {
     working_image::Image working(image);
     auto& nand = working.nand;
     require(!working_image::find_path(nand, path), "NAND already has SYSCONF");
     const auto raw = working_image::read_authenticated_file(nand, "/title/00000001/00000002/data/setting.txt", 256);
     const auto region = QString::fromStdString(seed::decode_settings(raw).area);
-    const auto bytes = create(settings, region);
+    const auto bytes = create(settings, region, registrations);
     const auto parent = working_image::find_path(nand, "/shared2/sys");
     require(parent && parent->IsDir(), "Working image needs /shared2/sys");
     working_image::require_capacity(nand, working.layout.orphan_entries, 1, 1);
@@ -39,6 +31,6 @@ namespace wii_sysconf {
     const auto entry = working_image::find_path(reopened, path);
     require(working_image::read_authenticated_file(reopened, entry, size) == bytes,
             "SYSCONF readback differs from the requested settings");
-    check_ecc(reopened, entry->index);
+    working_image::check_single_cluster_ecc(reopened, entry->index, "SYSCONF");
   }
 }

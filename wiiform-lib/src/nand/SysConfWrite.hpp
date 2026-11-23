@@ -6,5 +6,7 @@
 #include <span>
 
 namespace wii_sysconf {
-  void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings);
+  // `registrations` is the BT.DINF value, or empty for none.
+  void initialize(std::span<std::uint8_t> image, const wiiform::SystemSettings& settings,
+                  std::span<const std::uint8_t> registrations = {});
 }

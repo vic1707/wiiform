@@ -41,6 +41,11 @@ pub(crate) fn list_values<T: JsonSchema>(schema: &mut Schema) {
 /// checks the same rules when it is read: a schema is not run by the CLI.
 pub(crate) fn nand_rules(schema: &mut Schema) {
     let mut rules = vec![
+        // wiimotes is written into SYSCONF, which setup makes.
+        json!({
+            "if": {"required": ["wiimotes"]},
+            "then": {"required": ["setup"], "properties": {"setup": {"type": "object"}}}
+        }),
         // bootmii_ios needs the bootmii key.
         json!({
             "if": {

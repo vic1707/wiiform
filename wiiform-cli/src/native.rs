@@ -339,7 +339,13 @@ impl Nand {
         Ok(ffi::remove_title(&mut self.0[..], title_id.as_u64())?)
     }
 
-    pub fn apply_system_settings(&mut self, setup: &Setup) -> Result<()> {
+    /// Writes SYSCONF. `registrations` is the BT.DINF value that keeps Wiimotes
+    /// registered; `None` writes a console with none.
+    pub fn apply_system_settings(
+        &mut self,
+        setup: &Setup,
+        registrations: Option<&[u8]>,
+    ) -> Result<()> {
         let display = setup.display;
         let settings = ffi::SystemSettings {
             nickname: setup.nickname.as_ref(),
@@ -350,7 +356,16 @@ impl Nand {
             progressive: display.progressive,
             pal60: display.pal60,
         };
-        Ok(ffi::apply_system_settings(&mut self.0[..], &settings)?)
+        Ok(ffi::apply_system_settings(
+            &mut self.0[..],
+            &settings,
+            registrations.unwrap_or(&[]),
+        )?)
+    }
+
+    /// Writes the Wi-Fi profile file, which is `config` as the console reads it.
+    pub fn apply_wifi_config(&mut self, config: &[u8]) -> Result<()> {
+        Ok(ffi::apply_wifi_config(&mut self.0[..], config)?)
     }
 
     pub fn install_priiloader(&mut self, app: &[u8]) -> Result<()> {

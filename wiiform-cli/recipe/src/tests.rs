@@ -693,6 +693,45 @@ fn inline_file(bytes: &[u8]) -> String {
 }
 
 /// The files a device mapping such as `{apps: …}` puts on the card.
+#[test]
+fn wifi_takes_its_passphrase_from_a_relative_file_or_text() -> Result<()> {
+    let dir = std::env::temp_dir().join(format!("wiiform-wifi-test-{}", std::process::id()));
+    fs::create_dir_all(&dir)?;
+    fs::write(dir.join("passphrase.txt"), "correct horse\n")?;
+    fs::write(dir.join("short.txt"), "short\n")?;
+    let wifi = |passphrase: &str| {
+        format!(
+            "nand:\n  menu: 4.3E\n  wifi: {{set: {{ssid: HomeNet, security: wpa2_aes, passphrase: {passphrase}}}}}"
+        )
+    };
+    let profile_file = |yaml: String| -> Result<Vec<u8>> {
+        let recipe = Recipe::read(yaml.as_bytes(), &dir, &store(), Collisions::default())?;
+        recipe.nand.validate()?;
+        match recipe.nand.wifi.context("expected a wifi section")? {
+            crate::nand::wifi::Wifi::Set(profile) => profile.config(),
+            crate::nand::wifi::Wifi::Keep => anyhow::bail!("expected set, not keep"),
+        }
+    };
+    let from_file = profile_file(wifi("{file: passphrase.txt}"))?;
+    assert_eq!(&from_file[2040..2053], b"correct horse");
+    assert_eq!(profile_file(wifi("{text: correct horse}"))?, from_file);
+    assert!(
+        profile_file(wifi("{file: short.txt}")).is_err(),
+        "a 5-character passphrase"
+    );
+    assert!(profile_file(wifi("{file: missing.txt}")).is_err());
+    Ok(())
+}
+
+#[test]
+fn wiimotes_need_setup_because_sysconf_carries_them() -> Result<()> {
+    // Reading a recipe already checks it, so the refusal comes from `read` itself.
+    let refusal = message(read("menu: 4.3E\nwiimotes: keep"));
+    assert!(refusal.contains("wiimotes requires setup"), "{refusal}");
+    read("menu: 4.3E\nsetup: {language: en, country: GB}\nwiimotes: keep")?;
+    Ok(())
+}
+
 fn card(device: &str) -> Result<Vec<(String, Vec<u8>)>> {
     card_with(Collisions::default(), device)
 }

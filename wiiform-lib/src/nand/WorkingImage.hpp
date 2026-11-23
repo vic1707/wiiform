@@ -24,4 +24,6 @@ namespace working_image {
   void require_capacity(NandBin& nand, int orphan_entries,
                         int needed_entries, quint64 needed_clusters,
                         int released_entries = 0, quint64 released_clusters = 0);
+  // Throws unless the file occupies one cluster whose eight pages all pass their ECC.
+  void check_single_cluster_ecc(NandBin& nand, quint16 entry, const char* name);
 }

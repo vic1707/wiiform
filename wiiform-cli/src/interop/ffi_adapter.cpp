@@ -144,10 +144,14 @@ void remove_title(Nand nand, std::uint64_t title_id) {
   wiiform::remove_title(span(nand), title_id);
 }
 
-void apply_system_settings(Nand nand, const SystemSettings& settings) {
+void apply_system_settings(Nand nand, const SystemSettings& settings, Bytes registrations) {
   wiiform::apply_system_settings(span(nand), {
       std::string(settings.nickname), settings.language, settings.country, settings.sensor_bar_above,
-      settings.widescreen, settings.progressive, settings.pal60});
+      settings.widescreen, settings.progressive, settings.pal60}, span(registrations));
+}
+
+void apply_wifi_config(Nand nand, Bytes config) {
+  wiiform::apply_wifi_config(span(nand), span(config));
 }
 
 void install_priiloader(Nand nand, Bytes app) {

@@ -6,6 +6,8 @@
 
 #include <BuildOptions.hpp>
 #include <SysConfWrite.hpp>
+#include <WifiConfigWrite.hpp>
+#include <WifiConfig.hpp>
 #include <Factory.hpp>
 #include <Install.hpp>
 #include <WadPackage.hpp>
@@ -199,9 +201,15 @@ void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id) {
   title_remove::remove_channel(nand, title_id);
 }
 
-void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings) {
+void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings,
+                           std::span<const std::uint8_t> registrations) {
   const detail::ApiCall call;
-  wii_sysconf::initialize(nand, settings);
+  wii_sysconf::initialize(nand, settings, registrations);
+}
+
+void apply_wifi_config(std::span<std::uint8_t> nand, std::span<const std::uint8_t> config) {
+  const detail::ApiCall call;
+  wifi_config::initialize(nand, config);
 }
 
 void install_priiloader(std::span<std::uint8_t> nand, std::span<const std::uint8_t> app) {

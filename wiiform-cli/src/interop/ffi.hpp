@@ -42,7 +42,8 @@ namespace wiiform::ffi {
   auto install_bootmii_ios(Nand nand, Bytes tmd, Bytes ticket, Bytes content) -> InstalledWad;
   auto install_built_cios(Nand nand, const NusCache& cache, const CiosBuild& build) -> InstalledWad;
   void remove_title(Nand nand, std::uint64_t title_id);
-  void apply_system_settings(Nand nand, const SystemSettings& settings);
+  void apply_system_settings(Nand nand, const SystemSettings& settings, Bytes registrations);
+  void apply_wifi_config(Nand nand, Bytes config);
   void install_priiloader(Nand nand, Bytes app);
   void install_priiloader_boot_file(Nand nand, Bytes dol, bool hardware_access);
   void configure_priiloader(Nand nand, const PriiloaderSettings& settings);

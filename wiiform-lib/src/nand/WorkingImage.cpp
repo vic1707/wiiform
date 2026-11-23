@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 
 namespace {
   auto count_fst_entries(NandBin& nand, quint16 entry) -> int {
@@ -58,5 +59,14 @@ namespace working_image {
     const auto free_clusters = static_cast<quint64>(std::count(fats.cbegin(), fats.cend(), 0xfffe));
     if (needed_clusters >= free_clusters + released_clusters)
       throw std::runtime_error("Insufficient NAND space (one cluster is reserved)");
+  }
+
+  void check_single_cluster_ecc(NandBin& nand, quint16 entry, const char* name) {
+    const auto clusters = nand.GetFatsForFile(entry);
+    if (clusters.size() != 1)
+      throw std::runtime_error(std::string(name) + " must occupy one NAND cluster");
+    const quint32 first_page = quint32(clusters.first()) * 8;
+    for (quint32 page = first_page; page < first_page + 8; ++page)
+      if (!nand.CheckEcc(page)) throw std::runtime_error(std::string(name) + " page ECC is invalid");
   }
 }

@@ -17,7 +17,7 @@ use crate::{
     priiloader_payload,
     recipe::{
         Blob, Collisions, Device, Menu, Priiloader, Recipe, Region, Rvloader, Sd, TitleId, Usb,
-        nand::titles::cios,
+        nand::{titles::cios, wifi::Wifi, wiimotes::Wiimotes},
     },
     seed::{self, StockSeed},
 };
@@ -106,6 +106,8 @@ pub fn build(options: &BuildOptions) -> Result<()> {
         if recipe.nand.bootmii.is_some() {
             bootmii_ios(seed.bootmii())?;
         }
+        // Checked before the long stock build, so a missing seed section fails first.
+        let network = Network::resolve(&recipe.nand, &seed)?;
         options.cache.prepare()?;
         let (nand, identity) = create_stock(
             &mut seed,
@@ -114,8 +116,43 @@ pub fn build(options: &BuildOptions) -> Result<()> {
             &options.cache,
         )
         .context("cannot create stock NAND")?;
-        Ok((nand, identity, seed.bootmii().clone()))
+        Ok((nand, identity, seed.bootmii().clone(), network))
     })
+}
+
+/// The Wi-Fi profile and Wiimote registrations the image gets, as the recipe keeps
+/// them from the seed or sets them.
+#[derive(Default)]
+struct Network {
+    /// The whole Wi-Fi profile file.
+    wifi: Option<Vec<u8>>,
+    /// The BT.DINF registrations for SYSCONF.
+    wiimotes: Option<Vec<u8>>,
+}
+
+impl Network {
+    fn resolve(nand: &crate::recipe::nand::Nand, seed: &StockSeed) -> Result<Self> {
+        let wifi = match &nand.wifi {
+            None => None,
+            Some(Wifi::Keep) => Some(
+                seed.wifi_config()
+                    .context("wifi: keep needs a seed made from a console with a Wi-Fi profile")?
+                    .to_vec(),
+            ),
+            Some(Wifi::Set(profile)) => Some(profile.config()?),
+        };
+        let wiimotes = match nand.wiimotes {
+            None => None,
+            Some(Wiimotes::Keep) => Some(
+                seed.wiimotes()
+                    .context(
+                        "wiimotes: keep needs a seed made from a console with registered Wiimotes",
+                    )?
+                    .to_vec(),
+            ),
+        };
+        Ok(Self { wifi, wiimotes })
+    }
 }
 
 /// Builds the image a factory-fresh console of this menu's region would have.
@@ -137,7 +174,7 @@ fn create_stock(
 
 fn build_with(
     options: &BuildOptions,
-    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity, seed::Bootmii)>,
+    create_stock: impl FnOnce(&Recipe) -> Result<(Nand, StockIdentity, seed::Bootmii, Network)>,
 ) -> Result<()> {
     validate_output(&options.output)?;
     if let NusCache::Directory { path, .. } = &options.cache {
@@ -201,7 +238,7 @@ fn build_with(
     for notice in recipe.collision_notices() {
         eprintln!("warning: {notice}");
     }
-    let (mut nand, identity, bootmii) = create_stock(&recipe)?;
+    let (mut nand, identity, bootmii, network) = create_stock(&recipe)?;
 
     let removals: Vec<TitleId> = (recipe.nand.remove.iter())
         .flat_map(|channel| channel.title_ids(recipe.nand.menu))
@@ -212,8 +249,12 @@ fn build_with(
     }
 
     if let Some(setup) = &recipe.nand.setup {
-        nand.apply_system_settings(setup)
+        nand.apply_system_settings(setup, network.wiimotes.as_deref())
             .context("cannot generate system settings")?;
+    }
+    if let Some(config) = &network.wifi {
+        nand.apply_wifi_config(config)
+            .context("cannot write the Wi-Fi profile")?;
     }
 
     let titles = &recipe.nand.titles;
@@ -650,6 +691,7 @@ mod tests {
                 Nand::read(&image)?,
                 StockIdentity::unverifiable(),
                 no_bootmii,
+                Network::default(),
             ))
         })
         .expect_err("the WAD cannot fit the synthetic NAND");

@@ -1042,10 +1042,49 @@
         "titles": {
           "description": "Titles to install: channels, IOS and cIOS.",
           "$ref": "#/$defs/Titles"
+        },
+        "wifi": {
+          "description": "Optional Wi-Fi profile: `keep` copies the seed's, `set` writes the first profile.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Wifi"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wiimotes": {
+          "description": "Optional registered Wiimotes, copied from the seed. Requires `setup`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Wiimotes"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "allOf": [
+        {
+          "if": {
+            "required": [
+              "wiimotes"
+            ]
+          },
+          "then": {
+            "properties": {
+              "setup": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "setup"
+            ]
+          }
+        },
         {
           "if": {
             "properties": {
@@ -1368,6 +1407,37 @@
       "maxLength": 10,
       "minLength": 1
     },
+    "PassphraseInput": {
+      "description": "Where a passphrase comes from.",
+      "oneOf": [
+        {
+          "description": "The passphrase itself.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "description": "A file holding the passphrase, relative to the recipe.",
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ]
+        }
+      ]
+    },
     "Pinned": {
       "description": "A file from one source with its SHA-256, which a GitHub release asset may\nomit when its release states one.",
       "type": "object",
@@ -1552,6 +1622,36 @@
         }
       },
       "additionalProperties": false
+    },
+    "Profile": {
+      "description": "The first Wi-Fi profile, as the console's network settings show it.",
+      "type": "object",
+      "properties": {
+        "passphrase": {
+          "description": "Required with wpa2_aes, and absent with open. Give `text`, or `file` with a\npath relative to the recipe; one final newline of the file is not part of it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PassphraseInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "security": {
+          "description": "Security of the network.",
+          "$ref": "#/$defs/Security"
+        },
+        "ssid": {
+          "description": "Network name, 1 to 32 bytes.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ssid",
+        "security"
+      ]
     },
     "RemovableChannel": {
       "description": "A stock channel that `remove` can take off the image.",
@@ -1974,6 +2074,21 @@
       },
       "additionalProperties": false
     },
+    "Security": {
+      "description": "The security of a Wi-Fi network. Only these two are written.",
+      "oneOf": [
+        {
+          "description": "No security.",
+          "type": "string",
+          "const": "open"
+        },
+        {
+          "description": "WPA2-PSK with AES.",
+          "type": "string",
+          "const": "wpa2_aes"
+        }
+      ]
+    },
     "SensorBar": {
       "description": "Sensor bar position relative to the display.",
       "type": "string",
@@ -2226,12 +2341,45 @@
       ],
       "unevaluatedProperties": false
     },
+    "Wifi": {
+      "description": "The Wi-Fi profile: `keep` copies the seed's, `set` writes the first profile.",
+      "oneOf": [
+        {
+          "description": "Copy the Wi-Fi profile the seed holds.",
+          "type": "string",
+          "const": "keep"
+        },
+        {
+          "description": "Write the first profile with these settings.",
+          "type": "object",
+          "properties": {
+            "set": {
+              "$ref": "#/$defs/Profile"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "set"
+          ]
+        }
+      ]
+    },
     "WiiLoadScreen": {
       "description": "The screen shown while a Wii game loads (`WiiLoadScreen`).",
       "type": "string",
       "enum": [
         "verbose",
         "spinning_disc"
+      ]
+    },
+    "Wiimotes": {
+      "description": "The registered Wiimotes, copied from the seed's console.",
+      "oneOf": [
+        {
+          "description": "Copy the registrations the seed holds.",
+          "type": "string",
+          "const": "keep"
+        }
       ]
     }
   }

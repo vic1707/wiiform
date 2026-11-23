@@ -58,8 +58,13 @@ namespace wiiform {
   // Only the allowlisted Forecast, News, Shop and Photo Channel titles can be removed.
   void remove_title(std::span<std::uint8_t> nand, std::uint64_t title_id);
 
-  // Creates SYSCONF; fails if the image already has one.
-  void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings);
+  // Creates SYSCONF; fails if the image already has one. `registrations` is the BT.DINF
+  // value (0x461 bytes) that keeps Wiimotes registered, or empty for none.
+  void apply_system_settings(std::span<std::uint8_t> nand, const SystemSettings& settings,
+                             std::span<const std::uint8_t> registrations = {});
+  // Creates the Wi-Fi profile file (`config` is its 7004 bytes), with any missing
+  // directories above it; fails if the image already has the file.
+  void apply_wifi_config(std::span<std::uint8_t> nand, std::span<const std::uint8_t> config);
 
   // Installs the pinned Priiloader release over a stock System Menu. An image that
   // already has this release is left unchanged.

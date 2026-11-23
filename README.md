@@ -389,6 +389,32 @@ Format cards and drives MBR with one FAT32 partition: libfat, which Wii
 homebrew uses to read them, does not read GPT partition tables or exFAT.
 RVLoader cannot run from the card; it needs its release on a USB drive.
 
+### Wi-Fi and Wiimotes
+
+`wifi` writes the console's Wi-Fi profile, `/shared2/sys/net/02/config.dat`.
+`wifi: keep` copies the profile the seed's console had. `wifi: {set: ...}` writes
+the first profile instead:
+
+```yaml
+wifi:
+  set:
+    ssid: HomeNet
+    security: wpa2_aes # or open
+    passphrase: {file: wifi-passphrase.txt} # or {text: "..."}
+```
+
+A passphrase is 8 to 63 printable ASCII characters. A `file` path is relative to
+the recipe, and the file's final newline is not part of the passphrase. `open`
+takes no passphrase.
+
+`wiimotes: keep` copies the registered Wiimotes (SYSCONF's `BT.DINF`) from the
+seed. It needs `setup`, since SYSCONF is written with the system settings.
+Whether a copied registration pairs without a re-sync is not yet tested on a
+console.
+
+Both `keep` values need a seed made from a console that has that data; the build
+stops otherwise.
+
 ### cIOS
 
 ```yaml
