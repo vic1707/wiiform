@@ -62,11 +62,17 @@ for the SD card. The NAND keys described below (`menu`, `setup`, `titles`,
 [example recipe](docs/recipe.example.yaml) and its
 [editor schema](docs/wiiform.recipe.schema.json). Run `mise run schema` to
 regenerate the schema from the Rust recipe model; the tests fail when it is stale. A WAD entry names exactly
-one source next to its `sha256`: `path` for a local file (relative to the
-recipe), `url` for an HTTPS download, `inline` for the file as base64 text, or
+one source: `path` for a local file (relative to the recipe), `url` for an
+HTTPS download, `inline` for the file as base64 text, or
 `github: {repo, tag, asset}` for a release asset.
-The SHA-256 is of the raw WAD bytes. Reading a recipe loads, downloads and
-checks every WAD it names, before the build starts.
+`sha256`, the SHA-256 of the exact file, is checked whenever it is given.
+It is required for a `url`, and for a `github` asset whose release states no
+digest (GitHub records one for assets uploaded since June 2025; a given
+`sha256` must agree with it). A `path` or `inline` file needs none: the recipe
+already names or holds those bytes. The schema flags a `url` without `sha256`;
+a `github` asset's digest is only known once its release is looked up.
+Reading a recipe loads, downloads and checks every file it names, before the
+build starts.
 The recipe supports 4.3E, 4.3U, and 4.3J, along with allowlisted
 channel removal, initial setup, display settings, and Priiloader settings and named hacks. Set setup country
 codes using uppercase ISO alpha-2 values such as `GB`, `US`, and `JP`.
@@ -162,8 +168,7 @@ hbc:
     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 ```
 
-A custom WAD requires its SHA-256. The source may be a recipe-relative path,
-inline base64, or an HTTPS URL. Wiiform validates the package and checks its
+A custom WAD takes any source, with `sha256` as for other WADs. Wiiform validates the package and checks its
 title ID against the Homebrew Channel IDs recognized by Priiloader before
 writing it. The title installs before Priiloader settings are applied, so
 `autoboot: homebrew_channel` can use it.
@@ -298,11 +303,9 @@ usb:
         "*/rvloader/**": /rvloader/
 ```
 
-`sd` and `usb` take the same two keys. Every file names one source and its
-SHA-256: `path`, `url` and `inline` work as for WADs, and `github` takes a
-release asset by `repo`, `tag` and exact `asset` name. `sha256` may be left out
-only for a GitHub asset whose release states one (GitHub records it for assets
-uploaded since June 2025); a given `sha256` always wins.
+`sd` and `usb` take the same two keys. Every file names one source, with
+`sha256` as for WADs: `path`, `url` and `inline` work as for WADs, and
+`github` takes a release asset by `repo`, `tag` and exact `asset` name.
 
 `sd` also takes `bootmii`, which writes `/bootmii/bootmii.ini` (BootMii never
 writes it): `video` (`ntsc`, `pal50`, `pal60` or `progressive`), `autoboot`

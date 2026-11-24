@@ -51,7 +51,7 @@
           ]
         },
         "sha256": {
-          "description": "SHA-256 of the exact archive. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "description": "SHA-256 of the exact archive, checked when given. Required for a url,\nand for a GitHub release asset whose release states none.",
           "anyOf": [
             {
               "$ref": "#/$defs/Sha256"
@@ -61,6 +61,11 @@
             }
           ]
         }
+      },
+      "if": {
+        "required": [
+          "url"
+        ]
       },
       "oneOf": [
         {
@@ -128,6 +133,11 @@
           ]
         }
       ],
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "Aspect": {
@@ -251,7 +261,7 @@
       "type": "object",
       "properties": {
         "sha256": {
-          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "description": "SHA-256 of the exact file, checked when given. Required for a url, and\nfor a GitHub release asset whose release states none.",
           "anyOf": [
             {
               "$ref": "#/$defs/Sha256"
@@ -357,6 +367,16 @@
           ]
         }
       ],
+      "if": {
+        "required": [
+          "url"
+        ]
+      },
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "CardPath": {
@@ -373,9 +393,21 @@
           "default": false
         },
         "sha256": {
-          "description": "SHA-256 of the exact WAD bytes.",
-          "$ref": "#/$defs/Sha256"
+          "description": "SHA-256 of the exact WAD bytes, checked when given. Required for a url,\nand for a GitHub release asset whose release states none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
+      },
+      "if": {
+        "required": [
+          "url"
+        ]
       },
       "oneOf": [
         {
@@ -428,9 +460,11 @@
           ]
         }
       ],
-      "required": [
-        "sha256"
-      ],
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "Cios": {
@@ -438,7 +472,7 @@
       "type": "object",
       "properties": {
         "sha256": {
-          "description": "SHA-256 of a prebuilt WAD. A d2x release gives its own inside `d2x`.",
+          "description": "SHA-256 of a prebuilt WAD, checked when given. Required for a url, and\nfor a GitHub release asset whose release states none. A d2x release\ngives its own inside `d2x`.",
           "anyOf": [
             {
               "$ref": "#/$defs/Sha256"
@@ -451,6 +485,11 @@
         "target": {
           "$ref": "#/$defs/Target"
         }
+      },
+      "if": {
+        "required": [
+          "url"
+        ]
       },
       "oneOf": [
         {
@@ -518,6 +557,11 @@
       "required": [
         "target"
       ],
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "CountryCode": {
@@ -873,7 +917,7 @@
       "type": "object",
       "properties": {
         "sha256": {
-          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "description": "SHA-256 of the exact file, checked when given. Required for a url, and\nfor a GitHub release asset whose release states none.",
           "anyOf": [
             {
               "$ref": "#/$defs/Sha256"
@@ -883,6 +927,11 @@
             }
           ]
         }
+      },
+      "if": {
+        "required": [
+          "url"
+        ]
       },
       "oneOf": [
         {
@@ -935,6 +984,11 @@
           ]
         }
       ],
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "Menu": {
@@ -1439,11 +1493,11 @@
       ]
     },
     "Pinned": {
-      "description": "A file from one source with its SHA-256, which a GitHub release asset may\nomit when its release states one.",
+      "description": "A file from one source, with its SHA-256 where the source needs one.",
       "type": "object",
       "properties": {
         "sha256": {
-          "description": "SHA-256 of the exact file. Optional for a GitHub release asset whose\nrelease states one; required otherwise.",
+          "description": "SHA-256 of the exact file, checked when given. Required for a url, and\nfor a GitHub release asset whose release states none.",
           "anyOf": [
             {
               "$ref": "#/$defs/Sha256"
@@ -1453,6 +1507,11 @@
             }
           ]
         }
+      },
+      "if": {
+        "required": [
+          "url"
+        ]
       },
       "oneOf": [
         {
@@ -1505,6 +1564,11 @@
           ]
         }
       ],
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "Priiloader": {
@@ -2277,13 +2341,25 @@
       ]
     },
     "Wad": {
-      "description": "A WAD from one source, with the SHA-256 of its exact bytes.",
+      "description": "A WAD from one source, with the SHA-256 of its exact bytes where the source\nneeds one.",
       "type": "object",
       "properties": {
         "sha256": {
-          "description": "SHA-256 of the exact WAD bytes.",
-          "$ref": "#/$defs/Sha256"
+          "description": "SHA-256 of the exact WAD bytes, checked when given. Required for a url,\nand for a GitHub release asset whose release states none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
+      },
+      "if": {
+        "required": [
+          "url"
+        ]
       },
       "oneOf": [
         {
@@ -2336,9 +2412,11 @@
           ]
         }
       ],
-      "required": [
-        "sha256"
-      ],
+      "then": {
+        "required": [
+          "sha256"
+        ]
+      },
       "unevaluatedProperties": false
     },
     "Wifi": {

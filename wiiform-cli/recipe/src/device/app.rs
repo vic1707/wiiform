@@ -35,12 +35,12 @@ enum Content {
 
 /// One loose file of an app.
 #[derive(Deserialize, JsonSchema)]
-#[schemars(deny_unknown_fields)]
+#[schemars(deny_unknown_fields, transform = crate::schema::sha256_for_url)]
 struct LooseFile {
     #[serde(flatten)]
     source: Source,
-    /// SHA-256 of the exact file. Optional for a GitHub release asset whose
-    /// release states one; required otherwise.
+    /// SHA-256 of the exact file, checked when given. Required for a url, and
+    /// for a GitHub release asset whose release states none.
     sha256: Option<Sha256>,
     // Serde cannot reject unknown keys next to flattened fields; they land here.
     #[serde(flatten)]
@@ -51,12 +51,12 @@ struct LooseFile {
 /// A Homebrew Channel app. From an archive, its folder holding boot.dol or
 /// boot.elf becomes apps/<name>/, unless `folder` names another.
 #[derive(Deserialize, JsonSchema)]
-#[schemars(deny_unknown_fields)]
+#[schemars(deny_unknown_fields, transform = crate::schema::sha256_for_url)]
 pub(super) struct App {
     #[serde(flatten)]
     content: Content,
-    /// SHA-256 of the exact archive. Optional for a GitHub release asset whose
-    /// release states one; required otherwise.
+    /// SHA-256 of the exact archive, checked when given. Required for a url,
+    /// and for a GitHub release asset whose release states none.
     sha256: Option<Sha256>,
     /// The archive folder that becomes the app's folder, for an archive holding
     /// several apps or more than one. Without it, the archive must hold exactly

@@ -140,6 +140,14 @@ fn a_wad_is_one_source_whose_bytes_match_its_hash() -> Result<()> {
     let block = format!("sha256: {digest}\n      inline: |\n        {first}\n        {second}");
     assert_eq!(&*title(&block)?.titles.channels[0].wad, WAD);
 
+    // The recipe holds inline bytes itself, so their SHA-256 is optional.
+    assert_eq!(
+        &*title(&format!("inline: {encoded}"))?.titles.channels[0].wad,
+        WAD
+    );
+    // A URL needs one, and is refused before anything is downloaded.
+    assert!(message(title("url: https://example.com/a.wad")).contains("required for a url"));
+
     let wrong = sha(b"something else");
     let small = STANDARD.encode([7; 0x3f]);
     assert!(
@@ -156,7 +164,6 @@ fn a_wad_is_one_source_whose_bytes_match_its_hash() -> Result<()> {
         format!("inline: {encoded}\n      path: a.wad\n      sha256: {digest}"),
         format!("inline: {encoded}\n      url: https://example.com/a.wad\n      sha256: {digest}"),
         format!("sha256: {digest}"),
-        format!("inline: {encoded}"),
         format!("inline: '***'\n      sha256: {digest}"),
         format!("inline: !!binary {encoded}\n      sha256: {digest}"),
         format!("path: null\n      sha256: {digest}"),
@@ -260,6 +267,46 @@ fn a_path_is_relative_to_the_recipe_and_names_a_regular_file() -> Result<()> {
         );
     }
     assert!(read(&title("linked.wad")).is_err(), "another directory");
+    fs::remove_dir_all(dir)?;
+    Ok(())
+}
+
+#[test]
+fn a_local_path_needs_no_sha256_but_is_checked_against_one() -> Result<()> {
+    let dir = std::env::temp_dir().join(format!("wiiform-local-test-{}", std::process::id()));
+    fs::create_dir(&dir)?;
+    fs::write(dir.join("payload.wad"), WAD)?;
+    fs::write(dir.join("gc.cfg"), b"config")?;
+    let read = |nand: &str, sd: &str| {
+        Recipe::read(
+            format!("nand: {{menu: 4.3E{nand}}}\nsd: {sd}").as_bytes(),
+            &dir,
+            &store(),
+            Collisions::default(),
+        )
+    };
+    let channel = |hash: &str| format!(", titles: {{channels: [{{path: payload.wad{hash}}}]}}");
+    let bundle = |hash: &str| {
+        format!("{{bundles: [{{path: ./gc.cfg{hash}, to: /rvloader/defaults/gc.cfg}}]}}")
+    };
+
+    let recipe = read(&channel(""), &bundle(""))?;
+    assert_eq!(&*recipe.nand.titles.channels[0].wad, WAD);
+    let files: Vec<(String, Vec<u8>)> = (recipe.sd.iter().flat_map(|sd| sd.files()))
+        .map(|(path, blob)| Ok((path.to_string(), blob.bytes()?)))
+        .collect::<Result<_>>()?;
+    assert_eq!(
+        files,
+        [("/rvloader/defaults/gc.cfg".to_owned(), b"config".to_vec())]
+    );
+
+    let wrong = format!(", sha256: {}", sha(b"other"));
+    assert!(message(read(&channel(&wrong), "{}")).contains("does not match its SHA-256"));
+    assert!(message(read("", &bundle(&wrong))).contains("does not match its SHA-256"));
+    read(
+        &channel(&format!(", sha256: {}", sha(&WAD))),
+        &bundle(&format!(", sha256: {}", sha(b"config"))),
+    )?;
     fs::remove_dir_all(dir)?;
     Ok(())
 }
@@ -576,6 +623,65 @@ fn rvloader_sets_priiloader_autoboot_and_return_to_rather_than_defaults() -> Res
             .all(|entry| !entry.contains(".autoboot=") && !entry.contains(".return_to=")),
         "{defaulted:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn the_schema_requires_sha256_beside_a_url_only() -> Result<()> {
+    let schema: serde_json::Value = serde_json::from_str(&crate::json_schema()?)?;
+    let validator = jsonschema::validator_for(&schema)?;
+    let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let github = "github: {repo: owner/app, tag: v1, asset: app.zip}";
+    let target = "target: {slot: 249, base: 56, revision: 65535}";
+    let recipe = |yaml: String| -> Result<serde_json::Value> {
+        Ok(serde_saphyr::from_str(&format!(
+            "nand: {{menu: 4.3E}}\n{yaml}"
+        ))?)
+    };
+    let entries = |source: &str| {
+        [
+            format!("sd: {{bundles: [{{{source}, to: /x}}]}}"),
+            format!("sd: {{apps: {{x: {{{source}}}}}}}"),
+            format!("sd: {{apps: {{x: {{files: {{boot.dol: {{{source}}}}}}}}}}}"),
+        ]
+    };
+    let nand = |source: &str| {
+        [
+            format!("{{channels: [{{{source}}}]}}"),
+            format!("{{cios: [{{{source}, {target}}}]}}"),
+            format!("{{cios: [{{d2x: {{{source}}}, {target}}}]}}"),
+        ]
+        .map(|titles| format!("nand: {{menu: 4.3E, titles: {titles}}}"))
+    };
+    let all = |source: &str| -> Result<Vec<serde_json::Value>> {
+        let nand = nand(source).map(|yaml| serde_saphyr::from_str(&yaml));
+        let mut values: Vec<serde_json::Value> = nand.into_iter().collect::<Result<_, _>>()?;
+        for yaml in entries(source) {
+            values.push(recipe(yaml)?);
+        }
+        Ok(values)
+    };
+    for source in [
+        "path: x.zip".to_owned(),
+        "inline: AAAA".to_owned(),
+        github.to_owned(),
+        format!("url: 'https://example.com/x.zip', sha256: {hash}"),
+        format!("path: x.zip, sha256: {hash}"),
+    ] {
+        for value in all(&source)? {
+            let errors: Vec<String> = validator
+                .iter_errors(&value)
+                .map(|e| e.to_string())
+                .collect();
+            assert!(errors.is_empty(), "{source} in {value}: {errors:?}");
+        }
+    }
+    for value in all("url: 'https://example.com/x.zip'")? {
+        assert!(
+            !validator.is_valid(&value),
+            "a url without sha256 in {value}"
+        );
+    }
     Ok(())
 }
 
@@ -1206,8 +1312,8 @@ fn cios_entries_are_prebuilt_or_built_from_d2x() -> Result<()> {
             "inside `d2x`",
         ),
         (
-            format!("inline: {}, {target}", STANDARD.encode(WAD)),
-            "needs sha256",
+            format!("url: 'https://example.com/cios.wad', {target}"),
+            "sha256 is required for a url",
         ),
         (format!("{d2x}, {}, {target}", inline()), ""),
         (format!("{d2x}, {target}, extra: 1"), "unknown field"),

@@ -39,11 +39,13 @@ enum Package {
 
 /// A d2x cIOS and the slot it fills.
 #[derive(Deserialize, JsonSchema)]
-#[schemars(rename = "Cios", deny_unknown_fields)]
+#[schemars(rename = "Cios", deny_unknown_fields, transform = crate::schema::sha256_for_url)]
 struct CiosFile {
     #[serde(flatten)]
     package: Package,
-    /// SHA-256 of a prebuilt WAD. A d2x release gives its own inside `d2x`.
+    /// SHA-256 of a prebuilt WAD, checked when given. Required for a url, and
+    /// for a GitHub release asset whose release states none. A d2x release
+    /// gives its own inside `d2x`.
     sha256: Option<Sha256>,
     target: Target,
     // Serde cannot reject unknown keys next to flattened fields; they land here.
@@ -82,10 +84,7 @@ impl CiosFile {
             bail!("unknown field `{key}`");
         }
         let prebuilt = |source: Source| -> Result<Kind> {
-            let sha256 = self
-                .sha256
-                .ok_or_else(|| anyhow::anyhow!("a prebuilt cIOS WAD needs sha256"))?;
-            Ok(Kind::Prebuilt(Wad::from_source(source, sha256)?))
+            Ok(Kind::Prebuilt(Wad::from_source(source, self.sha256)?))
         };
         let kind = match self.package {
             Package::Path(path) => prebuilt(Source::Path(path))?,

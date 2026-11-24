@@ -22,7 +22,8 @@ use crate::{
     wad::{Sha256, download, fetch},
 };
 
-const NEEDS_SHA256: &str = "sha256 is required: only GitHub release assets may come with one";
+const NEEDS_SHA256: &str =
+    "sha256 is required for a url, and for a GitHub release asset whose release states none";
 const MISMATCH: &str = "file does not match its SHA-256";
 
 /// Largest file read into memory: a NAND's size. Device files are staged on disk
@@ -79,15 +80,14 @@ pub(crate) enum Source {
     Github(github::Asset),
 }
 
-/// A file from one source with its SHA-256, which a GitHub release asset may
-/// omit when its release states one.
+/// A file from one source, with its SHA-256 where the source needs one.
 #[derive(Deserialize, JsonSchema)]
-#[schemars(deny_unknown_fields)]
+#[schemars(deny_unknown_fields, transform = crate::schema::sha256_for_url)]
 pub(crate) struct Pinned {
     #[serde(flatten)]
     source: Source,
-    /// SHA-256 of the exact file. Optional for a GitHub release asset whose
-    /// release states one; required otherwise.
+    /// SHA-256 of the exact file, checked when given. Required for a url, and
+    /// for a GitHub release asset whose release states none.
     sha256: Option<Sha256>,
     // Serde cannot reject unknown keys next to flattened fields; they land here.
     #[serde(flatten)]
@@ -100,7 +100,7 @@ impl Pinned {
         if let Some(key) = self.unknown.keys().next() {
             bail!("unknown field `{key}`");
         }
-        self.source.read_pinned(self.sha256)
+        self.source.read_checked(self.sha256, MEMORY_BOUNDS)
     }
 }
 
@@ -119,11 +119,30 @@ impl Source {
         })
     }
 
-    /// Reads the file into memory and checks it.
-    pub(crate) fn read_pinned(self, sha256: Option<Sha256>) -> Result<Vec<u8>> {
-        let fetched = self.read(MEMORY_BOUNDS)?;
-        let expected = expected_sha256(sha256, fetched.published_sha256)?;
-        ensure!(Sha256::of(&fetched.bytes) == expected, MISMATCH);
+    /// Whether the recipe holds the file or names it on this machine. Its
+    /// bytes are then whatever the recipe's author put there, so a SHA-256 is
+    /// only checked when given.
+    fn is_local(&self) -> bool {
+        matches!(self, Self::Path(_) | Self::Inline(_))
+    }
+
+    /// Reads the file into memory, refusing one whose size is outside
+    /// `bounds`, and checks it against the SHA-256 it must have.
+    pub(crate) fn read_checked(
+        self,
+        sha256: Option<Sha256>,
+        bounds: RangeInclusive<usize>,
+    ) -> Result<Vec<u8>> {
+        let local = self.is_local();
+        // Nothing but the recipe could vouch for a URL: refuse before downloading.
+        ensure!(
+            sha256.is_some() || !matches!(self, Self::Url(_)),
+            NEEDS_SHA256
+        );
+        let fetched = self.read(bounds)?;
+        if let Some(expected) = expected_sha256(sha256, fetched.published_sha256, local)? {
+            ensure!(Sha256::of(&fetched.bytes) == expected, MISMATCH);
+        }
         Ok(fetched.bytes)
     }
 
@@ -159,18 +178,18 @@ impl Source {
 
     /// Puts the file on disk, verified, and returns its path. A local file stays
     /// where it is; anything else is stored under its SHA-256, so a file already
-    /// there is not downloaded again. `sha256` is required unless a GitHub
-    /// release states one.
+    /// there is not downloaded again.
     pub(crate) fn stage(self, sha256: Option<Sha256>) -> Result<PathBuf> {
         match self {
             Self::Path(path) => {
                 let path = SCOPE.with_borrow(|context| context.directory.join(path));
-                let expected = sha256.context(NEEDS_SHA256)?;
                 let (mut file, _) = open_regular_file(&path)?;
-                let mut hashed = Hashed::new(std::io::sink());
-                std::io::copy(&mut file, &mut hashed)
-                    .with_context(|| format!("cannot read {}", path.display()))?;
-                ensure!(hashed.finish().1 == expected, MISMATCH);
+                if let Some(expected) = sha256 {
+                    let mut hashed = Hashed::new(std::io::sink());
+                    std::io::copy(&mut file, &mut hashed)
+                        .with_context(|| format!("cannot read {}", path.display()))?;
+                    ensure!(hashed.finish().1 == expected, MISMATCH);
+                }
                 Ok(path)
             }
             Self::Url(url) => {
@@ -178,13 +197,14 @@ impl Source {
                 store(expected, |out| download(&url, out))
                     .with_context(|| format!("cannot download {url}"))
             }
-            Self::Inline(bytes) => {
-                let expected = sha256.context(NEEDS_SHA256)?;
-                store(expected, |out| Ok(out.write_all(&bytes)?))
-            }
+            Self::Inline(bytes) => match sha256 {
+                Some(expected) => store(expected, |out| Ok(out.write_all(&bytes)?)),
+                None => store_bytes(&bytes),
+            },
             Self::Github(asset) => {
                 let release = asset.find()?;
-                let expected = expected_sha256(sha256, release.sha256)?;
+                let expected =
+                    expected_sha256(sha256, release.sha256, false)?.context(NEEDS_SHA256)?;
                 store(expected, |out| download(&release.url, out))
                     .with_context(|| format!("cannot download {}", release.url))
             }
@@ -193,18 +213,27 @@ impl Source {
 }
 
 /// The SHA-256 a file must have: the recipe's, which must agree with the one its
-/// release states, if the release states one. A cached copy is only checked
-/// against this, so a disagreement is refused before any copy is looked up.
-fn expected_sha256(given: Option<Sha256>, published: Option<Sha256>) -> Result<Sha256> {
+/// release states, if the release states one. Only a `local` file may have
+/// none. A cached copy is only checked against this, so a disagreement is
+/// refused before any copy is looked up.
+fn expected_sha256(
+    given: Option<Sha256>,
+    published: Option<Sha256>,
+    local: bool,
+) -> Result<Option<Sha256>> {
     match (given, published) {
         (Some(given), Some(published)) => {
             ensure!(
                 given == published,
                 "the recipe's SHA-256 differs from the one the release states"
             );
-            Ok(given)
+            Ok(Some(given))
         }
-        (given, published) => given.or(published).context(NEEDS_SHA256),
+        (None, None) => {
+            ensure!(local, NEEDS_SHA256);
+            Ok(None)
+        }
+        (given, published) => Ok(given.or(published)),
     }
 }
 

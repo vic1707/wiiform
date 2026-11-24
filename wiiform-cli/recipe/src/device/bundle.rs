@@ -24,12 +24,12 @@ enum Placement {
 
 /// A file or archive placed from the device's root.
 #[derive(Deserialize, JsonSchema)]
-#[schemars(deny_unknown_fields)]
+#[schemars(deny_unknown_fields, transform = crate::schema::sha256_for_url)]
 pub(super) struct Bundle {
     #[serde(flatten)]
     source: Source,
-    /// SHA-256 of the exact file. Optional for a GitHub release asset whose
-    /// release states one; required otherwise.
+    /// SHA-256 of the exact file, checked when given. Required for a url, and
+    /// for a GitHub release asset whose release states none.
     sha256: Option<Sha256>,
     #[serde(flatten)]
     placement: Placement,

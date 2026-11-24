@@ -28,7 +28,8 @@ nand:
   # Titles to install, by kind. Paths are relative to this file.
   titles:
     # Channels, VC and WiiWare titles and app channels, as WADs: path, url,
-    # inline, or github: {repo, tag, asset}, with the SHA-256 of the raw WAD.
+    # inline, or github: {repo, tag, asset}. sha256 is checked when given and
+    # required for a url (or a GitHub asset whose release states no digest).
     channels:
       - path: wads/example-pal-channel.wad
         sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -63,7 +64,7 @@ nand:
   #     version: "1.16.0" # Semver of a release with a retail OHBC WAD.
   #     # sha256 is optional: the hash of the -OHBC.wad. Wiiform uses the GitHub asset digest by default.
   #
-  # A custom HBC WAD requires its SHA-256.
+  # A custom HBC WAD, with sha256 as for channels.
   # hbc:
   #   custom:
   #     path: wads/my-homebrew-channel.wad # Also accepts url or inline as above.
@@ -120,8 +121,8 @@ nand:
     # force_disc_ios: force_disc_ios249 # One of force_disc_ios248 to force_disc_ios251; that IOS must hold a cIOS.
 
 # Files for the SD card, published in sd/ next to nand.bin and keys.bin. Every
-# file takes one source (path, url, inline, or github: {repo, tag, asset}) and a
-# sha256, which a GitHub release asset may omit when its release states one.
+# file takes one source (path, url, inline, or github: {repo, tag, asset}), with
+# sha256 as for WADs: optional for path and inline, required for a url.
 sd:
   apps: # Each key is the card folder apps/<key>/.
     Example: # From an archive, its folder holding boot.dol or boot.elf becomes apps/Example/.

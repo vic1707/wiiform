@@ -107,6 +107,23 @@ fn display_rule(condition: Value, flag: &str) -> Value {
     })
 }
 
+/// Requires `sha256` beside `url`. The other sources may leave it out: a local
+/// path or inline data needs none, and only the release knows whether a
+/// GitHub asset comes with one, so `github` stays a check at read time.
+pub(crate) fn sha256_for_url(schema: &mut Schema) {
+    let properties = schema.get("properties").and_then(Value::as_object);
+    assert!(
+        properties.is_some_and(|properties| properties.contains_key("sha256")),
+        "sha256_for_url needs a sha256 key"
+    );
+    assert!(
+        schema.get("if").is_none(),
+        "the schema already has a condition"
+    );
+    schema.insert("if".into(), serde_json::json!({"required": ["url"]}));
+    schema.insert("then".into(), serde_json::json!({"required": ["sha256"]}));
+}
+
 /// Up to the first full stop that ends a sentence, on one line.
 fn first_sentence(text: &str) -> String {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");

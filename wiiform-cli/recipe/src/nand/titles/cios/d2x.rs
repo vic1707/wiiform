@@ -65,7 +65,8 @@ impl Build {
         sha256: crate::Sha256,
         base: u8,
     ) -> Result<Self> {
-        let release = crate::source::Source::from_command_line(input)?.read_pinned(Some(sha256))?;
+        let release = crate::source::Source::from_command_line(input)?
+            .read_checked(Some(sha256), crate::source::MEMORY_BOUNDS)?;
         build(&release, base)
     }
 }

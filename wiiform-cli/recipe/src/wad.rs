@@ -42,9 +42,9 @@ impl Wad {
         Ok(Self(bytes))
     }
 
-    /// Reads a WAD from `source` and checks it against `expected`.
-    pub(crate) fn from_source(source: Source, expected: Sha256) -> Result<Self> {
-        Self::checked(source.read(WAD_BOUNDS)?.bytes, expected)
+    /// Reads a WAD from `source` and checks it against the SHA-256 it must have.
+    pub(crate) fn from_source(source: Source, sha256: Option<Sha256>) -> Result<Self> {
+        Ok(Self(source.read_checked(sha256, WAD_BOUNDS)?))
     }
 
     pub(crate) fn download(url: &str, expected: Sha256) -> Result<Self> {
@@ -56,9 +56,7 @@ impl TryFrom<WadFile> for Wad {
     type Error = String;
 
     fn try_from(file: WadFile) -> Result<Self, String> {
-        (file.source.read(WAD_BOUNDS))
-            .and_then(|fetched| Self::checked(fetched.bytes, file.sha256))
-            .map_err(|error| format!("{error:#}"))
+        Self::from_source(file.source, file.sha256).map_err(|error| format!("{error:#}"))
     }
 }
 
@@ -67,7 +65,7 @@ impl TryFrom<(PathBuf, Sha256)> for Wad {
     type Error = anyhow::Error;
 
     fn try_from((input, sha256): (PathBuf, Sha256)) -> Result<Self> {
-        Self::from_source(Source::from_command_line(input)?, sha256)
+        Self::from_source(Source::from_command_line(input)?, Some(sha256))
     }
 }
 
