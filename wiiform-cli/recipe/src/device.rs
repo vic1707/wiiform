@@ -287,14 +287,10 @@ impl<'de> Visitor<'de> for Bundles<'_> {
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
-        let mut index = 0;
         while let Some(bundle) = seq.next_element::<Bundle>()? {
-            let files = bundle
-                .files()
-                .with_context(|| format!("bundles[{index}]"))
-                .map_err(fail)?;
-            push(self.0, &format!("bundles[{index}]"), files);
-            index += 1;
+            let label = bundle.label();
+            let files = bundle.files().context(label.clone()).map_err(fail)?;
+            push(self.0, &label, files);
         }
         Ok(())
     }

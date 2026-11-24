@@ -1069,6 +1069,21 @@ fn bundles_unzip_extract_or_copy_from_the_root() -> Result<()> {
 }
 
 #[test]
+fn a_failing_bundle_is_named_by_its_source() {
+    let error = |bundle: &str| message(card(&format!("{{bundles: [{{{bundle}}}]}}")));
+    assert!(error("path: ./missing.cfg, to: a").contains("bundle path ./missing.cfg: "));
+    assert!(
+        error("url: 'https://example.invalid/x.zip', unzip: /")
+            .contains("bundle url https://example.invalid/x.zip: sha256 is required for a url"),
+    );
+    // A long inline file shows the start of its base64, as written in the recipe.
+    assert!(
+        error(&format!("{}, to: /", inline_file(b"a long inline file")))
+            .contains("bundle inline YSBsb25nIGlu…: "),
+    );
+}
+
+#[test]
 fn device_files_must_not_collide() -> Result<()> {
     let to = |bytes: &[u8], path: &str| format!("{{{}, to: '{path}'}}", inline_file(bytes));
     let bundles = |entries: &[String]| {
@@ -1509,11 +1524,13 @@ fn each_colliding_file_gets_one_notice_naming_its_sources() -> Result<()> {
     // One notice for the file, however many entries wrote it: the last one wins.
     assert_eq!(
         notices(Collisions::Overwrite, &entries)?,
-        ["sd: /a/B: from bundles[2] replaces bundles[0], bundles[1]"]
+        ["sd: /a/B: from bundle inline dGhyZWU= replaces bundle inline b25l, bundle inline dHdv"]
     );
     assert_eq!(
         notices(Collisions::KeepFirst, &entries)?,
-        ["sd: /a/b: kept from bundles[0]; bundles[1], bundles[2] ignored"]
+        [
+            "sd: /a/b: kept from bundle inline b25l; bundle inline dHdv, bundle inline dGhyZWU= ignored"
+        ]
     );
     // Error only reports what it refuses; identical copies say nothing.
     assert!(notices(Collisions::Error, &entries).is_err());
@@ -1638,7 +1655,7 @@ fn generated_settings_collide_like_any_device_file() -> Result<()> {
     let usb = recipe.usb.expect("usb is set");
     assert_eq!(usb.notices().len(), 1, "{:?}", usb.notices());
     assert!(usb.notices()[0].contains("/rvloader/configs/RHAP01.cfg"));
-    assert!(usb.notices()[0].contains("bundles[0]"));
+    assert!(usb.notices()[0].contains("bundle inline b3duIHNldHRp…"));
     assert_eq!(usb.files().len(), 1);
     Ok(())
 }

@@ -2,6 +2,7 @@
 //! Where a recipe gets a file from, shared by WADs and device files.
 use std::{
     cell::RefCell,
+    fmt,
     fs::{self, File},
     io::Write,
     ops::RangeInclusive,
@@ -78,6 +79,29 @@ pub(crate) enum Source {
     ),
     /// An asset of a tagged GitHub release.
     Github(github::Asset),
+}
+
+/// The source as the recipe names it, to say which entry an error or notice is
+/// about. An inline file shows the start of its base64, which a search of the
+/// recipe finds.
+impl fmt::Display for Source {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Path(path) => write!(formatter, "path {}", path.display()),
+            Self::Url(url) => write!(formatter, "url {url}"),
+            Self::Inline(bytes) => {
+                // Nine bytes are twelve base64 characters, with no padding.
+                let shown = STANDARD.encode(&bytes[..bytes.len().min(9)]);
+                let more = if bytes.len() > 9 { "…" } else { "" };
+                write!(formatter, "inline {shown}{more}")
+            }
+            Self::Github(asset) => write!(
+                formatter,
+                "github {} {} {}",
+                asset.repo, asset.tag, asset.asset
+            ),
+        }
+    }
 }
 
 /// A file from one source, with its SHA-256 where the source needs one.

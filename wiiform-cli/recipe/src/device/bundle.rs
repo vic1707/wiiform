@@ -40,6 +40,11 @@ pub(super) struct Bundle {
 }
 
 impl Bundle {
+    /// Names the bundle by its source in errors and collision notices.
+    pub(super) fn label(&self) -> String {
+        format!("bundle {}", self.source)
+    }
+
     pub(super) fn files(self) -> Result<Vec<(CardPath, Blob)>> {
         if let Some(key) = self.unknown.keys().next() {
             bail!("unknown field `{key}`");
