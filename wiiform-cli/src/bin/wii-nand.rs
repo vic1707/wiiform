@@ -92,7 +92,7 @@ enum Command {
         /// Also do what RVLoader's installer does. `--vga` only writes RVLoader's
         /// flag: the image's settings must already enable 480p.
         #[command(flatten)]
-        rvloader: Option<rvloader::Release>,
+        rvloader: Option<rvloader::Arguments>,
     },
 }
 
@@ -180,7 +180,7 @@ mod tests {
 
     fn install_priiloader(
         args: &[&str],
-    ) -> clap::error::Result<(Priiloader, Option<rvloader::Release>)> {
+    ) -> clap::error::Result<(Priiloader, Option<rvloader::Arguments>)> {
         let input = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
         let fixed = ["wii-nand", "install-priiloader", input, "output"];
         let cli = Cli::try_parse_from(fixed.into_iter().chain(args.iter().copied()))?;
@@ -196,21 +196,15 @@ mod tests {
     #[test]
     fn rvloader_flags_come_as_a_set() {
         let sha = "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7";
-        let release = [
-            "--rvloader=2.1",
-            "--rvloader-sha256",
-            sha,
-            "--rvloader-wd-sha256",
-            sha,
-        ];
+        let release = ["--rvloader=RVLoader_v2.1.zip", "--rvloader-sha256", sha];
         assert!(install_priiloader(&[]).unwrap().1.is_none());
         let (_, rvloader) = install_priiloader(&[&release[..], &["--vga"]].concat()).unwrap();
         let rvloader = rvloader.expect("expected the RVLoader flags");
-        assert_eq!(rvloader.version.to_string(), "2.1");
+        assert_eq!(rvloader.release, PathBuf::from("RVLoader_v2.1.zip"));
         assert!(rvloader.vga && !rvloader.patch_out_wifi);
         for partial in [
-            &release[..2],
-            &release[2..],
+            &release[..1],
+            &release[1..],
             &["--vga"],
             &["--patch-out-wifi"],
         ] {

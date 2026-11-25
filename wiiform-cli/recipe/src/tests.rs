@@ -407,38 +407,46 @@ fn priiloader_takes_settings_and_a_list_of_hacks() -> Result<()> {
     Ok(())
 }
 
+/// An RVLoader release whose installer carries `bootloaders`, and whose Wi-Fi
+/// driver is `wifi_module`, under the release's versioned top folder.
+fn rvloader_release(bootloaders: &[&[u8]], wifi_module: &[u8]) -> Vec<u8> {
+    let mut installer = crate::nand::rvloader::sample_dol(&[0; 64]);
+    for bootloader in bootloaders {
+        installer.extend_from_slice(bootloader);
+    }
+    // Priiloader's app, which the installer carries too.
+    installer.extend(crate::nand::rvloader::sample_dol(b"Priiloader"));
+    installer.extend_from_slice(wifi_module);
+    zip_of(
+        &[
+            ("RVLoader_v2.1/apps/RVLoader/installer.dol", &installer),
+            ("RVLoader_v2.1/rvloader/Hiidra/modules/wd.bin", wifi_module),
+            ("RVLoader_v2.1/apps/RVLoader/boot.dol", b"RVLoader itself"),
+        ],
+        &[],
+    )
+}
+
 #[test]
 fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
-    const DOL: [u8; 3] = [1, 2, 3];
-    const WD: [u8; 2] = [4, 5];
-    let rvloader = |version: &str, sha256: &str, options: &str| {
+    let dol = crate::nand::rvloader::sample_dol(b"RVLoader bootloader 00");
+    const WD: [u8; 4] = [4, 5, 6, 7];
+    let release = rvloader_release(&[&dol], &WD);
+    let rvloader = |sha256: &str, options: &str| {
         format!(
-            "rvloader: {{version: '{version}', sha256: {sha256}, wd_sha256: {}, {options}}}",
-            sha(&WD)
+            "rvloader: {{release: {{inline: {}, sha256: {sha256}}}, {options}}}",
+            STANDARD.encode(&release)
         )
     };
-    let read = |yaml: String| {
-        with_fetch(
-            |url, _| {
-                let base =
-                    "https://raw.githubusercontent.com/Aurelio92/RVLoader/v2.1/installer/data/";
-                Ok(match url.strip_prefix(base) {
-                    Some("bootloader.dol") => DOL.to_vec(),
-                    Some("wd.bin") => WD.to_vec(),
-                    _ => panic!("unexpected download of {url}"),
-                })
-            },
-            || read(&format!("menu: 4.3E\n{yaml}")),
-        )
-    };
+    let read = |yaml: String| read(&format!("menu: 4.3E\n{yaml}"));
     let options = "patch_out_wifi: true, vga: false";
-    let good = rvloader("2.1", &sha(&DOL), options);
+    let good = rvloader(&sha(&release), options);
 
     let recipe = read(format!("{good}\npriiloader: {{stop_disc: true}}"))?;
     let loaded = recipe.rvloader.as_ref().context("expected RVLoader")?;
     assert_eq!(
         (&*loaded.bootloader, &*loaded.wifi_module),
-        (&DOL[..], &WD[..])
+        (&dol[..], &WD[..])
     );
     let ios = loaded.ios();
     assert_eq!(ios.map(|ios| ios.slot), [236, 240, 241, 36, 58, 80]);
@@ -457,7 +465,7 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
 
     let keep_wifi = read(format!(
         "{}\npriiloader: {{}}",
-        rvloader("2.1", &sha(&DOL), "patch_out_wifi: false, vga: false")
+        rvloader(&sha(&release), "patch_out_wifi: false, vga: false")
     ))?;
     let ios = keep_wifi.rvloader.context("expected RVLoader")?.ios();
     assert_eq!(
@@ -474,7 +482,7 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
         let result = read(format!("{good}\npriiloader: {{{setting}}}"));
         assert!(message(result).contains("remove them"), "{setting}");
     }
-    let vga = rvloader("2.1", &sha(&DOL), "patch_out_wifi: true, vga: true");
+    let vga = rvloader(&sha(&release), "patch_out_wifi: true, vga: true");
     for (setup, error) in [
         ("", "requires setup.display.progressive"),
         (
@@ -493,19 +501,78 @@ fn rvloader_requires_priiloader_and_owns_its_boot_settings() -> Result<()> {
         "{vga}\npriiloader: {{}}\nsetup: {{language: en, country: GB, display: {{progressive: true, pal60: true}}}}"
     ))?;
 
-    let wrong = rvloader("2.1", &sha(&WAD), options);
-    assert!(message(read(wrong)).contains("bootloader.dol does not match its SHA-256"));
-    for version in ["2", "2.1.0", "v2.1", "2.x", "../2.1"] {
-        assert!(
-            read(rvloader(version, &sha(&DOL), options)).is_err(),
-            "{version}"
-        );
-    }
+    let wrong = rvloader(&sha(&WAD), options);
+    assert!(message(read(wrong)).contains("does not match its SHA-256"));
     for missing in ["patch_out_wifi: true", "vga: false"] {
         assert!(
-            read(rvloader("2.1", &sha(&DOL), missing)).is_err(),
+            read(rvloader(&sha(&release), missing)).is_err(),
             "{missing}"
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn rvloader_takes_its_files_from_the_release() -> Result<()> {
+    let bootloader = crate::nand::rvloader::sample_dol(b"RVLoader bootloader 00");
+    let other = crate::nand::rvloader::sample_dol(b"RVLoader bootloader 01");
+    let from = |release: &[u8]| Rvloader::from_release(release, false, false);
+    let installer = |parts: &[&[u8]]| {
+        let mut installer = crate::nand::rvloader::sample_dol(&[0; 64]);
+        installer.extend(parts.concat());
+        installer
+    };
+    let loaded = from(&rvloader_release(&[&bootloader], b"driver"))?;
+    assert_eq!(&*loaded.bootloader, &bootloader[..]);
+    assert_eq!(&*loaded.wifi_module, b"driver");
+    // A release laid out without a top folder works too.
+    let flat = zip_of(
+        &[
+            (
+                "apps/RVLoader/installer.dol",
+                &installer(&[&bootloader, b"driver"]),
+            ),
+            ("rvloader/Hiidra/modules/wd.bin", b"driver"),
+        ],
+        &[],
+    );
+    assert_eq!(&*from(&flat)?.bootloader, &bootloader[..]);
+
+    for (release, error) in [
+        (rvloader_release(&[], b"driver"), "carries 0 DOLs"),
+        (
+            rvloader_release(&[&bootloader, &other], b"driver"),
+            "carries 2 DOLs",
+        ),
+        (
+            zip_of(&[("apps/RVLoader/boot.dol", b"x")], &[]),
+            "holds no apps/RVLoader/installer.dol",
+        ),
+        (
+            zip_of(
+                &[("apps/RVLoader/installer.dol", &installer(&[&bootloader]))],
+                &[],
+            ),
+            "holds no rvloader/Hiidra/modules/wd.bin",
+        ),
+        (
+            zip_of(
+                &[
+                    (
+                        "apps/RVLoader/installer.dol",
+                        &installer(&[&bootloader, b"driver"]),
+                    ),
+                    (
+                        "rvloader/Hiidra/modules/wd.bin",
+                        b"a driver the installer lacks",
+                    ),
+                ],
+                &[],
+            ),
+            "is not the Wi-Fi driver",
+        ),
+    ] {
+        assert!(message(from(&release)).contains(error), "{error}");
     }
     Ok(())
 }
@@ -600,23 +667,17 @@ priiloader: {autoboot: system_menu, return_to: system_menu, shutdown_to: none,
 
 #[test]
 fn rvloader_sets_priiloader_autoboot_and_return_to_rather_than_defaults() -> Result<()> {
-    const DOL: [u8; 3] = [1, 2, 3];
-    const WD: [u8; 2] = [4, 5];
-    let yaml = format!(
-        "menu: 4.3E\npriiloader: {{}}\nrvloader: {{version: '2.1', sha256: {}, wd_sha256: {}, patch_out_wifi: false, vga: false}}",
-        sha(&DOL),
-        sha(&WD)
+    let release = rvloader_release(
+        &[&crate::nand::rvloader::sample_dol(
+            b"RVLoader bootloader 00",
+        )],
+        b"driver",
     );
-    let defaulted = with_fetch(
-        |url, _| {
-            Ok(if url.ends_with("/wd.bin") {
-                WD.to_vec()
-            } else {
-                DOL.to_vec()
-            })
-        },
-        || defaulted(&yaml),
-    )?;
+    let yaml = format!(
+        "menu: 4.3E\npriiloader: {{}}\nrvloader: {{release: {{inline: {}}}, patch_out_wifi: false, vga: false}}",
+        STANDARD.encode(&release)
+    );
+    let defaulted = defaulted(&yaml)?;
     assert!(!defaulted.is_empty());
     assert!(
         (defaulted.iter())
@@ -652,6 +713,10 @@ fn the_schema_requires_sha256_beside_a_url_only() -> Result<()> {
             format!("{{cios: [{{d2x: {{{source}}}, {target}}}]}}"),
         ]
         .map(|titles| format!("nand: {{menu: 4.3E, titles: {titles}}}"))
+        .into_iter()
+        .chain([format!(
+            "nand: {{menu: 4.3E, priiloader: {{}}, rvloader: {{release: {{{source}}}, patch_out_wifi: false, vga: false}}}}"
+        )])
     };
     let all = |source: &str| -> Result<Vec<serde_json::Value>> {
         let nand = nand(source).map(|yaml| serde_saphyr::from_str(&yaml));

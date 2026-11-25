@@ -73,9 +73,9 @@ nand:
   # Optional RVLoader, installed as its Wii-side installer does. Requires priiloader
   # without its autoboot and return_to keys.
   # rvloader:
-  #   version: "2.1"
-  #   sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7" # installer/data/bootloader.dol of that release.
-  #   wd_sha256: "6b7f6c95ec886899b43dcb5ca3dc15e20bbaa7c8c4e617e21166876f01cdb7b8" # installer/data/wd.bin of that release.
+  #   release: # The release archive, upstream's or a fork's; any source, sha256 as for WADs.
+  #     github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
+  #     sha256: "31802b749b1658e45a402264d378f7a5b738abf8a4183cf1eb527551d811b404"
   #   patch_out_wifi: false # Also remove the Wi-Fi modules from IOS36, IOS58 and IOS80.
   #   vga: false # Requires setup.display.progressive, and pal60 on 4.3E.
 
@@ -153,7 +153,7 @@ sd:
 #       RHAP01: {bluetooth: true, usb_saves: false, wifi: auto}
 #   bundles:
 #     - github: {repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip}
-#       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+#       sha256: "31802b749b1658e45a402264d378f7a5b738abf8a4183cf1eb527551d811b404"
 #       extract: # The RVLoader app and its data, without the bundled BBLoader and Nintendont.
 #         "*/apps/RVLoader/**": /apps/RVLoader/ # */ is the release's versioned top folder.
 #         "*/rvloader/**": /rvloader/

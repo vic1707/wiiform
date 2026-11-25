@@ -229,18 +229,23 @@ setup:
 
 priiloader: {}
 rvloader:
-  version: "2.1"
-  sha256: "30be3599e13f91bba0d5060a316d13bb428ea4d71ba7b35ebe89682cdedd94d7"
-  wd_sha256: "6b7f6c95ec886899b43dcb5ca3dc15e20bbaa7c8c4e617e21166876f01cdb7b8"
+  release:
+    github: &rvloader { repo: Aurelio92/RVLoader, tag: v2.1, asset: RVLoader_v2.1.zip }
+    sha256: &rvloader_sha256 "31802b749b1658e45a402264d378f7a5b738abf8a4183cf1eb527551d811b404"
   patch_out_wifi: true
   vga: true
 ```
 
 `rvloader` does offline what RVLoader's Wii-side installer does:
 
-- Wiiform downloads two files from the release tag, `installer/data/bootloader.dol`
-  and `installer/data/wd.bin` (the replacement Wi-Fi driver), and checks them
-  against `sha256` and `wd_sha256`. The hashes above are those of 2.1.
+- `release` is the RVLoader release archive, upstream's or a fork's, from any
+  source with `sha256` as for WADs (the hash above is 2.1's; a GitHub asset
+  uploaded since June 2025 needs none). Wiiform takes two files from it: the
+  bootloader, which the installer `apps/RVLoader/installer.dol` carries as
+  data, and the replacement Wi-Fi driver `rvloader/Hiidra/modules/wd.bin`,
+  which must be the one the installer carries. The installer carries other
+  DOLs too; the bootloader is the one that names itself ("RVLoader
+  bootloader"), and a release where that is not exactly one DOL is refused.
 - The bootloader becomes Priiloader's boot file, started with hardware access.
   Priiloader's `autoboot` is set to that file and `return_to` to autoboot.
 - IOS236, IOS240 and IOS241 receive copies of IOS36, IOS58 and IOS80 without
@@ -258,9 +263,9 @@ rvloader:
 RVLoader is started by Priiloader, so `rvloader` requires a `priiloader`
 section without `autoboot` and `return_to`; the other Priiloader settings and
 `hacks` apply as usual. The bootloader loads `apps/RVLoader/boot.dol` from a
-USB drive: unpack the matching
-[RVLoader release](https://github.com/Aurelio92/RVLoader/releases) onto the
-drive. Wiiform writes the NAND only.
+USB drive: put the same release on the drive with a `usb` bundle (see below;
+YAML anchors let both name it once, as `github: *rvloader` and
+`sha256: *rvloader_sha256`), or unpack it there yourself.
 
 RVLoader and the Wii Menu keep separate titles. RVLoader lists the WADs in the
 drive's `vc/` and `channels/` folders (GameCube games in `games/`, Wii discs in
@@ -269,8 +274,9 @@ drive's `vc/` and `channels/` folders (GameCube games in `games/`, Wii discs in
 recipe's `titles` stay on the console's NAND: they appear in the Wii Menu,
 which RVLoader opens from its house button, but not in RVLoader's lists.
 
-On an existing image, `wii-nand install-priiloader IN OUT --rvloader 2.1
---rvloader-sha256 HASH --rvloader-wd-sha256 HASH [--patch-out-wifi] [--vga]`
+On an existing image, `wii-nand install-priiloader IN OUT --rvloader RELEASE
+--rvloader-sha256 HASH [--patch-out-wifi] [--vga]`, with RELEASE a local path or
+an HTTPS URL of the archive,
 does the same. Its `--vga` writes only the flag: the image's settings must
 already enable 480p. Re-running it with the same options leaves the image
 unchanged; changing `--patch-out-wifi` on an image that already has the RVLoader

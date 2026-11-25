@@ -62,9 +62,20 @@ pub(crate) fn members(archive: &Path) -> Result<Vec<(String, Blob)>> {
 
 /// The archive's files held in memory, for the small releases read whole.
 pub(crate) fn files(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+    files_where(bytes, |_| true)
+}
+
+/// The archive's files whose path `keep` accepts, held in memory.
+pub(crate) fn files_where(
+    bytes: &[u8],
+    keep: impl Fn(&str) -> bool,
+) -> Result<Vec<(String, Vec<u8>)>> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).context("expected a zip archive")?;
     let mut files = Vec::new();
-    for listed in list(&mut zip)? {
+    for listed in list(&mut zip)?
+        .into_iter()
+        .filter(|listed| keep(&listed.name))
+    {
         let mut contents = Vec::with_capacity(listed.size as usize);
         zip.by_index(listed.index)?.read_to_end(&mut contents)?;
         files.push((listed.name, contents));

@@ -1753,35 +1753,25 @@
       ]
     },
     "Rvloader": {
-      "description": "What RVLoader's installer does, done offline: Priiloader starts RVLoader's\nbootloader, which loads RVLoader from USB, and the IOS slots 236, 240 and\n241 get copies of IOS36 (patched), IOS58 and IOS80 without the stock Wi-Fi\nmodules. The recipe needs a `priiloader` section without `autoboot` and\n`return_to`. The RVLoader release itself goes on the USB drive.",
+      "description": "What RVLoader's installer does, done offline: Priiloader starts RVLoader's\nbootloader, which loads RVLoader from USB, and the IOS slots 236, 240 and\n241 get copies of IOS36 (patched), IOS58 and IOS80 without the stock Wi-Fi\nmodules. The recipe needs a `priiloader` section without `autoboot` and\n`return_to`. The release itself goes on the USB drive as a bundle.",
       "type": "object",
       "properties": {
         "patch_out_wifi": {
           "description": "The installer's \"Patch out WiFi\": IOS36, IOS58 and IOS80 lose their\nWi-Fi modules too. Either way they are reinstalled as the installer does.",
           "type": "boolean"
         },
-        "sha256": {
-          "description": "SHA-256 of that release's `installer/data/bootloader.dol`.",
-          "$ref": "#/$defs/Sha256"
-        },
-        "version": {
-          "description": "RVLoader release, such as \"2.1\".",
-          "$ref": "#/$defs/RvloaderVersion"
+        "release": {
+          "description": "The RVLoader release archive, such as RVLoader_v2.1.zip, upstream's or a\nfork's. The bootloader comes from the installer inside it,\n`apps/RVLoader/installer.dol`, and the Wi-Fi driver from\n`rvloader/Hiidra/modules/wd.bin`.",
+          "$ref": "#/$defs/Pinned"
         },
         "vga": {
           "description": "The installer's \"Enable VGA\". Needs `setup.display.progressive`, and\n`pal60` for 4.3E. Component video then stops working.",
           "type": "boolean"
-        },
-        "wd_sha256": {
-          "description": "SHA-256 of that release's `installer/data/wd.bin`, the Wi-Fi driver\nreplacing the stock Wi-Fi modules.",
-          "$ref": "#/$defs/Sha256"
         }
       },
       "additionalProperties": false,
       "required": [
-        "version",
-        "sha256",
-        "wd_sha256",
+        "release",
         "patch_out_wifi",
         "vga"
       ]
@@ -2091,11 +2081,6 @@
           ]
         }
       ]
-    },
-    "RvloaderVersion": {
-      "description": "RVLoader release number: major.minor, without the leading v.",
-      "type": "string",
-      "pattern": "^[0-9]+\\.[0-9]+$"
     },
     "RvloaderWifi": {
       "description": "Wi-Fi for the game (`Enable WiFi`).",
